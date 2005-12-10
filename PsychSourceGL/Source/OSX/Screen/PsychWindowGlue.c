@@ -192,17 +192,23 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     CGOpenGLDisplayMask 			displayMask;
     CGDirectDisplayID				cgDisplayID;
     CGLPixelFormatAttribute			attribs[20];
-    //CGLPixelFormatObj 			pixelFormatObj;
-    long							swapInterval, numVirtualScreens;
-    CGLError						error;
-    //CGLRendererInfoObj				rendererInfo;
-    GLboolean						isDoubleBuffer;
+    long					swapInterval, numVirtualScreens;
+    CGLError					error;
+    CGLRendererInfoObj				rendererInfo;
+    GLboolean					isDoubleBuffer;
     int attribcount=0;
     int ringTheBell=-1;
     bool sync_trouble = false;
     bool sync_disaster = false;
     bool skip_synctests = PsychPrefStateGet_SkipSyncTests();
     int visual_debuglevel = PsychPrefStateGet_VisualDebugLevel();
+    int conserveVRAM = PsychPrefStateGet_ConserveVRAM();
+    
+    // Child protection: We need 2 AUX buffers for compressed stereo.
+    if ((conserveVRAM & kPsychDisableAUXBuffers) && (stereomode==kPsychCompressedTLBRStereo || stereomode==kPsychCompressedTRBLStereo)) {
+        printf("ERROR! You tried to disable AUX buffers via Screen('Preference', 'ConserveVRAM')\n while trying to use compressed stereo, which needs AUX-Buffers!\n");
+        return(FALSE);
+    }
     
     //First allocate the window recored to store stuff into.  If we exit with an error PsychErrorExit() should
     //call PsychPurgeInvalidWindows which will clean up the window record. 
@@ -219,15 +225,18 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     if(numBuffers>=2){
         // Enable double-buffering:
         attribs[attribcount++]=kCGLPFADoubleBuffer;
-        // MK: Allocate one or two (mono vs. stereo) AUX buffers for new "don't clear" mode of Screen('Flip'):
-        // Not clearing the framebuffer after "Flip" is implemented by storing a backup-copy of
-        // the backbuffer to AUXs before flip and restoring the content from AUXs after flip.
-        attribs[attribcount++]=kCGLPFAAuxBuffers;
-        attribs[attribcount++]=(stereomode==1) ? 2 : 1;
+        if ((conserveVRAM & kPsychDisableAUXBuffers) == 0) {
+            // MK: Allocate one or two (mono vs. stereo) AUX buffers for new "don't clear" mode of Screen('Flip'):
+            // Not clearing the framebuffer after "Flip" is implemented by storing a backup-copy of
+            // the backbuffer to AUXs before flip and restoring the content from AUXs after flip.
+            attribs[attribcount++]=kCGLPFAAuxBuffers;
+            attribs[attribcount++]=(stereomode==kPsychOpenGLStereo || stereomode==kPsychCompressedTLBRStereo || stereomode==kPsychCompressedTRBLStereo) ? 2 : 1;
+        }
     }
+
     // MK: Stereo display support: If stereo display output is requested with OpenGL native stereo,
     // we request a stereo-enabled rendering context.
-    if(stereomode==1) {
+    if(stereomode==kPsychOpenGLStereo) {
         attribs[attribcount++]=kCGLPFAStereo;
     }
     // Finalize attribute array with NULL.
@@ -238,7 +247,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     // requirements, or we have massive ressource shortage in the system. -> Screwed up anyway, so we abort.
     error=CGLChoosePixelFormat(attribs, &((*windowRecord)->targetSpecific.pixelFormatObject), &numVirtualScreens);
     if (error) {
-        ("\nPTB-ERROR[ChoosePixelFormat failed]:The specified display may not support double buffering and/or stereo output. There could be insufficient video memory\n\n");
+        printf("\nPTB-ERROR[ChoosePixelFormat failed]:The specified display may not support double buffering and/or stereo output. There could be insufficient video memory\n\n");
         FreeWindowRecordFromPntr(*windowRecord);
         return(FALSE);
     }
@@ -282,7 +291,6 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         //their was insufficient video memory to open a back buffer.  
         isDoubleBuffer=false;
         glGetBooleanv(GL_DOUBLEBUFFER, &isDoubleBuffer);
-        //glDrawBuffer(GL_BACK);
         if(!isDoubleBuffer){
             CGLDestroyPixelFormat((*windowRecord)->targetSpecific.pixelFormatObject);
             CGLSetCurrentContext(NULL);
@@ -293,18 +301,19 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     }
         
     //get information from the renderer about support for double buffering
-    /*
-    error= CGLQueryRendererInfo(displayMask, &rendererInfo, &numRenderers);
-    if(numRenderers>10) numRenderers=10;
-    for(i=0;i<numRenderers;i++)
-    {
-        CGLDescribeRenderer(rendererInfo, i, kCGLRPBufferModes, &rendererPropertyValue);
-        singleBufferSupport[i]=rendererPropertyValue & kCGLSingleBufferBit;
-        doubleBufferSupport[i]=rendererPropertyValue & kCGLDoubleBufferBit;
-        CGLDescribeRenderer(rendererInfo, i, kCGLRPBackingStore, backingStoreSupport+i);
+    long VRAMTotal=0;
+    long TexmemTotal=0;
+
+    if (true) {
+        long numRenderers, i;
+        error= CGLQueryRendererInfo(displayMask, &rendererInfo, &numRenderers);
+        if(numRenderers>1) numRenderers=1;
+        for(i=0;i<numRenderers;i++) {
+            CGLDescribeRenderer(rendererInfo, i, kCGLRPVideoMemory, &VRAMTotal);
+            CGLDescribeRenderer(rendererInfo, i, kCGLRPTextureMemory, &TexmemTotal);
+        }
         CGLDestroyRendererInfo(rendererInfo);
     }
-    */
     
     //Configure OpenGL here
     gluOrtho2D(screenSettings->rect[kPsychLeft], screenSettings->rect[kPsychRight], screenSettings->rect[kPsychBottom], screenSettings->rect[kPsychTop]);
@@ -347,13 +356,13 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     // supported, which means: Output via OpenGL built-in stereo facilities. This can drive
     // all Stereo display devices that are supported by MacOS-X, e.g., the "Crystal Space"
     // Liquid crystal eye shutter glasses.
-    // We also support value 2, which means "compressed" stereo: Only one framebuffer is used,
+    // We also support value 2 and 3, which means "compressed" stereo: Only one framebuffer is used,
     // the left-eyes image is placed in the top half of the framebuffer, the right-eyes image is
     // placed int the bottom half of the buffer. One looses half of the vertical image resolution,
     // but both views are encoded in one video frame and can be decoded by external stereo-hardware,
     // e.g., the one available from CrystalEyes, this allows for potentially faster refresh.
-    // Mode 2 is implemented by simple manipulations to the glViewPort...
-    (*windowRecord)->stereomode = (stereomode>=0 && stereomode<=3) ? stereomode : 0;
+    // Mode 4/5 is implemented by simple manipulations to the glViewPort...
+    (*windowRecord)->stereomode = (stereomode>=0 && stereomode<=9) ? stereomode : 0;
     
     // Setup timestamps and pipeline state for 'Flip' and 'DrawingFinished' commands of Screen:
     (*windowRecord)->time_at_last_vbl = 0;
@@ -552,6 +561,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         // Completely bogus VBL_Endline detected! Warn the user and mark VBL_Endline
         // as invalid so it doesn't get used anywhere:
         sync_trouble = true;
+        ifi_beamestimate = 0;
         printf("\nWARNING: Couldn't determine end-line of vertical blanking interval for your display! Trouble with beamposition queries?!?\n");
     }
     else {
@@ -559,17 +569,43 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         ifi_beamestimate = tsum / tcount;
     }
     
+    // Compare ifi_estimate from VBL-Sync against beam estimate. If we are in OpenGL native
+    // flip-frame stereo mode, a ifi_estimate approx. 2 times the beamestimate would be valid
+    // and we would correct it down to half ifi_estimate.
+    (*windowRecord)->VideoRefreshInterval = ifi_estimate;
+    if ((*windowRecord)->stereomode == kPsychOpenGLStereo) {
+        // Flip frame stereo enabled. Check for ifi_estimate = 2 * ifi_beamestimate:
+        if (ifi_estimate >= 0.9 * 2 * ifi_beamestimate && ifi_estimate <= 1.1 * 2 * ifi_beamestimate) {
+            // This seems to be a valid result: Flip-interval is roughly twice the monitor refresh interval.
+            // We "force" ifi_estimate = 0.5 * ifi_estimate, so ifi_estimate roughly equals to ifi_nominal and
+            // ifi_beamestimate, in order to simplify all timing checks below. We also store this value as
+            // video refresh interval...
+            ifi_estimate = ifi_estimate * 0.5f;
+            (*windowRecord)->VideoRefreshInterval = ifi_estimate;
+            printf("\nPTB-INFO: The timing granularity of stimulus onset/offset via Screen('Flip') is twice as long\n");
+            printf("PTB-INFO: as the refresh interval of your monitor when using OpenGL flip-frame stereo on your setup.\n");
+            printf("PTB-INFO: Please keep this in mind, otherwise you'll be confused about your timing.\n");
+        }
+    }
+    
     printf("\n\nPTB-INFO: OpenGL-Renderer is %s :: %s :: %s\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
+    printf("PTB-INFO: Renderer has %li MB of VRAM and a maximum %li MB of texture memory.\n", VRAMTotal / 1024 / 1024, TexmemTotal / 1024 / 1024);
     printf("PTB-Info: VBL startline = %i , VBL Endline = %i\n", (int) PsychGetHeightFromRect((*windowRecord)->rect), VBL_Endline);
     printf("PTB-Info: Measured monitor refresh interval from beamposition = %f ms [%f Hz].\n", ifi_beamestimate * 1000, 1/ifi_beamestimate);
     printf("PTB-Info: Measured monitor refresh interval from VBLsync = %f ms [%f Hz]. (%i valid samples taken, stddev=%f ms.)\n",
               ifi_estimate * 1000, 1/ifi_estimate, numSamples, stddev*1000);
     if (ifi_nominal > 0) printf("PTB-Info: Reported monitor refresh interval from operating system = %f ms [%f Hz].\n", ifi_nominal * 1000, 1/ifi_nominal);
     printf("PTB-Info: Small deviations between reported values are normal and no reason to worry.\n");
-    if ((*windowRecord)->stereomode==1) printf("PTB-INFO: Stereo display via OpenGL built-in sequential frame stereo enabled.\n");
-    if ((*windowRecord)->stereomode==2) printf("PTB-INFO: Stereo display via vertical image compression enabled (2-in-1 stereo).\n");
-    if ((*windowRecord)->stereomode==3) printf("PTB-INFO: Stereo display via free fusion enabled (2-in-1 stereo).\n");
-    
+    if ((*windowRecord)->stereomode==kPsychOpenGLStereo) printf("PTB-INFO: Stereo display via OpenGL built-in sequential frame stereo enabled.\n");
+    if ((*windowRecord)->stereomode==kPsychCompressedTLBRStereo) printf("PTB-INFO: Stereo display via vertical image compression enabled (Top=LeftEye, Bot.=RightEye).\n");
+    if ((*windowRecord)->stereomode==kPsychCompressedTRBLStereo) printf("PTB-INFO: Stereo display via vertical image compression enabled (Top=RightEye, Bot.=LeftEye).\n");
+    if ((*windowRecord)->stereomode==kPsychFreeFusionStereo) printf("PTB-INFO: Stereo display via free fusion enabled (2-in-1 stereo).\n");
+    if ((*windowRecord)->stereomode==kPsychFreeCrossFusionStereo) printf("PTB-INFO: Stereo display via free cross-fusion enabled (2-in-1 stereo).\n");
+    if ((*windowRecord)->stereomode==kPsychAnaglyphRGStereo) printf("PTB-INFO: Stereo display via Anaglyph Red-Green stereo enabled.\n");
+    if ((*windowRecord)->stereomode==kPsychAnaglyphGRStereo) printf("PTB-INFO: Stereo display via Anaglyph Green-Red stereo enabled.\n");
+    if ((*windowRecord)->stereomode==kPsychAnaglyphRBStereo) printf("PTB-INFO: Stereo display via Anaglyph Red-Blue stereo enabled.\n");
+    if ((*windowRecord)->stereomode==kPsychAnaglyphBRStereo) printf("PTB-INFO: Stereo display via Anaglyph Blue-Red stereo enabled.\n");
+
     // Reliable estimate? These are our minimum requirements...
     if (numSamples<50 || stddev>0.001) {
         sync_disaster = true;
@@ -578,7 +614,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     
     // Check for mismatch between measured ifi from glFinish() VBLSync method and the value reported by the OS, if any:
     // This would indicate that we have massive trouble syncing to the VBL!
-    if ((ifi_nominal>0) && (ifi_estimate < 0.9 * ifi_nominal || ifi_estimate > 1.1 * ifi_nominal)) {
+    if ((ifi_nominal > 0) && (ifi_estimate < 0.9 * ifi_nominal || ifi_estimate > 1.1 * ifi_nominal)) {
         printf("\nWARNING: Mismatch between measured monitor refresh interval and interval reported by operating system.\nThis indicates massive problems with VBL sync.\n");    
         sync_disaster = true;
     }
@@ -598,6 +634,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         ifi_estimate = (ifi_nominal>0) ? ifi_nominal : (1.0/60.0);
         (*windowRecord)->nrIFISamples=1;
         (*windowRecord)->IFIRunningSum=ifi_estimate;
+        (*windowRecord)->VideoRefreshInterval = ifi_estimate;
         printf("\nPTB-WARNING: Unable to measure monitor refresh interval! Using a fake value of %f milliseconds.\n", ifi_estimate*1000);
     }
     
@@ -762,16 +799,22 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
     int                         i, numWindows; 
     
     if(PsychIsOnscreenWindow(windowRecord) || PsychIsOffscreenWindow(windowRecord)){
-		CGLSetCurrentContext(NULL);
+                // Make sure that OpenGL pipeline is done & idle for this window:
+                PsychSetGLContext(windowRecord);
+                glFinish();
+                // Disable rendering context:
+                CGLSetCurrentContext(NULL);
                 // MK: Hack, needed to work around a "screen corruption on shutdown" bug.
                 // When closing stereo display windows, it sometimes leads to a completely
                 // messed up and unusable display.
                 if (PsychIsOnscreenWindow(windowRecord)) {
                     PsychReleaseScreen(windowRecord->screenNumber);
+                    // Destroy onscreen window, detach context:
                     CGLClearDrawable(windowRecord->targetSpecific.contextObject);
                     PsychCaptureScreen(windowRecord->screenNumber);
                 }
                 CGLDestroyPixelFormat(windowRecord->targetSpecific.pixelFormatObject);
+                // Destroy rendering context:
 		CGLDestroyContext(windowRecord->targetSpecific.contextObject);
                 
                 // We need to NULL-out all references to the - now destroyed - OpenGL context:
@@ -784,13 +827,17 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
                 }
                 PsychDestroyVolatileWindowRecordPointerList(windowRecordArray);
                 windowRecord->targetSpecific.contextObject=NULL;
-                
-                if(PsychIsOffscreenWindow(windowRecord)) free((void*)windowRecord->surface);
-	}else if(windowRecord->windowType==kPsychTexture){
+                if(PsychIsOffscreenWindow(windowRecord)) {
+                    free((void*)windowRecord->surface);
+                }
+    }
+    else if(windowRecord->windowType==kPsychTexture) {
 		PsychFreeTextureForWindowRecord(windowRecord);
-    }else
+    }
+    else {
 		PsychErrorExitMsg(PsychError_internal, "Unrecognized window type");
-
+    }
+    
     if (PsychIsOnscreenWindow(windowRecord) && (windowRecord->nr_missed_deadlines>0)) {
         printf("\n\nWARNING: PTB's Screen('Flip') command missed the requested stimulus presentation deadline %i times!\n\n", windowRecord->nr_missed_deadlines);
     }
@@ -858,11 +905,11 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     const boolean vblsyncworkaround=false;  // Setting this to 'true' would enable some checking code. Leave it false by default.
     static unsigned char id=1;
     boolean sync_to_vbl;                    // Should we synchronize the CPU to vertical retrace? 
-    boolean stereo_mode;                    // Are we flipping a stereo-context?
     double tremaining;                      // Remaining time to flipwhen - deadline
     CGDirectDisplayID displayID;            // Handle for our display - needed for beampos-query.
     double time_at_vbl=0;                   // Time (in seconds) when last Flip in sync with start of VBL happened.
-    double currentestimate;                 // Estimated video refresh interval in seconds at current monitor frame rate.
+    double currentflipestimate;             // Estimated video flip interval in seconds at current monitor frame rate.
+    double currentrefreshestimate;          // Estimated video refresh interval in seconds at current monitor frame rate.
     double tshouldflip;                     // Deadline for a successfull flip. If time_at_vbl > tshouldflip --> Deadline miss!
     double slackfactor;                     // Slack factor for deadline miss detection.
     PsychWindowRecordType **windowRecordArray=NULL;
@@ -873,16 +920,26 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     if(windowRecord->windowType!=kPsychDoubleBufferOnscreen)
         PsychErrorExitMsg(PsychError_internal,"Attempt to swap a single window buffer");
     
-    // Retrieve estimate of interframe interval:
+    // Retrieve estimate of interframe flip-interval:
     if (windowRecord->nrIFISamples > 0) {
-        currentestimate=windowRecord->IFIRunningSum / ((double) windowRecord->nrIFISamples);
+        currentflipestimate=windowRecord->IFIRunningSum / ((double) windowRecord->nrIFISamples);
     }
     else {
         // We don't have a valid estimate! This will screw up all timestamping, checking and waiting code!
         // It also indicates that syncing to VBL doesn't work!
-        currentestimate=0;
-        // We abort - This is to unsafe...
-        PsychErrorExitMsg(PsychError_internal,"Flip called, while estimate of monitor refresh is INVALID -> Syncing trouble -> Aborting!");
+        currentflipestimate=0;
+        // We abort - This is too unsafe...
+        PsychErrorExitMsg(PsychError_internal,"Flip called, while estimate of monitor flip interval is INVALID -> Syncing trouble -> Aborting!");
+    }
+    
+    // Retrieve estimate of monitor refresh interval:
+    if (windowRecord->VideoRefreshInterval > 0) {
+        currentrefreshestimate = windowRecord->VideoRefreshInterval;
+    }
+    else {
+        currentrefreshestimate=0;
+        // We abort - This is too unsafe...
+        PsychErrorExitMsg(PsychError_internal,"Flip called, while estimate of monitor refresh interval is INVALID -> Syncing trouble -> Aborting!");
     }
     
     // Setup reasonable slack-factor for deadline miss detector:
@@ -899,11 +956,6 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     PsychGetCGDisplayIDFromScreenNumber(&displayID, windowRecord->screenNumber);
     screenwidth=(int) PsychGetWidthFromRect(windowRecord->rect);
     screenheight=(int) PsychGetHeightFromRect(windowRecord->rect);
-        
-    // Is this window equipped with a native OpenGL stereo rendering context?
-    // If so, then we need to backup/restore or clear both backbuffers (left-eye and right-eye),
-    // instead of only the monoscopic one.
-    stereo_mode=(windowRecord->stereomode == 1) ? true : false;
 
     // Should we sync to the onset of vertical retrace?
     // Note: Flipping the front- and backbuffers is nearly always done in sync with VBL on
@@ -945,29 +997,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     glGetIntegerv(GL_READ_BUFFER, &read_buffer);
     glGetIntegerv(GL_DRAW_BUFFER, &draw_buffer);
     
-    // Do we need to make a backup copy of the backbuffer: Needed in the
-    // dont_clear case if backup hasn't been made already by other routines,
-    // e.g., SCREENDrawingFinished - which would set the backBufferBackupDone - flag.
-    if ((dont_clear==1) && (!windowRecord->backBufferBackupDone)) {
-        // Clearing the backbuffer(s) after flip is not enabled,
-        // we need to make a backup-copy of the backbuffer to AUX-buffers:
-        if (stereo_mode) {
-            glDrawBuffer(GL_AUX0);
-            glReadBuffer(GL_BACK_LEFT);
-            glRasterPos2i(0, screenheight);
-            glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
-            glDrawBuffer(GL_AUX1);
-            glReadBuffer(GL_BACK_RIGHT);
-            glRasterPos2i(0, screenheight);
-            glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
-        }
-        else {
-            glDrawBuffer(GL_AUX0);
-            glReadBuffer(GL_BACK);
-            glRasterPos2i(0, screenheight);
-            glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
-        }
-    }
+    // Perform preflip-operations: Backbuffer backups for the different dontclear-modes
+    // and special compositing operations for specific stereo algorithms...
+    PsychPreFlipOperations(windowRecord, dont_clear);
     
     // Part 1 of workaround- /checkcode for syncing to vertical retrace:
     if (vblsyncworkaround) {
@@ -983,7 +1015,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         
         // Calculate deadline for a successfull flip: If time_at_vbl is later than that,
         // it means that we missed the proper video refresh cycle:
-        tshouldflip = flipwhen + slackfactor * currentestimate;
+        tshouldflip = flipwhen + slackfactor * currentflipestimate;
         
         // Some time left until deadline 'flipwhen'?
         PsychGetAdjustedPrecisionTimerSeconds(&tremaining);
@@ -1017,7 +1049,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         PsychGetAdjustedPrecisionTimerSeconds(&tshouldflip);
         
         // Do we know the exact system time when a VBL happened in the past?
-        if ((windowRecord->time_at_last_vbl > 0) && (currentestimate > 0)) {
+        if ((windowRecord->time_at_last_vbl > 0) && (currentflipestimate > 0)) {
             // Yes! We use this as a base-line time to compute from the current time a virtual deadline,
             // which is exactly in the middle of the current monitor refresh interval, so this deadline
             // is "as good" as a real deadline spec'd by the user via "flipwhen"!
@@ -1026,11 +1058,11 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             // we should have a valid time_at_last_vbl, so this mechanism works.
             // Only on the *very first* invocation of Flip either after PTB-Startup or after a non-blocking
             // Flip, we can't do this because the time_at_last_vbl timestamp isn't available...
-            tshouldflip = windowRecord->time_at_last_vbl + ((0.5 + floor((tshouldflip - windowRecord->time_at_last_vbl) / currentestimate)) * currentestimate);
+            tshouldflip = windowRecord->time_at_last_vbl + ((0.5 + floor((tshouldflip - windowRecord->time_at_last_vbl) / currentflipestimate)) * currentflipestimate);
         }
 
         // Calculate final deadline for the lock on next retrace - case:
-        tshouldflip = tshouldflip + slackfactor * currentestimate;        
+        tshouldflip = tshouldflip + slackfactor * currentflipestimate;        
     }
     
     // Trigger the "Front <-> Back buffer swap (flip) on next vertical retrace":
@@ -1063,7 +1095,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             // We need the pixel as "synchronization token", so the following glFinish() really
             // waits for VBL instead of just "falling through" due to the asynchronous nature of
             // OpenGL:
-            glDrawBuffer(GL_BACK);
+            glDrawBuffer(GL_BACK_LEFT);
             // We draw our single pixel with an alpha-value of zero - so effectively it doesn't
             // change the color buffer - just the z-buffer if z-writes are enabled...
             glColor4f(0,0,0,0);
@@ -1115,8 +1147,8 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             }
             
             // From the elapsed number we calculate the elapsed time since VBL start:
-            double vbl_time_elapsed = vbl_lines_elapsed / vbl_endline * currentestimate; 
-            double onset_time_togo = onset_lines_togo / vbl_endline * currentestimate;
+            double vbl_time_elapsed = vbl_lines_elapsed / vbl_endline * currentrefreshestimate; 
+            double onset_time_togo = onset_lines_togo / vbl_endline * currentrefreshestimate;
             // Compute of stimulus-onset, aka time when retrace is finished:
             *time_at_onset = time_at_vbl + onset_time_togo;
             // Now we correct our time_at_vbl by this correction value:
@@ -1156,47 +1188,8 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     }
     
     // The remaining code will run asynchronously on the GPU again and prepares the back-buffer
-    // for drawing of next stim. Still it can be disabled by passing the value 2 to dont_clear
-    // if one wants to save a few dozen microseconds...    
-    if (dont_clear!=2) {
-        // Reinitialization of back buffer for drawing of next stim requested:
-        if (dont_clear==1) {
-            // We shall not clear the back buffer(s), but restore them to state before "Flip",
-            // so previous stim can be incrementally updated where this makes sense.
-            // Copy back our backup-copy from AUX buffers:
-            
-            if (stereo_mode) {
-                glDrawBuffer(GL_BACK_LEFT);
-                glReadBuffer(GL_AUX0);
-                glRasterPos2i(0, screenheight);
-                glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
-                glDrawBuffer(GL_BACK_RIGHT);
-                glReadBuffer(GL_AUX1);
-                glRasterPos2i(0, screenheight);
-                glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
-            }
-            else {
-                glDrawBuffer(GL_BACK);
-                glReadBuffer(GL_AUX0);
-                glRasterPos2i(0, screenheight);
-                glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
-                
-            }
-        }
-        else {
-            // Clearing the back buffer requested:
-            if (stereo_mode) {
-                glDrawBuffer(GL_BACK_LEFT);
-                glClear(GL_COLOR_BUFFER_BIT);
-                glDrawBuffer(GL_BACK_RIGHT);
-                glClear(GL_COLOR_BUFFER_BIT);
-            }
-            else {
-                glDrawBuffer(GL_BACK);
-                glClear(GL_COLOR_BUFFER_BIT);
-            }
-        }
-    }
+    // for drawing of next stim.
+    PsychPostFlipOperations(windowRecord, dont_clear);
         
     // Part 2 of workaround- /checkcode for syncing to vertical retrace:
     if (vblsyncworkaround) {
@@ -1221,7 +1214,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     glDrawBuffer(draw_buffer);
     
     // Reset flags used for avoiding redundant Pipeline flushes and backbuffer-backups:
-    // This flags are altered and checked by SCREENDrawingFinished as well:
+    // This flags are altered and checked by SCREENDrawingFinished() and PsychPreFlipOperations() as well:
     windowRecord->PipelineFlushDone = false;
     windowRecord->backBufferBackupDone = false;
     
@@ -1332,7 +1325,7 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
 
         // Setup context and back-drawbuffer:
         PsychSetGLContext(windowRecord);
-        glDrawBuffer(GL_BACK);
+        glDrawBuffer(GL_BACK_LEFT);
         
         PsychGetAdjustedPrecisionTimerSeconds(&tnew);
         tstart = tnew;
@@ -1378,17 +1371,24 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
                 // the "standard-timeslicing quantum" of the MacOS-X scheduler... ...Wonderful world of
                 // operating system design and unintended side-effects for poor psychologists... ;-)
                 fallthroughcount = (tdur < 0.004) ? fallthroughcount+1 : 0;
-                
+
                 // We accept the measurement as valid if either no intervalHint is available as reference or
                 // we are in an interval between +/-20% of the hint.
                 // We also check if interval corresponds to a measured refresh between 25 Hz and 250 Hz. Other
                 // values are considered impossible and are therefore rejected...
-                if ((tdur >= 0.004 && tdur <= 0.040) &&
-                    ((intervalHint<=0) || (intervalHint>0 && (tdur > 0.8 * intervalHint) && (tdur < 1.2 * intervalHint)))) {
+                // If we are in OpenGL native stereo display mode, aka temporally interleaved flip-frame stereo,
+                // then we also accept samples that are in a +/-20% rnage around twice the intervalHint. This is,
+                // because in OpenGL stereo mode, ATI hardware doubles the flip-interval: It only flips every 2nd
+                // video refresh, so a doubled flip interval is a legal valid result.
+                if ((tdur >= 0.004 && tdur <= 0.040) && ((intervalHint<=0) || (intervalHint>0 &&
+                    ( ((tdur > 0.8 * intervalHint) && (tdur < 1.2 * intervalHint)) ||
+                      ((windowRecord->stereomode==kPsychOpenGLStereo) && (tdur > 0.8 * 2 * intervalHint) && (tdur < 1.2 * 2 * intervalHint))
+                    )))) {
                     // Valid measurement - Update our estimate:
                     windowRecord->IFIRunningSum = windowRecord->IFIRunningSum + tdur;
                     windowRecord->nrIFISamples = windowRecord->nrIFISamples + 1;
-                    // Update our gliding mean and standard-deviation:
+
+                    // Update our sliding mean and standard-deviation:
                     tavg = tavg + tdur;
                     tavgsq = tavgsq + (tdur * tdur);
                     n=windowRecord->nrIFISamples;
@@ -1403,13 +1403,18 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
         PsychRealtimePriority(false);
         
         // Ok, now we should have a pretty good estimate of IFI.
-        
+        if ( windowRecord->nrIFISamples <= 0 ) {
+            printf("PTB-WARNING: Couldn't even collect one single valid flip interval sample! Sanity range checks failed!\n");
+        }
+
         // Some additional check:
         if (fallthroughcount>=10) {
             // Complete sync failure! Invalidate all measurements:
             windowRecord->nrIFISamples = 0;
             n=0;
             tstddev=1000000.0;
+            windowRecord->VideoRefreshInterval = 0;
+            printf("PTB-WARNING: Couldn't collect valid flip interval samples! Fatal VBL sync failure!\n");
         }
         
         *numSamples = n;
@@ -1421,11 +1426,13 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
         *stddev = 0;
     }
     
-    // Return the current estimate of monitor refresh interval, if any...
+    // Return the current estimate of flip interval & monitor refresh interval, if any...
     if (windowRecord->nrIFISamples > 0) {
         return(windowRecord->IFIRunningSum / windowRecord->nrIFISamples);
     }
     else {
+        // Invalidate refresh on error.
+        windowRecord->VideoRefreshInterval = 0;
         return(0);
     }
 }
@@ -1577,8 +1584,213 @@ void PsychVisualBell(PsychWindowRecordType *windowRecord, double duration, int b
     return;
 }
 
+/*
+ * PsychPreFlipOperations()  -- Prepare windows backbuffer for flip.
+ *
+ * This routine performs all preparatory work to bring the windows backbuffer in its
+ * final state for bufferswap as soon as possible.
+ *
+ * If a special stereo display mode is active, it performs all necessary drawing/setup/
+ * compositing operations to assemble the final stereo display from the content of diverse
+ * stereo backbuffers/AUX buffers/stereo metadata and such.
+ *
+ * If clearmode = Don't clear after flip is selected, the necessary backup copy of the
+ * backbuffers into AUX buffers is made, so backbuffer can be restored to previous state
+ * after Flip.
+ *
+ * This routine is called automatically by PsychFlipWindowBuffers on Screen('Flip') time as
+ * well as by Screen('DrawingFinished') for manually triggered preflip work.
+ *
+ * -> Unifies the code in Flip and DrawingFinished.
+ *
+ */
+void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
+{
+    int screenwidth=(int) PsychGetWidthFromRect(windowRecord->rect);
+    int screenheight=(int) PsychGetHeightFromRect(windowRecord->rect);
+    int stereo_mode=windowRecord->stereomode;
+    GLint auxbuffers;
 
+    // Early reject: If this flag is set, then there's no need for any processing:
+    if (windowRecord->backBufferBackupDone) return;
 
+    // Switch to associated GL-Context of windowRecord:
+    PsychSetGLContext(windowRecord);
 
+    // Reset viewport to full-screen default:
+    glViewport(0, 0, screenwidth, screenheight);
+    
+    // Reset color buffer writemask to "All enabled":
+    glColorMask(TRUE, TRUE, TRUE, TRUE);
 
+    // Query number of available AUX-buffers:
+    glGetIntegerv(GL_AUX_BUFFERS, &auxbuffers);
 
+    // Set transform matrix to well-defined state:
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    //glLoadIdentity();
+    
+    // Check for compressed stereo handling...
+    if (stereo_mode==kPsychCompressedTLBRStereo || stereo_mode==kPsychCompressedTRBLStereo) {
+        // Compressed stereo mode active. Compositing already done?
+        // Backup backbuffer -> AUX buffer: We trigger this via transition to "no buffer":
+        PsychSwitchCompressedStereoDrawBuffer(windowRecord, 2);
+        
+        // Ok, now both AUX buffers contain the final stereo content: Compose them into
+        // back-buffer:
+        PsychComposeCompressedStereoBuffer(windowRecord);
+    }
+    // Non-compressed stereo case: Mono or other stereo alg. Normal treatment applies...
+    // Check if we should do the backbuffer -> AUX buffer backup, because we use
+    // clearmode 1 aka "Don't clear after flip, but retain backbuffer content"
+    else if (clearmode==1 && windowRecord->windowType==kPsychDoubleBufferOnscreen) {
+        // Backup current assignment of read- writebuffers:
+        GLint read_buffer, draw_buffer;
+        glGetIntegerv(GL_READ_BUFFER, &read_buffer);
+        glGetIntegerv(GL_DRAW_BUFFER, &draw_buffer);
+        glDisable(GL_BLEND);
+        
+        // Is this window equipped with a native OpenGL stereo rendering context?
+        // If so, then we need to backup both backbuffers (left-eye and right-eye),
+        // instead of only the monoscopic one.
+        if (stereo_mode==kPsychOpenGLStereo) {
+            if (auxbuffers<2) {
+                PsychErrorExitMsg(PsychError_user, "OpenGL AUX buffers unavailable! dontclear=1 in Screen-Flip doesn't work without them.\n"
+                "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?");
+            }
+            
+            glDrawBuffer(GL_AUX0);
+            glReadBuffer(GL_BACK_LEFT);
+            glRasterPos2i(0, screenheight);
+            glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
+            glDrawBuffer(GL_AUX1);
+            glReadBuffer(GL_BACK_RIGHT);
+            glRasterPos2i(0, screenheight);
+            glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
+        }
+        else {
+            if (auxbuffers<1) {
+                PsychErrorExitMsg(PsychError_user, "OpenGL AUX buffers unavailable! dontclear=1 in Screen-Flip doesn't work without them.\n"
+                                  "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?");
+            }
+            glDrawBuffer(GL_AUX0);
+            glReadBuffer(GL_BACK);
+            glRasterPos2i(0, screenheight);
+            glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
+        }
+
+        glEnable(GL_BLEND);
+        // Restore assignment of read- writebuffers:
+        glReadBuffer(read_buffer);
+        glDrawBuffer(draw_buffer);        
+    }
+
+    // Restore modelview matrix:
+    glPopMatrix();
+    
+    // Tell Flip that backbuffer backup has been done already to avoid redundant backups:
+    windowRecord->backBufferBackupDone = true;
+
+    return;
+}
+
+/*
+ * PsychPostFlipOperations()  -- Prepare windows backbuffer after flip.
+ *
+ * This routine performs all preparatory work to bring the windows backbuffer in its
+ * proper state for drawing the next stimulus after bufferswap has completed.
+ *
+ * If a special stereo display mode is active, it performs all necessary setup/
+ * operations to restore the content of diverse stereo backbuffers/AUX buffers/stereo
+ * metadata and such.
+ *
+ * If clearmode = Don't clear after flip is selected, the backbuffer is restored to previous state
+ * after Flip from the AUX buffer copies.
+ *
+ * This routine is called automatically by PsychFlipWindowBuffers on Screen('Flip') time after
+ * the flip has happened.
+ *
+ * -> Unifies the code in Flip and DrawingFinished.
+ *
+ */
+void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
+{
+    int screenwidth=(int) PsychGetWidthFromRect(windowRecord->rect);
+    int screenheight=(int) PsychGetHeightFromRect(windowRecord->rect);
+    int stereo_mode=windowRecord->stereomode;
+
+    // Switch to associated GL-Context of windowRecord:
+    PsychSetGLContext(windowRecord);
+
+    // Set transform matrix to well-defined state:
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    //glLoadIdentity();
+
+    // Vertical compression stereo active? This needs special treatment...
+    if (stereo_mode==kPsychCompressedTLBRStereo || stereo_mode==kPsychCompressedTRBLStereo) {
+        // Yes. We reset the active stereo buffer to 2 == none selected.
+        windowRecord->stereodrawbuffer=2;
+        // In clearmode==1, aka retain we don't do anything. This way the AUX buffers
+        // restore the preflip state automatically. clearmode=2 is undefined by definition ;-)
+        if (clearmode==0) {
+            // clearmode 0 active. Sterobuffers shall be cleared on flip. We just
+            // reset the dirty-flags of the AUX buffers, so backbuffer gets cleared
+            // on first use after selection of a new stereo draw buffer:
+            windowRecord->auxbuffer_dirty[0]=FALSE;
+            windowRecord->auxbuffer_dirty[1]=FALSE;
+        }
+    }
+    // In other stereo modes and mono mode, we don't need to play backbuffer-AUX buffer games,
+    // just treat'em as in mono case...
+    else if (clearmode!=2) {
+        // Reinitialization of back buffer for drawing of next stim requested:
+        if (clearmode==1) {
+            // We shall not clear the back buffer(s), but restore them to state before "Flip",
+            // so previous stim can be incrementally updated where this makes sense.
+            // Copy back our backup-copy from AUX buffers:
+            glDisable(GL_BLEND);
+            
+            // Need to do it on both backbuffers when OpenGL native stereo is enabled:
+            if (stereo_mode==kPsychOpenGLStereo) {
+                glDrawBuffer(GL_BACK_LEFT);
+                glReadBuffer(GL_AUX0);
+                glRasterPos2i(0, screenheight);
+                glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
+                glDrawBuffer(GL_BACK_RIGHT);
+                glReadBuffer(GL_AUX1);
+                glRasterPos2i(0, screenheight);
+                glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
+            }
+            else {
+                glDrawBuffer(GL_BACK);
+                glReadBuffer(GL_AUX0);
+                glRasterPos2i(0, screenheight);
+                glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
+            }
+
+            glEnable(GL_BLEND);
+        }
+        else {
+            // Clearing (both)  back buffer requested:
+            if (stereo_mode==kPsychOpenGLStereo) {
+                glDrawBuffer(GL_BACK_LEFT);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glDrawBuffer(GL_BACK_RIGHT);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            else {
+                glDrawBuffer(GL_BACK);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+        }
+    }
+
+    // Restore modelview matrix:
+    glPopMatrix();
+    PsychTestForGLErrors();
+    
+    // Done.
+    return;
+}
