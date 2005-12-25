@@ -1,5 +1,11 @@
 // !$*UTF8*$!
 {
+	0E92E860095726FE002687D9 /* Eyelink */ = {
+		activeExec = 0;
+		executables = (
+			838D5ECB095F1C4400D4CF89 /* Eyelink */,
+		);
+	};
 	29B97313FDCFA39411CA2CEA /* Project object */ = {
 		activeBuildConfigurationName = Development;
 		activeBuildStyle = 4A9504CCFFE6A4B311CA0CBA /* Development */;
@@ -35,6 +41,8 @@
 			83C948FC092818C90062DB0A /* TestPriorityMex */,
 			83C948FD092818C90062DB0A /* WaitSecs */,
 			83C948FE092818C90062DB0A /* WaitSecsMex */,
+			838D5ECA095F1C4400D4CF89 /* PsychSound */,
+			838D5ECB095F1C4400D4CF89 /* Eyelink */,
 		);
 		perUserDictionary = {
 			PBXConfiguration.PBXFileTableDataSource3.PBXErrorsWarningsDataSource = {
@@ -95,8 +103,8 @@
 					PBXFileDataSource_Warnings_ColumnID,
 				);
 			};
-			PBXPerProjectTemplateStateSaveDate = 155876913;
-			PBXWorkspaceStateSaveDate = 155876913;
+			PBXPerProjectTemplateStateSaveDate = 157228100;
+			PBXWorkspaceStateSaveDate = 157228100;
 		};
 		perUserProjectItems = {
 			83836B1209439B39007E4DF5 = 83836B1209439B39007E4DF5 /* PBXTextBookmark */;
@@ -471,6 +479,12 @@
 			sepNavSelRange = "{877, 29}";
 			sepNavVisRect = "{{0, 355}, {874, 708}}";
 		};
+	};
+	832CE5F5094CE8C300578C09 /* PsychSound */ = {
+		activeExec = 0;
+		executables = (
+			838D5ECA095F1C4400D4CF89 /* PsychSound */,
+		);
 	};
 	83836B020943858F007E4DF5 /* SCREENPreloadTextures.c */ = {
 		uiCtxt = {
@@ -1358,6 +1372,52 @@
 		rType = 0;
 		vrLen = 4390;
 		vrLoc = 30738;
+	};
+	838D5ECA095F1C4400D4CF89 /* PsychSound */ = {
+		isa = PBXExecutable;
+		activeArgIndex = 2147483647;
+		activeArgIndices = (
+		);
+		argumentStrings = (
+		);
+		autoAttachOnCrash = 1;
+		configStateDict = {
+		};
+		customDataFormattersEnabled = 1;
+		debuggerPlugin = GDBDebugging;
+		disassemblyDisplayState = 0;
+		enableDebugStr = 1;
+		environmentEntries = (
+		);
+		executableSystemSymbolLevel = 0;
+		executableUserSymbolLevel = 0;
+		libgmallocEnabled = 0;
+		name = PsychSound;
+		sourceDirectories = (
+		);
+	};
+	838D5ECB095F1C4400D4CF89 /* Eyelink */ = {
+		isa = PBXExecutable;
+		activeArgIndex = 2147483647;
+		activeArgIndices = (
+		);
+		argumentStrings = (
+		);
+		autoAttachOnCrash = 1;
+		configStateDict = {
+		};
+		customDataFormattersEnabled = 1;
+		debuggerPlugin = GDBDebugging;
+		disassemblyDisplayState = 0;
+		enableDebugStr = 1;
+		environmentEntries = (
+		);
+		executableSystemSymbolLevel = 0;
+		executableUserSymbolLevel = 0;
+		libgmallocEnabled = 0;
+		name = Eyelink;
+		sourceDirectories = (
+		);
 	};
 	83C948E7092818C80062DB0A /* CocoaEventBridge */ = {
 		isa = PBXExecutable;

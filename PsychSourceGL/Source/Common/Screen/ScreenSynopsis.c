@@ -83,7 +83,10 @@ void InitializeSynopsis()
 	synopsis[i++] = "\n%  Draw lines and solids like QuickDraw and DirectX (OS 9 and Windows):";
 	synopsis[i++] = "Screen('SelectStereoDrawBuffer', windowPtr, bufferid);";
 	synopsis[i++] = "Screen('DrawLine', windowPtr [,color], fromH, fromV, toH, toV [,penWidth]);";
-	synopsis[i++] = "Screen('FillRect', windowPtr [,color] [,rect] );";
+        synopsis[i++] = "Screen('DrawArc',windowPtr,[color],[rect],startAngle,arcAngle)";
+        synopsis[i++] = "Screen('FrameArc',windowPtr,[color],[rect],startAngle,arcAngle[,penWidth] [,penHeight] [,penMode])";
+        synopsis[i++] = "Screen('FillArc',windowPtr,[color],[rect],startAngle,arcAngle)";
+        synopsis[i++] = "Screen('FillRect', windowPtr [,color] [,rect] );";
 	synopsis[i++] = "Screen('FrameRect', windowPtr [,color] [,rect] [,penWidth]);";
 	synopsis[i++] = "Screen('FillOval', windowPtr [,color] [,rect]);";
 	synopsis[i++] = "Screen('FrameOval', windowPtr [,color] [,rect] [,penWidth] [,penHeight] [,penMode]);";
@@ -178,7 +181,7 @@ void InitializeSynopsis()
 	
 	// Movie and multimedia handling functions:
 	synopsis[i++] = "\n% Movie and multimedia playback functions:";
-	synopsis[i++] =  "[ moviePtr [count] [duration] [fps] [width] [height]]=Screen('OpenMovie', windowPtr, moviefile);";
+	synopsis[i++] =  "[ moviePtr [duration] [fps] [width] [height] [count]]=Screen('OpenMovie', windowPtr, moviefile);";
 	synopsis[i++] =  "Screen('CloseMovie', moviePtr);";
         synopsis[i++] =  "[ texturePtr [timeindex]]=Screen('GetMovieImage', windowPtr, moviePtr, [waitForImage], [fortimeindex]);";
 	synopsis[i++] =  "[droppedframes] = Screen('PlayMovie', moviePtr, rate, [loop], [soundvolume]);";
