@@ -70,7 +70,10 @@ PsychError SCREENglPoint(void)
 	PsychCopyInDoubleArg(5, FALSE, &dotSize);
 
 	//Set the color and draw the rect.  Note that all GL drawing commands should be sandwiched between	 
-	PsychSetGLContext(windowRecord); 
+	PsychSetGLContext(windowRecord);
+        // Enable this windowRecords framebuffer as current drawingtarget:
+        PsychSetDrawingTarget(windowRecord);
+
 	PsychUpdateAlphaBlendingFactorLazily(windowRecord);
 	PsychSetGLColor(&color, depthValue);
 	glEnable(GL_POINT_SMOOTH);
@@ -80,9 +83,10 @@ PsychError SCREENglPoint(void)
 	glEnd();
 	glDisable(GL_POINT_SMOOTH);
 	glPointSize(1);
-	//PsychGLRect(rect);
-	PsychFlushGL(windowRecord);  //OS X: This does nothing if we are multi buffered, otherwise it glFlushes
-       
+
+        // Mark end of drawing op. This is needed for single buffered drawing:
+        PsychFlushGL(windowRecord);
+
  	//All psychfunctions require this.
 	return(PsychError_none);
 }

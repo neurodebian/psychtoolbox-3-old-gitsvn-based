@@ -43,10 +43,10 @@ PsychError SCREENFillOval(void)
 	
 	PsychColorType			color;
 	PsychRectType			rect;
-	double					numSlices, radius, xScale, yScale, xTranslate, yTranslate, rectY, rectX;
-	PsychWindowRecordType	*windowRecord;
-	int						depthValue, whiteValue, colorPlaneSize, numColorPlanes;
-	boolean					isArgThere;
+	double				numSlices, radius, xScale, yScale, xTranslate, yTranslate, rectY, rectX;
+	PsychWindowRecordType	        *windowRecord;
+	int				depthValue, whiteValue, colorPlaneSize, numColorPlanes;
+	boolean				isArgThere;
 	GLUquadricObj			*diskQuadric;
     
 	//all sub functions should have these two lines
@@ -98,11 +98,14 @@ PsychError SCREENFillOval(void)
 		xScale=rectX/rectY;
 		radius=rectY/2;
 	}
-	numSlices=pi*2*radius;
+	numSlices=3.14159265358979323846 * 2 * radius;
         
         
 	//Set the context & color
 	PsychSetGLContext(windowRecord);
+        // Enable this windowRecords framebuffer as current drawingtarget:
+        PsychSetDrawingTarget(windowRecord);
+
 	PsychUpdateAlphaBlendingFactorLazily(windowRecord);
 	PsychSetGLColor(&color, depthValue);
         
@@ -114,9 +117,10 @@ PsychError SCREENFillOval(void)
 	gluDisk(diskQuadric, 0, radius, numSlices, 1);
 	gluDeleteQuadric(diskQuadric);
 	glPopMatrix();
-	//PsychGLRect(rect);
-	PsychFlushGL(windowRecord);  //OS X: This does nothing if we are multi buffered, otherwise it glFlushes
        
+        // Mark end of drawing op. This is needed for single buffered drawing:
+        PsychFlushGL(windowRecord);
+
  	//All psychfunctions require this.
 	return(PsychError_none);
 }

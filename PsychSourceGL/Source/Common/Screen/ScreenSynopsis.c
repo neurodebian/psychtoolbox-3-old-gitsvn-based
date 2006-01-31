@@ -71,6 +71,10 @@ void InitializeSynopsis()
 
 	synopsis[i++] = "Usage:";
 
+        // OS-9 PTB emulation:
+        synopsis[i++] = "\n% Activate compatibility mode: Try to behave like the old MacOS-9 Psychtoolbox:";
+        synopsis[i++] = "oldEnableFlag=Screen('Preference', 'EmulateOldPTB', [enableFlag]);";
+
 	// Open or close a window or texture:
 	synopsis[i++] = "\n% Open or close a window or texture:";
 	synopsis[i++] = "[windowPtr,rect]=Screen('OpenWindow',windowPtrOrScreenNumber [,color] [,rect] [,pixelSize] [,numberOfBuffers] [,stereomode]);";	
@@ -114,9 +118,10 @@ void InitializeSynopsis()
 	synopsis[i++] = "oldTextBackgroundColor=Screen('TextBackgroundColor', windowPtr [,colorVector]);";
 	
 	// Copy an image, very quickly, between textures and onscreen windows
-	synopsis[i++] = "\n% Copy an image, very quickly, between textures and onscreen windows.";
+	synopsis[i++] = "\n% Copy an image, very quickly, between textures, offscreen windows and onscreen windows.";
         synopsis[i++] = "[resident [texidresident]] = Screen('PreloadTextures', windowPtr [, texids]);";
 	synopsis[i++] = "Screen('DrawTexture', windowPointer, texturePointer [,sourceRect] [,destinationRect] [,rotationAngle] [, filterMode] [, globalAlpha]);";	
+        synopsis[i++] = "Screen('CopyWindow', srcWindowPtr, dstWindowPtr, [srcRect], [dstRect], [copyMode])";
 
 	// Copy an image, slowly, between matrices and windows
 	synopsis[i++] = "\n% Copy an image, slowly, between matrices and windows :";
@@ -127,6 +132,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "\n% Synchronize with the window's screen (on-screen only):";
 	synopsis[i++] = "[VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('Flip', windowPtr [, when] [, dontclear] [, dontsync] [, multiflip]);";
         synopsis[i++] = "[telapsed] = Screen('DrawingFinished', windowPtr [, dontclear] [, sync]);";
+        synopsis[i++] = "framesSinceLastWait = Screen('WaitBlanking', windowPtr [, waitFrames]);";
 
 	// Load color lookup table of the window's screen (on-screen only)
 	synopsis[i++] = "\n% Load color lookup table of the window's screen (on-screen only):";
@@ -163,6 +169,8 @@ void InitializeSynopsis()
 	synopsis[i++] = "Screen('Preference','SkipSyncTests', skipTest);";
 	synopsis[i++] = "Screen('Preference','VisualDebugLevel', level (valid values between 0 and 5));";
         synopsis[i++] = "Screen('Preference', 'ConserveVRAM', mode (valid values between 0 and 3));";
+        synopsis[i++] = "Screen('Preference', 'Enable3DGraphics', [enableFlag]);";
+
 		
 	//synopsis[i++] = "\n% Set clipping region (on- or off- screen):";
 	

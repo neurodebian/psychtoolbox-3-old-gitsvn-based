@@ -124,12 +124,15 @@ PsychError SCREENFrameOval(void)
 		xScale=rectX/rectY;
 		outerRadius=rectY/2;
 	}
-	numSlices=pi*2*outerRadius;
+	numSlices=3.14159265358979323846  * 2 * outerRadius;
 	innerRadius=outerRadius- 2*penSize;
 	innerRadius= innerRadius < 0 ? 0 : innerRadius;         
 	
 	//Set the context & color
 	PsychSetGLContext(windowRecord);
+        // Enable this windowRecords framebuffer as current drawingtarget:
+        PsychSetDrawingTarget(windowRecord);
+
 	PsychUpdateAlphaBlendingFactorLazily(windowRecord);
 	PsychSetGLColor(&color, depthValue);
 	//glEnable(GL_POLYGON_SMOOTH);
@@ -141,9 +144,10 @@ PsychError SCREENFrameOval(void)
 		gluDisk(diskQuadric, innerRadius, outerRadius, numSlices, 1);
 		gluDeleteQuadric(diskQuadric);
 	glPopMatrix();
-	//PsychGLRect(rect);
-	PsychFlushGL(windowRecord);  //OS X: This does nothing if we are multi buffered, otherwise it glFlushes
-       
+
+        // Mark end of drawing op. This is needed for single buffered drawing:
+        PsychFlushGL(windowRecord);
+
  	//All psychfunctions require this.
 	return(PsychError_none);
 }

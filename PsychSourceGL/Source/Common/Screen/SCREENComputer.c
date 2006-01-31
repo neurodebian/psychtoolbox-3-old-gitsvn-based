@@ -130,16 +130,26 @@ struct clockinfo {
 
 */
 
-
-
-
-
 #include "Screen.h"
 
+// If you change the useString then also change the corresponding synopsis string in ScreenSynopsis.c
+
+static char useString[]= "comp=Screen('Computer')";
+static char synopsisString[] =
+        "Get information about the computer.  The result is a struct holding information about your computer. "
+        "Top-level flags in the returned struct are available on all operating systems and identify the operating "
+        "operating system: 'macintosh', 'windows', 'osx'.  All other fields in the returned struct are platform-dependent. \n"
+        "\n"
+        "OS X: results contains a hierarchial struct with major and minor fields names as with BSD's sysctl(3) MIB fields. \n"
+        "\n"
+        "SCREEN 'Computer' not longer supports the  obsolete usage: \n"
+        "[model,owner,system,processor,cache,fpu,hz,busHz,vm,pci,emulating]=SCREEN('Computer')\n";
+static char seeAlsoString[] = "";
+
+
 //special includes for sysctl calls
-
+#if PSYCH_SYSTEM == PSYCH_OSX
 #include <sys/types.h>
-
 #include <sys/sysctl.h>
 
 //special include for SCDynamicStoreCopySpecific* functions
@@ -155,38 +165,6 @@ struct clockinfo {
 //for getting the ethernet MAC address
 
 #include "GetEthernetAddress.h"
-
-
-
-
-
-// If you change the useString then also change the corresponding synopsis string in ScreenSynopsis.c
-
-static char useString[]= "comp=Screen('Computer')";
-
-static char synopsisString[] = 
-
-        "Get information about the computer.  The result is a struct holding information about your computer. "
-
-        "Top-level flags in the returned struct are available on all operating systems and identify the operating "
-
-        "operating system: 'macintosh', 'windows', 'osx'.  All other fields in the returned struct are platform-dependent. \n"
-
-        "\n"
-
-        "OS X: results contains a hierarchial struct with major and minor fields names as with BSD's sysctl(3) MIB fields. \n"
-
-        "\n"
-
-        "SCREEN 'Computer' not longer supports the  obsolete usage: \n"
-
-        "[model,owner,system,processor,cache,fpu,hz,busHz,vm,pci,emulating]=SCREEN('Computer')\n";
-
-static char seeAlsoString[] = "";
-
-	 
-
-
 
 static void ReportSysctlError(int errorValue)
 
@@ -233,19 +211,12 @@ static void ReportSysctlError(int errorValue)
 
 
 PsychError SCREENComputer(void) 
-
 {
-
     const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "kern", "hw", "processUserLongName", 
-
 	                                     "processUserShortName", "consoleUserName", "machineName", "localHostName", "location", "MACAddress", "system" };
-
     const char *kernStructFieldNames[]={"ostype", "osrelease", "osrevision", "version","hostname"};
-
     const char *hwStructFieldNames[]={"machine", "model", "ncpu", "physmem", "usermem", "busfreq", "cpufreq"};
-
     int numMajorStructDimensions=1, numKernStructDimensions=1, numHwStructDimensions=1;
-
     int numMajorStructFieldNames=14, numKernStructFieldNames=5, numHwStructFieldNames=7;
 
     PsychGenericScriptType	*kernStruct, *hwStruct, *majorStruct;
@@ -281,36 +252,18 @@ PsychError SCREENComputer(void)
     
 
     //all subfunctions should have these two lines
-
     PsychPushHelp(useString, synopsisString, seeAlsoString);
-
     if(PsychIsGiveHelp()){PsychGiveHelp();return(PsychError_none);};
 
-
-
     PsychErrorExit(PsychCapNumOutputArgs(1));
-
     PsychErrorExit(PsychCapNumInputArgs(0));
 
-    
-
-
-
-    
-
     //fill the major struct 
-
     PsychAllocOutStructArray(1, FALSE, numMajorStructDimensions, numMajorStructFieldNames, majorStructFieldNames, &majorStruct);
-
     PsychSetStructArrayDoubleElement("macintosh", 0, 0, majorStruct);
-
     PsychSetStructArrayDoubleElement("windows", 0, 0, majorStruct);
-
     PsychSetStructArrayDoubleElement("linux", 0, 0, majorStruct);
-
     PsychSetStructArrayDoubleElement("osx", 0, 1, majorStruct);
-
-    
 
     //fill the kern struct and implant it within the major struct
 
@@ -685,10 +638,36 @@ PsychError SCREENComputer(void)
 }
 
 
+#else
 
+// M$-Windows implementation of Screen('Computer'): This is very rudimentary for now.
+// We only report the operating sytem type (="Windows") but don't report any more useful
+// information.
+PsychError SCREENComputer(void)
+{
+    const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "kern", "hw", "processUserLongName", 
+        "processUserShortName", "consoleUserName", "machineName", "localHostName", "location", "MACAddress", "system" };
+    const char *kernStructFieldNames[]={"ostype", "osrelease", "osrevision", "version","hostname"};
+    const char *hwStructFieldNames[]={"machine", "model", "ncpu", "physmem", "usermem", "busfreq", "cpufreq"};
+    int numMajorStructDimensions=1, numKernStructDimensions=1, numHwStructDimensions=1;
+    int numMajorStructFieldNames=4, numKernStructFieldNames=5, numHwStructFieldNames=7;
+    
+    PsychGenericScriptType	*kernStruct, *hwStruct, *majorStruct;
+    //all subfunctions should have these two lines
+    PsychPushHelp(useString, synopsisString, seeAlsoString);
+    if(PsychIsGiveHelp()){PsychGiveHelp();return(PsychError_none);};
+    
+    PsychErrorExit(PsychCapNumOutputArgs(1));
+    PsychErrorExit(PsychCapNumInputArgs(0));
+    
+    //fill the major struct 
+    PsychAllocOutStructArray(1, FALSE, numMajorStructDimensions, numMajorStructFieldNames, majorStructFieldNames, &majorStruct);
+    PsychSetStructArrayDoubleElement("macintosh", 0, 0, majorStruct);
+    PsychSetStructArrayDoubleElement("windows", 0, 1, majorStruct);
+    PsychSetStructArrayDoubleElement("linux", 0, 0, majorStruct);
+    PsychSetStructArrayDoubleElement("osx", 0, 0, majorStruct);
+    
+    return(PsychError_none);
+}
 
-
-
-
-
-
+#endif

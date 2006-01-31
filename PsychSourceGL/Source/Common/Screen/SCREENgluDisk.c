@@ -72,6 +72,9 @@ PsychError SCREENgluDisk(void)
 
 	//Set the color and draw the rect.  Note that all GL drawing commands should be sandwiched between 
 	PsychSetGLContext(windowRecord);
+        // Enable this windowRecords framebuffer as current drawingtarget:
+        PsychSetDrawingTarget(windowRecord);
+
 	PsychUpdateAlphaBlendingFactorLazily(windowRecord);
 	PsychSetGLColor(&color, depthValue);
 	glPushMatrix();
@@ -80,9 +83,10 @@ PsychError SCREENgluDisk(void)
 	gluDisk(diskQuadric, 0, dotSize, 30, 30);
 	gluDeleteQuadric(diskQuadric);
 	glPopMatrix();
-	//PsychGLRect(rect);
-	PsychFlushGL(windowRecord);  //OS X: This does nothing if we are multi buffered, otherwise it glFlushes
-       
+
+        // Mark end of drawing op. This is needed for single buffered drawing:
+        PsychFlushGL(windowRecord);
+
  	//All psychfunctions require this.
 	return(PsychError_none);
 }

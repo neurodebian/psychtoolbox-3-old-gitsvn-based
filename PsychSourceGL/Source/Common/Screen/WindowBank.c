@@ -106,7 +106,7 @@ PsychError InitWindowBank(void)
         PSYCH_ALLOC_WINDOW_RECORDS=PSYCH_ALLOC_WINDOW_RECORDS_INC; // Initial length of array allocated to hold window pointers.	
     
         // MK: Allocate an initial windowbank of default size PSYCH_ALLOC_WINDOW_RECORDS:
-        windowRecordArrayWINBANK=valloc(PSYCH_ALLOC_WINDOW_RECORDS * sizeof(PsychWindowRecordType*));
+        windowRecordArrayWINBANK=malloc(PSYCH_ALLOC_WINDOW_RECORDS * sizeof(PsychWindowRecordType*));
 	if (windowRecordArrayWINBANK==NULL) {
             // Out of memory!
             return(PsychError_outofMemory);
@@ -242,6 +242,9 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 	
 	//Initialize the fields used to store alpha blending factors as set by glBlendFunc()
 	PsychInitWindowRecordAlphaBlendingFactors(*winRec);
+        
+        // Initialize the fields used for texture mapping:
+        PsychInitWindowRecordTextureFields(*winRec);
 	
 	//Initialize line stipple values
 	(*winRec)->stipplePattern=0xAAAA;		//alternating pixels stipple pattern
