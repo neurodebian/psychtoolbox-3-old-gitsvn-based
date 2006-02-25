@@ -473,7 +473,9 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     }
     if (PsychPrefStateGet_3DGfx()) printf("PTB-INFO: Support for OpenGL 3D graphics rendering enabled: 24 bit depth-buffer and 8 bit stencil buffer attached.\n");
 
-    
+    // Autodetect and setup type of texture extension to use for high-perf texture mapping:
+    PsychDetectTextureTarget(*windowRecord);
+
     // Reliable estimate? These are our minimum requirements...
     if (numSamples<50 || stddev>0.001) {
         sync_disaster = true;
@@ -630,7 +632,7 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
     PsychWindowRecordType	**windowRecordArray;
     int                         i, numWindows; 
     
-    if(PsychIsOnscreenWindow(windowRecord) || PsychIsOffscreenWindow(windowRecord)){
+    if(PsychIsOnscreenWindow(windowRecord)){
                 // Free possible shadow textures:
                 PsychFreeTextureForWindowRecord(windowRecord);        
                 
@@ -641,10 +643,8 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
                 // Disable rendering context:
                 PsychOSUnsetGLContext(windowRecord);
 
-                if (PsychIsOnscreenWindow(windowRecord)) {
 		  // Call OS specific low-level window close routine:
 		  PsychOSCloseWindow(windowRecord);
-                }
 
                 // We need to NULL-out all references to the - now destroyed - OpenGL context:
                 PsychCreateVolatileWindowRecordPointerList(&numWindows, &windowRecordArray);
@@ -656,9 +656,6 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
                 }
                 PsychDestroyVolatileWindowRecordPointerList(windowRecordArray);
                 windowRecord->targetSpecific.contextObject=NULL;
-                if(PsychIsOffscreenWindow(windowRecord)) {
-                    free((void*)windowRecord->surface);
-                }
     }
     else if(windowRecord->windowType==kPsychTexture) {
 		PsychFreeTextureForWindowRecord(windowRecord);
