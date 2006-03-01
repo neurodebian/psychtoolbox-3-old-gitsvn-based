@@ -192,7 +192,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     //TO DO: set the clear color to be the color passed as the window background color.
 
     if (true) {
-      printf("\n\nPTB-INFO: This is the current BETA release of Screen for PTB 1.0.7\n");
+      printf("\n\nPTB-INFO: This is the Screen-Prototype for PTB 1.0.7, intended as update for Psychtoolbox 1.0.6\n");
       printf("PTB-INFO: Implementation details may change in the final release for Psychtoolbox 1.0.7 - Use at your own Risk!\n\n");
     }
 
@@ -643,8 +643,8 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
                 // Disable rendering context:
                 PsychOSUnsetGLContext(windowRecord);
 
-		  // Call OS specific low-level window close routine:
-		  PsychOSCloseWindow(windowRecord);
+		// Call OS specific low-level window close routine:
+		PsychOSCloseWindow(windowRecord);
 
                 // We need to NULL-out all references to the - now destroyed - OpenGL context:
                 PsychCreateVolatileWindowRecordPointerList(&numWindows, &windowRecordArray);
