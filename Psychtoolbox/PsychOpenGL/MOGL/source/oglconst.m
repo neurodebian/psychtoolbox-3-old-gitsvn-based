@@ -9,16 +9,32 @@ function oglconst(glheaderpath, aglheaderpath)
 % 23-Jan-2005 -- constants saved in both struct and OpenGL style (RFM)
 % 05-Mar-2006 -- ability to spec. system header file path added (MK)
 
+if IsWin
+    error('Parsing of GL header files on Windows not yet supported.');
+end;
+
 % Alternate path to header files specified?
 if nargin < 1
-    glheaderpath = '/System/Library/Frameworks/OpenGL.framework/Headers';
+    if IsOSX
+        glheaderpath = '/System/Library/Frameworks/OpenGL.framework/Headers';
+    end;
+
+    if IsLinux
+        glheaderpath = '/usr/include/GL';
+    end;
 end;
 
 if nargin < 2
-    aglheaderpath = '/System/Library/Frameworks/AGL.framework/Headers';
+    if IsOSX
+        aglheaderpath = '/System/Library/Frameworks/AGL.framework/Headers';
+    end;
 end;
 
-fprintf('Parsing OpenGL, GLU and AGL header files in %s and %s ...\n',glheaderpath, aglheaderpath);
+if IsOSX
+    fprintf('Parsing OpenGL, GLU and AGL header files in %s and %s ...\n',glheaderpath, aglheaderpath);
+else
+    fprintf('Parsing OpenGL and GLU header files in %s ...\n',glheaderpath);
+end;
 
 % get constants from the OpenGL header files.  the 'parsefile' routine
 % defines the constants in the calling workspace, as variables with the
@@ -30,15 +46,26 @@ fprintf('Parsing OpenGL, GLU and AGL header files in %s and %s ...\n',glheaderpa
 % hundreds of global variables.  later on, we can load whichever style
 % we want from the file where they're all saved.
 GL= parsefile(sprintf('%s/gl.h', glheaderpath), 'GL_');
+GL= parsefile(sprintf('%s/glext.h', glheaderpath), 'GL_', GL);
 GLU=parsefile(sprintf('%s/glu.h', glheaderpath),'GLU_');
-AGL=parsefile(sprintf('%s/agl.h', aglheaderpath),'AGL_');
+if IsOSX
+    AGL=parsefile(sprintf('%s/agl.h', aglheaderpath),'AGL_');
+end;
+
+fname='oglconst.mat';
 
 % save OpenGL-style constants
-fname='oglconst.mat';
-save(fname,'GL_*','GLU_*','AGL_*');
+if IsOSX
+    save(fname,'GL_*','GLU_*','AGL_*', '-V6');
+    % save structure-style constants to same file
+    save(fname,'GL','GLU','AGL','-append', '-V6');
+end;
 
-% save structure-style constants to same file
-save(fname,'GL','GLU','AGL','-append');
+if IsLinux
+    save(fname,'GL_*','GLU_*','-V6');
+    % save structure-style constants to same file
+    save(fname,'GL','GLU','-append','-V6');
+end;
 
 % put a copy into the 'core' directory
 copyfile(fname,'../core');
@@ -47,10 +74,14 @@ return
 
 
 % function to parse header files
-function S = parsefile( fname, prefix )
+function S = parsefile( fname, prefix, origin )
 
 % initialize return argument
-S=[];
+if nargin < 3
+    S=[];
+else
+    S=origin;
+end;
 
 % check size of prefix (GL, GLU, or AGL)
 nprefix=length(prefix);
