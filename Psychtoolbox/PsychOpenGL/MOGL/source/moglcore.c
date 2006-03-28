@@ -58,6 +58,24 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     // more complicated on M$-Windows...
 	 if (strcmp(cmd, "PREINIT")==0) return;
 
+    #ifdef BUILD_GLM
+    // GLM module is included and supported in moglcore: This is necessary if
+    // one wants to use MOGL independent from Psychtoolbox. GLM is only supported
+    // on MacOS-X, not on Linux or Windows...
+    
+    // We execute glm-commands without performing GLEW first-time initialization,
+    // because to execute glewinit() we need a valid OpenGL context. This context is
+    // either created by Psychtoolbox or by glm. Therefore glm-commands must be able
+    // to execute before glewinit() happened.
+    
+    // look for command in glm command map
+    if( (i=binsearch(glm_map,glm_map_count,cmd))>=0 ) {
+        glm_map[i].cmdfn(nlhs,plhs,nrhs-1,prhs+1);
+        return;
+    }
+
+    #endif
+
     // Is this the first invocation of moglcore?
     if (firsttime) {
         // Yes. Initialize GLEW, the GL Extension Wrangler Library. This will
@@ -75,16 +93,6 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         fflush(NULL);
         firsttime = 0;
     }   
-
-    #ifdef BUILD_GLM
-
-    // look for command in glm command map
-    if( (i=binsearch(glm_map,glm_map_count,cmd))>=0 ) {
-        glm_map[i].cmdfn(nlhs,plhs,nrhs-1,prhs+1);
-        return;
-    }
-
-    #endif
 
     // look for command in manual command map
     if( (i=binsearch(gl_manual_map,gl_manual_map_count,cmd))>=0 ) {
@@ -124,3 +132,23 @@ int binsearch(cmdhandler *map, int mapsize, char *str) {
 void mogl_usageerr() {
     mexErrMsgTxt("invalid moglcore command");
 }
+
+// Error handler for unsupported core OpenGL functions or extensions.
+// This handler gets called by the subroutines in gl_auto.c and gl_manual.c
+// whenever a gl function is not bound == not supported by current OS/driver/gfx-hardware.
+// As we use the GLEW library to dynamically detect and bind all OpenGL functions, we can
+// easily check if a function is supported, e.g.,
+// if (glCreateShader == NULL) mogl_glunsupported("glCreateShader");
+//
+void mogl_glunsupported(const char* fname)
+{
+    char errtxt[1000];
+    sprintf(errtxt, "MOGL-Error: Your Matlab code tried to call the OpenGL function %s(), which is not supported\n"
+                    "MOGL-Error: by your combination of graphics hardware + graphics device driver.\n"
+                    "MOGL-Error: You'll have to download+install the latest gfx-drivers for your gfx-hardware\n"
+                    "MOGL-Error: or upgrade your gfx-hardware with more recent one to use this function. Aborted.\n\n", fname);
+
+    // Exit to Matlab prompt with error message:
+    mexErrMsgTxt(errtxt);
+}
+

@@ -49,16 +49,28 @@ void glu_getstring( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
 
 }
 
+void gl_samplepass( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] ) {
+    // MK: For some reason, glSamplePass() seems to be only available on MacOS-X.
+    // GLEW doesn't know this function and i couldn't find any definition of it
+    // anywhere on the internet. We handle this manually by only exposing it on
+    // MacOS-X:
+    #ifdef MACOSX
+	    glSamplePass((GLenum)mxGetScalar(prhs[0]));
+    #else
+        mogl_glunsupported("glSamplePass");
+    #endif
+}
+
 // command map:  moglcore string commands and functions that handle them
 // *** it's important that this list be kept in alphabetical order, 
 //     and that gl_manual_map_count be updated
 //     for each new entry ***
-int gl_manual_map_count=6;
+int gl_manual_map_count=7;
 cmdhandler gl_manual_map[] = {
 { "glGetBufferPointerv",            gl_getbufferpointerv                },
 { "glGetPointerv",                  gl_getpointerv                      },
 { "glGetString",                    gl_getstring                        },
 { "glGetVertexAttribPointerv",      gl_getvertexattribpointerv          },
+{ "glSamplePass",                   gl_samplepass                       },
 { "gluErrorString",                 glu_errorstring                     },
 { "gluGetString",                   glu_getstring                       }};
-
