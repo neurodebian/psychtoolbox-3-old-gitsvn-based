@@ -4,7 +4,10 @@
 	PLATFORMS:	
 	
 		This is the OS independent version (for now: Should work on OS-X and Windows)  
-				
+		A GNU/Linux specific version is stored in the /Linux/ folder. It has the
+		same API - and therefore the same header file, but a pretty different
+		implementation.
+
 	AUTHORS:
 	
 		Mario Kleiner           mk              mario.kleiner@tuebingen.mpg.de
@@ -22,7 +25,7 @@
 
 #include "Screen.h"
 
-// Linux isn't yet supported:
+// Linux support is implemented in the ../Linux/Screen/... subfolder of Psychtoolbox.
 #if PSYCH_SYSTEM != PSYCH_LINUX
 
 #if PSYCH_SYSTEM == PSYCH_OSX
@@ -181,8 +184,13 @@ void PsychVideoCaptureInit(void)
  *      deviceIndex = Index of the grabber device. (Currently ignored)
  *      capturehandle = handle to the new capture object.
  *      capturerectangle = If non-NULL a ptr to a PsychRectangle which contains the ROI for capture.
+ *      The following arguments are currently ignored on Windows and OS-X:
+ *      reqdepth = Number of layers for captured output textures. (0=Don't care, 1=LUMINANCE8, 2=LUMINANCE8_ALPHA8, 3=RGB8, 4=RGBA8)
+ *      num_dmabuffers = Number of buffers in the ringbuffer queue (e.g., DMA buffers) - This is OS specific. Zero = Don't care.
+ *      allow_lowperf_fallback = If set to 1 then PTB can use a slower, low-performance fallback path to get nasty devices working.
  */
-bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle)
+bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle,
+				 int reqdepth, int num_dmabuffers, int allow_lowperf_fallback))
 {
     int i, slotid;
     OSErr error;
@@ -712,9 +720,10 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
  *
  *  capturehandle = Grabber to start-/stop.
  *  playbackrate = zero == Stop capture, non-zero == Capture
+ *  dropframes = Currently ignored.
  *  Returns Number of dropped frames during capture.
  */
-int PsychVideoCaptureRate(int capturehandle, double capturerate, int loop)
+int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
 {
     int dropped = 0;
     OSErr error = noErr;
@@ -729,8 +738,10 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int loop)
         PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided. No movie associated with this handle !!!");
     }
     
-    if (capturerate != 0) {
+    if (capturerate > 0) {
         // Start capture:
+        if (vidcapRecordBANK[capturehandle].grabber_active) PsychErrorExitMsg(PsychError_user, "You tried to start video capture, but capture is already started!");
+
         error = SGStartRecord(vidcapRecordBANK[capturehandle].seqGrab);
         vidcapRecordBANK[capturehandle].last_pts = -1.0;
         vidcapRecordBANK[capturehandle].nr_droppedframes = 0;
@@ -794,37 +805,5 @@ void PsychExitVideoCapture(void)
     firsttime = TRUE;
     return;
 }
-
-#endif
-// End of non-Linux branch
-
-#if PSYCH_SYSTEM == PSYCH_LINUX
-// Linux branch - This is just dummy implementations to make the compiler & linker happy.
-// In the future we may support the Video4Linux API...
-
-void PsychVideoCaptureInit(void) { return; }
-
-bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle)
-{
-  // No no...
-  PsychErrorExitMsg(PsychError_unimplemented, "ERROR: Video capture support isn't yet implemented on GNU/Linux.");
-  return(FALSE);
-}
-
-void PsychCloseVideoCaptureDevice(int capturehandle) { return; }
-
-void PsychDeleteAllCaptureDevices(void) { return; }
-
-int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, int checkForImage, double timeindex,
-			       PsychWindowRecordType *out_texture, double *presentation_timestamp, double* summed_intensity)
-{
-  // No no...
-  PsychErrorExitMsg(PsychError_unimplemented, "ERROR: Video capture support isn't yet implemented on GNU/Linux.");
-  return(-1);
-}
-
-int PsychVideoCaptureRate(int capturehandle, double capturerate, int loop) { return(0); }
-
-void PsychExitVideoCapture(void) { return; }
 
 #endif
