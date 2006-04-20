@@ -95,20 +95,13 @@ PsychError SCREENOpenWindow(void)
 {
 
     int					screenNumber, numWindowBuffers, stereomode;
-
     PsychRectType 			rect;
-
     PsychColorType			color;
-
     PsychColorModeType  		mode; 
-
     boolean				isArgThere, settingsMade, didWindowOpen;
-
     PsychScreenSettingsType		screenSettings;
-
     PsychWindowRecordType		*windowRecord;
-
-    
+    double dVals[4];
 
     PsychDepthType		specifiedDepth, possibleDepths, currentDepth, useDepth;
 
@@ -289,35 +282,29 @@ PsychError SCREENOpenWindow(void)
 
     }
 
-    //if (PSYCH_DEBUG == PSYCH_ON) printf("Entering PsychCreateTextureForWindow\n");
+    // Sufficient display depth for full alpha-blending ans such?
+    if (PsychGetScreenDepthValue(screenNumber) < 24) {
+        // Nope. Output a little warning.
+        printf("PTB-WARNING: Your display screen %i is not running at 24 bit color depth or higher.\n", screenNumber);
+        printf("PTB-WARNING: This could cause failure to work correctly or visual artifacts in stimuli\n");
+        printf("PTB-WARNING: that involve Alpha-Blending. Please try to switch your display to 'True Color' (Windows)\n");
+        printf("PTB-WARNING: our 'Millions of Colors' (MacOS-X) to get rid of this warning and the visual artifacts.\n");
+        fflush(NULL);
+    }
     
+    // Set the clear color and perform a backbuffer-clear:
+    PsychSetGLContext(windowRecord);
+    PsychConvertColorAndDepthToDoubleVector(&color, PsychGetValueFromDepthStruct(0, &useDepth), dVals);
+    glClearColor(dVals[0], dVals[1], dVals[2], dVals[3]);
+    glClear(GL_COLOR_BUFFER_BIT);
 
-    //create the shadow texture for this window
+    // Mark end of drawing op. This is needed for single buffered drawing:
+    PsychFlushGL(windowRecord);
 
-    // MK: Not needed anymore! PsychCreateTextureForWindow(windowRecord);
-
-    
-
-    //set the alpha blending rule   
-
-    PsychSetGLContext(windowRecord); 
-
-    // glEnable(GL_BLEND);
-
-    // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    //			sFactor		   dFactor
-
-
-
-    //if (PSYCH_DEBUG == PSYCH_ON) printf("Finalizing SCREENOpen\n");
-    
     PsychTestForGLErrors();
 
     //Return the window index and the rect argument.
-
     PsychCopyOutDoubleArg(1, FALSE, windowRecord->windowIndex);
-
     PsychCopyOutRectArg(2, FALSE, windowRecord->rect);
 
     return(PsychError_none);    
