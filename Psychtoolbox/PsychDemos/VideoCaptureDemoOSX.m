@@ -10,20 +10,26 @@ try
     if fullscreen<1
         win=Screen('OpenWindow', screen, 0, [0 0 800 600]);
     else
-        win=Screen('OpenWindow', screen);
+        win=Screen('OpenWindow', screen, 0);
     end;
-    
-    Screen('FillRect', win, 0);
+
+    % Initial flip to a blank screen:
     Screen('Flip',win);
+
+    % Set text size for info text. 24 pixels is also good for Linux.
+    Screen('TextSize', win, 24);
     
-    grabber = Screen('OpenVideoCapture', win, 0, [0 0 640 480]);
-    brightness = Screen('SetVideoCaptureParameter', grabber, 'Brightness')
-    exposure = Screen('SetVideoCaptureParameter', grabber, 'Exposure')
+    grabber = Screen('OpenVideoCapture', win, 0, [0 0 640 480], 3);
+    brightness = Screen('SetVideoCaptureParameter', grabber, 'Brightness',383)
+    exposure = Screen('SetVideoCaptureParameter', grabber, 'Exposure',130)
     gain = Screen('SetVideoCaptureParameter', grabber, 'Gain')
-    shutter = Screen('SetVideoCaptureParameter', grabber, 'Shutter')
+    gamma = Screen('SetVideoCaptureParameter', grabber, 'Gamma')
+    shutter = Screen('SetVideoCaptureParameter', grabber, 'Shutter',7)
     Screen('SetVideoCaptureParameter', grabber, 'PrintParameters')
-    
-    Screen('StartVideoCapture', grabber, 100, 1);
+    vendor = Screen('SetVideoCaptureParameter', grabber, 'GetVendorname')
+    model  = Screen('SetVideoCaptureParameter', grabber, 'GetModelname')
+
+    Screen('StartVideoCapture', grabber, 60, 1);
 
     oldpts = 0;
     count = 0;
@@ -33,8 +39,8 @@ try
             break;
         end;
         
-        [tex pts]=Screen('GetCapturedImage', win, grabber, 1);
-        % fprintf('tex = %i  pts = %f\n', tex, pts);
+        [tex pts nrdropped]=Screen('GetCapturedImage', win, grabber, 1);
+        % fprintf('tex = %i  pts = %f nrdropped = %i\n', tex, pts, nrdropped);
         
         if (tex>0)
             % Setup mirror transformation for horizontal flipping:
@@ -47,7 +53,7 @@ try
             Screen('glPushMatrix', win);
             % Translate origin into the geometric center of text:
             Screen('glTranslate', win, xc, 0, 0);
-            % Apple a scaling transform which flips the diretion of x-Axis,
+            % Apple a scaling transform which flips the direction of x-Axis,
             % thereby mirroring the drawn text horizontally:
             Screen('glScale', win, -1, 1, 1);
             % We need to undo the translations...
@@ -60,12 +66,12 @@ try
             Screen('glPopMatrix', win);
 
             % Print pts:
-            Screen('DrawText', win, num2str(pts - t), 0, 0, 255);
-            if count>0
+            Screen('DrawText', win, sprintf('%.4f', pts - t), 0, 0, 255);
+             if count>0
                 % Compute delta:
                 delta = (pts - oldpts) * 1000;
                 oldpts = pts;
-                Screen('DrawText', win, num2str(delta), 0, 20, 255);
+                Screen('DrawText', win, sprintf('%.4f', delta), 0, 20, 255);
             end;
             
             % Show it.

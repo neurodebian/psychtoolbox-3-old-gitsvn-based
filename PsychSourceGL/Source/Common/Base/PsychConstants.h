@@ -28,9 +28,29 @@
 #ifndef PSYCH_IS_INCLUDED_PsychConstants
 #define PSYCH_IS_INCLUDED_PsychConstants
 
+#if !defined(__cplusplus)
+#ifdef PTBOCTAVE
+typedef unsigned char bool;
+#endif
+#endif
+
 
 //bring in the standard c and system headers 
 #include "PsychIncludes.h"
+
+#if PSYCH_LANGUAGE == PSYCH_OCTAVE
+
+// Definitions for constants:
+#define mxUINT8_CLASS 0
+#define mxDOUBLE_CLASS 1
+#define mxLOGICAL_CLASS 2
+
+#endif
+
+#if PSYCH_LANGUAGE == PSYCH_MATLAB | PSYCH_LANGUAGE == PSYCH_OCTAVE
+	#undef printf
+	#define printf mexPrintf
+#endif
 
 //platform dependent macro defines 
 #if PSYCH_SYSTEM == PSYCH_WINDOWS
@@ -45,6 +65,14 @@
         #define FALSE   0
         #define TRUE    1
 #endif 
+
+#ifndef false
+#define false FALSE
+#endif
+
+#ifndef true
+#define true TRUE
+#endif
 
 #ifndef GL_TABLE_TOO_LARGE
 #define GL_TABLE_TOO_LARGE   0x8031  
@@ -84,13 +112,17 @@
         typedef boolean                         mxLogical;
         typedef boolean                         Boolean;
         typedef char                            Str255[255];
+        #if PSYCH_LANGUAGE == PSYCH_MATLAB
         // Matlab 5 doesn't know about mxLOGICAL_CLASS :(
         #ifndef mxLOGICAL_CLASS
         #define mxLOGICAL_CLASS mxUINT8_CLASS
         #endif
         #define mxGetLogicals(p) ((PsychNativeBooleanType*)mxGetData((p)))
         mxArray* mxCreateNativeBooleanMatrix3D(int m, int n, int p);
+
         #define mxCreateLogicalMatrix(m,n) mxCreateNativeBooleanMatrix3D((m), (n), 1)
+
+        #endif
 
         // We don't have Quicktime for Linux, so we provide a little hack to
         // make the compiler happy:
@@ -119,7 +151,10 @@
         #define mxLOGICAL_CLASS mxUINT8_CLASS
         #define mxGetLogicals(p) ((PsychNativeBooleanType*)mxGetData((p)))
         mxArray* mxCreateNativeBooleanMatrix3D(int m, int n, int p);
+
+        #if PSYCH_LANGUAGE == PSYCH_MATLAB
         #define mxCreateLogicalMatrix(m,n) mxCreateNativeBooleanMatrix3D((m), (n), 1)
+        #endif
 
         // Hack to make compiler happy until QT7 Windows supports this:
         typedef void*                           CVOpenGLTextureRef;
@@ -137,18 +172,19 @@
         typedef GLubyte				ubyte;		
 
 #elif PSYCH_SYSTEM == PSYCH_OSX
+        #if PSYCH_LANGUAGE == PSYCH_OCTAVE
+        typedef Boolean                         mxLogical;
+        #endif
+
         typedef Boolean				boolean;
         typedef GLubyte				psych_uint8;
         typedef GLubyte				ubyte;
         typedef UInt32				psych_uint32;
-        typedef unsigned long long		psych_uint64;		
+        typedef unsigned long long		psych_uint64;
 #endif
  
 
-#if PSYCH_LANGUAGE == PSYCH_MATLAB
-	#undef printf
-//	#define printf mexPrintfPtr
-	#define printf mexPrintf
+#if PSYCH_LANGUAGE == PSYCH_MATLAB | PSYCH_LANGUAGE == PSYCH_OCTAVE
 	typedef const mxArray CONSTmxArray;
         #define PsychGenericScriptType mxArray
         typedef mxLogical PsychNativeBooleanType; 

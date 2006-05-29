@@ -38,14 +38,20 @@
 
 	
 // If you change useString then also change the corresponding synopsis string in ScreenSynopsis.c
-static char useString[] = "textureIndex=Screen('MakeTexture', WindowIndex, imageMatrix);";
-//                                                            1                          2
+static char useString[] = "textureIndex=Screen('MakeTexture', WindowIndex, imageMatrix [, optimizeForDrawAngle=0] [, enforcepot=0]);";
+//                                                            1            2              3                          4
 static char synopsisString[] = 
-	"Convert the 2D or 3D matrix imageMatrix into an OpenGL texture and return an index which may be passed to 'DrawTexture' to specify the texture. "
+	"Convert the 2D or 3D matrix 'imageMatrix' into an OpenGL texture and return an index which may be passed to 'DrawTexture' to specify the texture. "
 	"In the the OS X Psychtoolbox textures replace offscreen windows for fast drawing of images during animation."
         "The imageMatrix argument may consist of one monochrome plane (Luminance), LA planes, RGB planes, or RGBA planes where "
 	"A is alpha, the transparency of a pixel. Alpha values range between zero (=fully transparent) and 255 (=fully opaque). "
-        "You need to enable Alpha-Blending via Screen('BlendFunction',...) for the transparency values to have an effect.";
+        "You need to enable Alpha-Blending via Screen('BlendFunction',...) for the transparency values to have an effect. "
+        "The argument 'optimizeForDrawAngle' if provided, asks Psychtoolbox to optimize the texture for especially fast "
+        "drawing at the specified rotation angle. The default is 0 == Optimize for upright drawing. If 'enforcepot' is set "
+        "to 1 and the width and height of the imageMatrix are powers of two (e.g., 64 x 64, 256 x 256, 512 x 512, ...), then "
+        "the texture is created as an OpenGL power-of-two texture of type GL_TEXTURE_2D. Otherwise Psychtoolbox will try to "
+        "pick the most optimal format for fast drawing and low memory consumption. Power-of-two textures are especially useful "
+        "for animation of drifting gratings (see the demos) and for simple use with the OpenGL 3D graphics functions.";
 	  
 static char seeAlsoString[] = "DrawTexture BlendFunction";
 
@@ -65,6 +71,15 @@ PsychError SCREENMakeTexture(void)
     GLubyte                             *texturePointer_b;
     double *rp, *gp, *bp, *ap;    
     GLubyte *rpb, *gpb, *bpb, *apb;    
+    int                                 usepoweroftwo;
+    double                              optimized_orientation;
+    Boolean                             bigendian;
+
+    // Detect endianity (byte-order) of machine:
+    ix=255;
+    rpb=(GLubyte*) &ix;
+    bigendian = ( *rpb == 255 ) ? FALSE : TRUE;
+    ix = 0; rpb = NULL;
 
     if(PsychPrefStateGet_DebugMakeTexture())	//MARK #1
         StoreNowTime();
@@ -75,7 +90,7 @@ PsychError SCREENMakeTexture(void)
     
     //Get the window structure for the onscreen window.  It holds the onscreein GL context which we will need in the
     //final step when we copy the texture from system RAM onto the screen.
-    PsychErrorExit(PsychCapNumInputArgs(2));   	
+    PsychErrorExit(PsychCapNumInputArgs(4));   	
     PsychErrorExit(PsychRequireNumInputArgs(2)); 	
     PsychErrorExit(PsychCapNumOutputArgs(1)); 
     
@@ -95,8 +110,34 @@ PsychError SCREENMakeTexture(void)
     if(! (isImageMatrixBytes || isImageMatrixDoubles))
         PsychErrorExitMsg(PsychError_user, "Illegal argument type");  //not  likely. 
     PsychMakeRect(rect, 0, 0, xSize, ySize);
+
+    // Copy in texture preferred draw orientation hint. We default to zero degrees, if
+    // not provided.
+    // This parameter is not yet used. It is silently ignorerd for now...
+    optimized_orientation = 0;
+    PsychCopyInDoubleArg(3, FALSE, &optimized_orientation);
     
-    
+    // Copy in special creation mode flag: It defaults to zero. If set to 1 then we
+    // always create a power-of-two GL_TEXTURE_2D texture. This is useful if one wants
+    // to create and use drifting gratings with no effort - texture wrapping is only available
+    // for GL_TEXTURE_2D, not for non-pot types. It is also useful if the texture is to be
+    // exported to external OpenGL code to simplify tex coords assignments.
+    usepoweroftwo=0;
+    PsychCopyInIntegerArg(4, FALSE, &usepoweroftwo);
+
+    // Check if size constraints are fullfilled for power-of-two mode:
+    if (usepoweroftwo) {
+      for(ix = 1; ix < xSize; ix*=2);
+      if (ix!=xSize) {
+	PsychErrorExitMsg(PsychError_inputMatrixIllegalDimensionSize, "Power-of-two texture requested but width of imageMatrix is not a power of two!");
+      }
+
+      for(ix = 1; ix < ySize; ix*=2);
+      if (ix!=ySize) {
+	PsychErrorExitMsg(PsychError_inputMatrixIllegalDimensionSize, "Power-of-two texture requested but height of imageMatrix is not a power of two!");
+      }
+    }
+
     //Create a texture record.  Really just a window recored adapted for textures.  
     PsychCreateWindowRecord(&textureRecord);						//this also fills the window index field.
     textureRecord->windowType=kPsychTexture;
@@ -117,6 +158,12 @@ PsychError SCREENMakeTexture(void)
         StoreNowTime();	
     texturePointer=textureRecord->textureMemory;
     
+    // Does script explicitely request usage of a GL_TEXTURE_2D power-of-two texture?
+    if (usepoweroftwo) {
+      // Enforce creation as a power-of-two texture:
+      textureRecord->texturetarget=GL_TEXTURE_2D;
+    }
+
     // Original implementation: Takes 80 ms on a 800x800 texture...
     /*        if(isImageMatrixDoubles && numMatrixPlanes==1){
         for(ix=0;ix<xSize;ix++){
@@ -288,12 +335,25 @@ PsychError SCREENMakeTexture(void)
         gp=(double*) ((psych_uint64) doubleMatrix + (psych_uint64) iters*sizeof(double));
         bp=(double*) ((psych_uint64) gp + (psych_uint64) iters*sizeof(double));
         ap=(double*) ((psych_uint64) bp + (psych_uint64) iters*sizeof(double));
-        for(ix=0;ix<iters;ix++){
+	if (bigendian) {
+	  // Code for big-endian machines like PowerPC:
+	  for(ix=0;ix<iters;ix++){
             *(texturePointer_b++)= (GLubyte) *(ap++);  
             *(texturePointer_b++)= (GLubyte) *(rp++);  
             *(texturePointer_b++)= (GLubyte) *(gp++);  
             *(texturePointer_b++)= (GLubyte) *(bp++);  
-        }
+	  }
+	}
+	else {
+	  // Code for little-endian machines like Intel Pentium:
+	  for(ix=0;ix<iters;ix++){
+            *(texturePointer_b++)= (GLubyte) *(bp++);  
+            *(texturePointer_b++)= (GLubyte) *(gp++);  
+            *(texturePointer_b++)= (GLubyte) *(rp++);  
+            *(texturePointer_b++)= (GLubyte) *(ap++);  
+	  }
+	}
+
         textureRecord->depth=32;
     }
     
@@ -325,12 +385,25 @@ PsychError SCREENMakeTexture(void)
         gpb=(GLubyte*) ((psych_uint64) byteMatrix + (psych_uint64) iters);
         bpb=(GLubyte*) ((psych_uint64) gpb + (psych_uint64) iters);
         apb=(GLubyte*) ((psych_uint64) bpb + (psych_uint64) iters);
-        for(ix=0;ix<iters;ix++){
+	if (bigendian) {
+	  // Code for big-endian machines like PowerPC:
+	  for(ix=0;ix<iters;ix++){
             *(texturePointer_b++)= *(apb++);  
             *(texturePointer_b++)= *(rpb++);  
             *(texturePointer_b++)= *(gpb++);  
             *(texturePointer_b++)= *(bpb++);  
-        }
+	  }
+	}
+	else {
+	  // Code for little-endian machines like Intel Pentium:
+	  for(ix=0;ix<iters;ix++){
+            *(texturePointer_b++)= *(bpb++);  
+            *(texturePointer_b++)= *(gpb++);  
+            *(texturePointer_b++)= *(rpb++);  
+            *(texturePointer_b++)= *(apb++);  
+	  }
+	}
+
         textureRecord->depth=32;
     }
     

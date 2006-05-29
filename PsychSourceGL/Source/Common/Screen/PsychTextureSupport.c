@@ -48,12 +48,12 @@
 // significantly speed up drawing (2-3 times!). In the future, we'll implement a clever scheme
 // so that PTB can decide by itself on a case-by-case bases, if renderswap true or false is
 // the better choice. For the 1.0.6 release we'll just keep it fixed to "false"...
-static Boolean renderswap = false;
+static Boolean renderswap = FALSE;
 
 // If set to true, then the apple client storage extensions are used: I doubt that they have any
 // advantage for the current way PTB is used, but it can be useful to conserve VRAM on very
 // low-mem gfx cards if Screen('Preference', 'ConserveVRAM') is set appropriately.
-static Boolean clientstorage = false;
+static Boolean clientstorage = FALSE;
 
 // This stores the texture format/mode to use: We autodetect available types at first
 // invocation of PsychCreateTexture()... We try to use GL_EXT_TEXTURE_RECTANGLE_2D textures for
@@ -194,6 +194,7 @@ void PsychCreateTextureForWindow(PsychWindowRecordType *win)
 
 void PsychCreateTexture(PsychWindowRecordType *win)
 {
+        GLenum                          texturetarget;
 	GLenum				textureHint;
 	double				sourceWidth, sourceHeight;
         GLint                           glinternalFormat, gl_realinternalformat = 0;
@@ -211,6 +212,9 @@ void PsychCreateTexture(PsychWindowRecordType *win)
         // Setup texture-target if not already done:
         PsychDetectTextureTarget(win);
         
+	// Assign proper texturetarget for creation:
+	texturetarget = PsychGetTextureTarget(win);
+
         // Check if user requested explicit use of clientstorage + Use of System RAM for
         // storage of textures instead of VRAM caching in order to conserve VRAM memory on
         // low-mem gfx-cards. Enable clientstorage, if so...
@@ -604,10 +608,22 @@ void PsychBlitTextureToDisplay(PsychWindowRecordType *source, PsychWindowRecordT
                 break;
         }
                         
-        // Setup texture wrap-mode:
-        glTexParameteri(texturetarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(texturetarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        
+        // Setup texture wrap-mode: We usually default to clamping - the best we can do
+	// for the rectangle textures we usually use. Special case is the intentional
+	// use of power-of-two textures with a real power-of-two size. In that case we
+	// enable wrapping mode to allow for scrolling effects -- useful for drifting
+	// gratings.
+	if (texturetarget==GL_TEXTURE_2D && tWidth==sourceWidth && tHeight==sourceHeight) {
+	  // Special case: Scrollable real power-of-two textures. Enable wrapping.
+	  glTexParameteri(texturetarget, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	  glTexParameteri(texturetarget, GL_TEXTURE_WRAP_T, GL_REPEAT);	  
+	}
+	else {
+	  // Default: Clamp to edge.
+	  glTexParameteri(texturetarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	  glTexParameteri(texturetarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        }
+
         // We use GL_MODULATE texture application mode together with the special rectangle color
         // (1,1,1,globalAlpha) -- This way, the alpha blending value is the product of the alpha-
         // value of each texel and the globalAlpha value. --> Can apply global alpha value for

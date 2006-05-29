@@ -16,9 +16,27 @@ function modelName=MacModelName
 % 
 % See also: Gestalt, Screen('Computer?'), AppleVersion
 
+% HISTORY
+%
 % 2004    awi Wrote it.
 % 1/29/05 dgp Cosmetic.
 % 3/14/05 dgp Fixed handling of model names that end in "\"".
+% 3/5/06  awi Added note explaining new bug and how to repair.
+% 5/29/06 mk  Added dumb fix for endian issue on new Intel-Macs.
+
+% NOTES
+%
+% As of 10.4.5 Apple has changed the file format in which System Profiler
+% stores the map of system firmware IDs to computer model names.  The map
+% is now a property list stored in this file:
+% /System/Library/SystemProfiler/SPPlatformReporter.spreporter/Contents/Resources/SPMachineTypes.plist
+%
+% The easiest and most structured way to adapt the PTB to this change would
+% be to provide a mex function which reads a property list file and returns
+% a MATLAB structure holding the contents of the property list. Because
+% functions provided by MacOS would do the work of parsing the XML property
+% list file, that should be a simple program to write.  Otherwise, there
+% might even already exist XML parsers for MATLAB.  
 
 if IsOS9
     s=Screen('Computer');
@@ -47,7 +65,11 @@ if IsOSX
     % Unicode files start with hex feff or ffef to indicate byte order.  
     % Confirm that it's feff, and then strip it off.
     if fileWords(1)~=hex2dec('feff');
-        error('Wrong byte order in mapping file.');
+        % Convert fileWords by first casting it to double type, then
+        % kind of endian-swapping. We throw away the least significant
+        % byte value and store the most significant byte as value. This
+        % would discard any former low-bytes. Dont know if this will work.
+        fileWords=floor(double(fileWords)/256);
     end
     fileWords=fileWords(2:end);
     fileCharsRaw=char(fileWords);

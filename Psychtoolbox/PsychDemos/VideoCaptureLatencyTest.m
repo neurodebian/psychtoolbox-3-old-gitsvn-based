@@ -1,4 +1,4 @@
-function VideoCaptureLatencyTest(texfetch, fullscreen)
+function VideoCaptureLatencyTest(texfetch, fullscreen, depth)
 % VideoCaptureLatencyTest
 %
 % This routine tests the latency of Videocapture for
@@ -46,26 +46,30 @@ end;
 
 fullscreen
 
+if nargin < 3
+   depth = 1;
+end;
+depth
+
 %try
     % Open display with default settings:
     if fullscreen<1
 	    win=Screen('OpenWindow', screen, 0, [0 0 800 600]);
     else
-       win=Screen('OpenWindow', screen);
+       win=Screen('OpenWindow', screen, 0);
     end;
     
     [w h]=Screen('WindowSize', win);
     
-    % Setup font and textsize:
-%    Screen('TextSize', win, 30);
-%    Screen('TextStyle', win, 1);
+    % Setup font and textsize: 24 is also a good size for Linux.
+    Screen('TextSize', win, 24);
+    Screen('TextStyle', win, 1);
     
-    % Clear out and show black display:
-    Screen('FillRect', win, 0);
+    % Show initial blank screen:
     Screen('Flip',win);
     
     % Open default video capture device:
-    grabber = Screen('OpenVideoCapture', win, 0);%, [0 0 200 200]);
+    grabber = Screen('OpenVideoCapture', win, 0, [0 0 640 480], depth);
     
     % Start video capture: We request at least a 100 Hz capture rate and lowlatency (=1) mode:
     fps=Screen('StartVideoCapture', grabber, 100, 1);
@@ -79,23 +83,26 @@ fullscreen
             break;
         end;
         
-        [tex pts intensity]=Screen('GetCapturedImage', win, grabber, 0);
+        [tex pts nrdropped intensity]=Screen('GetCapturedImage', win, grabber, 0);
         % fprintf('tex = %i  pts = %f\n', tex, pts);
         if (tex>0)
             % Print instructions:
             Screen('DrawText', win, 'Point camera to center of Display - Then press any key', 10, h-50);
             % Print pts:
-            Screen('DrawText', win, num2str(pts), 0, 0, 255);
+            Screen('DrawText', win, ['Capture timestamp (s): ' sprintf('%.4f', pts)], 0, 0, 255);
             if count>0
                 % Compute delta:
                 delta = (pts - oldpts) * 1000;
                 oldpts = pts;
-                Screen('DrawText', win, num2str(delta), 0, 20, 255);
+                Screen('DrawText', win, ['Delta since last frame (ms): ' sprintf('%.4f', delta)], 0, 24, 255);
             end;
             
             % Compute and print intensity:
-            Screen('DrawText', win, num2str(intensity), 0, 40, 255);
+            Screen('DrawText', win, ['Mean intensity: ' sprintf('%.2f', intensity)], 0, 48, 255);
            
+            % Print count of dropped frames since last fetch:
+            Screen('DrawText', win, ['Dropped frames: ' sprintf('%i', nrdropped)], 0, 72, 255);
+
             % New texture from framegrabber.
             Screen('DrawTexture', win, tex);
             Screen('Flip', win, 0, 0, 2);
@@ -124,7 +131,7 @@ fullscreen
         % Capture a black frame:
         tex=0;
         while (tex==0)
-            [tex pts intensity]=Screen('GetCapturedImage', win, grabber, 0);
+            [tex pts nrdropped intensity]=Screen('GetCapturedImage', win, grabber, 0);
         end;
 
         if (tex>0) Screen('Close', tex); end;
@@ -162,7 +169,7 @@ fullscreen
                 waitmode=2;
             end;
             
-            [tex pts intensity]=Screen('GetCapturedImage', win, grabber, waitmode);
+            [tex pts nrdropped intensity]=Screen('GetCapturedImage', win, grabber, waitmode);
             
             % Captured! Take timestamp:
             tdelay=(GetSecs - tonset) * 1000;
@@ -200,4 +207,4 @@ fullscreen
     %catch
    %Screen('CloseAll');
    %rethrow(lasterror);
-end;
+%end;

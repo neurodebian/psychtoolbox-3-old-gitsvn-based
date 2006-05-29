@@ -37,7 +37,11 @@
 
 #include <libraw1394/raw1394.h>
 #include <dc1394/dc1394_control.h>
+#include <dc1394/dc1394_utils.h>
+#include <dc1394/dc1394_conversions.h>
 #include <syslog.h>
+
+dc1394error_t dc1394_free_iso_channel_and_bandwidth(dc1394camera_t *);
 
 #define PSYCH_MAX_CAPTUREDEVICES 10
 
@@ -47,8 +51,10 @@ typedef struct {
   dc1394camera_t *camera;           // Ptr to a DC1394 camera object that holds the internal state for such cams.
   int dma_mode;                     // 0 == Non-DMA fallback path. 1 == DMA-Transfers.
   int allow_nondma_fallback;        // Use of Non-DMA fallback path allowed?
-  int dc_imageformat;               // Encodes image size and pixelformat.
+  dc1394video_mode_t dc_imageformat;// Encodes image size and pixelformat.
   dc1394framerate_t dc_framerate;   // Encodes framerate.
+  dc1394color_coding_t colormode;   // Encodes color encoding of cameras data.
+  unsigned char* scratchbuffer;     // Scratch buffer for YUV->RGB conversion.
   int reqpixeldepth;                // Requested depth of single pixel in output texture.
   int pixeldepth;                   // Depth of single pixel from grabber in bits.
   int num_dmabuffers;               // Number of DMA ringbuffers to use in DMA capture.
@@ -151,6 +157,11 @@ void PsychCloseVideoCaptureDevice(int capturehandle)
   // Stop capture immediately if it is still running:
   PsychVideoCaptureRate(capturehandle, 0, 0);
 
+  // Initiate a power-down cycle to bring camera into standby mode:
+  if (dc1394_set_camera_power(capdev->camera, DC1394_OFF)!=DC1394_SUCCESS) {
+    printf("PTB-WARNING: Tried to power down camera %i, but powerdown-cycle failed for some reason!\n", capturehandle); fflush(NULL);
+  }
+
   // Close & Shutdown camera, release ressources:
   dc1394_free_camera(capdev->camera);
   capdev->camera = NULL;
@@ -230,7 +241,8 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
 
     capdev->camera = NULL;
     capdev->grabber_active = 0;
-        
+    capdev->scratchbuffer = NULL;        
+
     // Query a list of all available (connected) Firewire cameras:
     err=dc1394_find_cameras(&cameras, &numCameras);
 
@@ -316,6 +328,16 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
     
     fflush(NULL);
 
+    // Initiate a power-up cycle in case the camera is in standby mode:
+    if (dc1394_set_camera_power(capdev->camera, DC1394_ON)!=DC1394_SUCCESS) {
+      printf("PTB-WARNING: Tried to power up camera %i, but powerup-cycle failed for some reason!\n", deviceIndex); fflush(NULL);
+    }
+
+    // Initiate a reset-cycle on the camera to bring it into a clean state to start with:
+    if (dc1394_reset_camera(capdev->camera)!=DC1394_SUCCESS) {
+      printf("PTB-WARNING: Tried to reset camera %i, but reset cycle failed for some reason!\n", deviceIndex); fflush(NULL);
+    }
+
     return(TRUE);
 }
 
@@ -324,22 +346,25 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
 int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
 {
   int maximgarea = 0;
-  int maximgmode, mode, i, j, w, h;
+  dc1394video_mode_t maximgmode, mode;
+  int i, j, w, h;
   unsigned int mw, mh;
   float framerate;
   dc1394framerate_t dc1394_framerate;
   dc1394framerates_t supported_framerates;
   dc1394video_modes_t video_modes;
   dc1394color_coding_t color_code;
+  int nonyuvbonus;
   float bpp;
   int framerate_matched = false;
   int roi_matched = false;
-  
+  int mode_found = false;
+
   // Query supported video modes for this camera:
   dc1394_video_get_supported_modes(capdev->camera,  &video_modes);
-  w = PsychGetWidthFromRect(capdev->roirect);
-  h = PsychGetHeightFromRect(capdev->roirect);
-  maximgmode = 0;
+  w = (int) PsychGetWidthFromRect(capdev->roirect);
+  h = (int) PsychGetHeightFromRect(capdev->roirect);
+  maximgmode = DC1394_VIDEO_MODE_MIN;
 
   for (i = 0; i < video_modes.num; i++) {
     // Query properties of this mode and match them against our requirements:
@@ -349,16 +374,18 @@ int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturera
     if (mode >= DC1394_VIDEO_MODE_FORMAT7_MIN) continue;
     
     // Pixeldepth supported? We reject anything except RAW8 or MONO8 for luminance formats
-    // and RGB8 for color formats.
+    // and RGB8, YUV444, YUV422, YUV411 for color formats.
     dc1394_get_color_coding_from_video_mode(capdev->camera, mode, &color_code);
     if (capdev->reqpixeldepth > 0) {
       // Specific pixelsize requested:
       if (capdev->reqpixeldepth < 3 && color_code!=DC1394_COLOR_CODING_RAW8 && color_code!=DC1394_COLOR_CODING_MONO8) continue;
-      if (capdev->reqpixeldepth > 2 && color_code!=DC1394_COLOR_CODING_RGB8) continue;
+      if (capdev->reqpixeldepth > 2 && color_code!=DC1394_COLOR_CODING_RGB8 && color_code!=DC1394_COLOR_CODING_YUV444 &&
+	  color_code!=DC1394_COLOR_CODING_YUV422 && color_code!=DC1394_COLOR_CODING_YUV411) continue;
     }
     else {
       // No specific pixelsize req. check our minimum requirements:
-      if (color_code!=DC1394_COLOR_CODING_RGB8 && color_code!=DC1394_COLOR_CODING_RAW8 && color_code!=DC1394_COLOR_CODING_MONO8) continue;
+      if (color_code!=DC1394_COLOR_CODING_RGB8 && color_code!=DC1394_COLOR_CODING_RAW8 && color_code!=DC1394_COLOR_CODING_MONO8
+	  && color_code!=DC1394_COLOR_CODING_YUV444 && color_code!=DC1394_COLOR_CODING_YUV422 && color_code!=DC1394_COLOR_CODING_YUV411) continue;
     }
     
     // ROI specified?
@@ -368,6 +395,7 @@ int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturera
       if (mw*mh < maximgarea) continue;
       maximgarea = mw * mh;
       maximgmode = mode;
+      mode_found = true;
       roi_matched = true;
     }
     else {
@@ -383,17 +411,26 @@ int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturera
 	if (framerate >= capturerate) break;
       }
       dc1394_framerate_as_float(dc1394_framerate, &framerate);
-      
+
+      // nonyuvbonus is true, if a color capture mode is requested and the given mode
+      // allows for RGB8 transfer instead of a YUV format. We try to prefer non-YUV
+      // modes in selection of final mode, because YUV modes need a computationally
+      // expensive conversion YUVxxx --> RGB8, whereas RGB8 doesn't need that.
+      nonyuvbonus = (capdev->reqpixeldepth == 0 || capdev->reqpixeldepth > 2) && (color_code == DC1394_COLOR_CODING_RGB8);
+
       // Compare whatever framerate we've got as closest match against current fastest one:
-      if (framerate > maximgarea) {
+      if ((framerate > maximgarea) ||
+	  (framerate == capturerate && nonyuvbonus) ||
+	  (framerate == maximgarea  && nonyuvbonus)) {
 	maximgarea = (int) framerate;
 	maximgmode = mode;
+	mode_found = true;
       }
     }
   }
   
   // Sanity check: Any valid mode found?
-  if (maximgmode == 0) {
+  if (!mode_found) {
     // None found!
     PsychErrorExitMsg(PsychError_user, "Couldn't find any capture mode settings for your camera which satisfy your minimum requirements! Aborted.");
   }
@@ -406,7 +443,7 @@ int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturera
   dc1394_get_color_coding_from_video_mode(capdev->camera, mode, &color_code);
   
   // This is the pixeldepth delivered by the capture engine:
-  capdev->pixeldepth = (color_code == DC1394_COLOR_CODING_RGB8) ? 24 : 8;
+  capdev->pixeldepth = (color_code == DC1394_COLOR_CODING_MONO8 || color_code == DC1394_COLOR_CODING_RAW8) ? 8 : 24;
   
   // Match this against requested pixeldepth:
   if (capdev->reqpixeldepth == 0) {
@@ -440,6 +477,13 @@ int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturera
     }
   }
   
+  if (capdev->reqpixeldepth > 8 && color_code != DC1394_COLOR_CODING_RGB8) {
+    // Color capture with a non RGB8 mode aka a YUV mode -- expensive.
+    printf("PTB-INFO: Using a YUV color format instead of a RGB color format. This requires expensive YUV->RGB conversion and\n");
+    printf("PTB-INFO: can lead to higher cpu load and longer latencies. You may be able to avoid this with different settings\n");
+    printf("PTB-INFO: for ROI, color depth and framerate...\n"); fflush(NULL);
+  }
+
   // Query final image size and therefore ROI:
   dc1394_get_image_size_from_video_mode(capdev->camera, mode, &mw, &mh);
   capdev->roirect[kPsychLeft] = 0;
@@ -476,6 +520,9 @@ int PsychVideoFindNonFormat7Mode(PsychVidcapRecordType* capdev, double capturera
   // Return framerate:
   capdev->dc_framerate = dc1394_framerate;
 
+  printf("PTB-INFO: Will use non-Format7 mode %i: Width x Height = %i x %i, fps=%f, colormode=%i ...\n",
+	 (int) mode, mw, mh, framerate, (int) color_code); fflush(NULL);
+
   // Success! 
   return(true);
 }
@@ -488,9 +535,11 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
   float mindiff = 1000000;
   float mindifframerate = 0;
   int minpacket_size = 0;
-  int minimgmode, mode, i, j, w, h;
-  unsigned int mw, mh, pbmin, pbmax, speed;
-  int num_packets, packet_size, depth;
+  dc1394video_mode_t minimgmode, mode;
+  int i, j, w, h, numF7Available=0;
+  dc1394speed_t speed;
+  unsigned int mw, mh, pbmin, pbmax, depth;
+  int num_packets, packet_size;
   float framerate;
   dc1394framerate_t dc1394_framerate;
   dc1394framerates_t supported_framerates;
@@ -504,6 +553,14 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
   // Query IEEE1394 bus speed code and map it to bus_period:
   if (dc1394_video_get_iso_speed(capdev->camera, &speed)!=DC1394_SUCCESS) {
     PsychErrorExitMsg(PsychError_user, "Unable to query bus-speed - Start of video capture failed!");
+  }
+
+  // Special hack for Unibrain Fire-i: This camera can do 400 Megabit/second, but reports
+  // a speed of 100 MBit after a cold-start! We enforce a 400 Megabit speed if this is a
+  // Unibrain Fire-i:
+  if (strstr(capdev->camera->vendor, "Unibrain") && strstr(capdev->camera->model, "Fire-i")) {
+    // Unibrain Fire-i: Enforce correct speed:
+    speed = DC1394_ISO_SPEED_400;
   }
 
   switch(speed) {
@@ -535,7 +592,7 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
   
   // Query supported video modes for this camera:
   dc1394_video_get_supported_modes(capdev->camera,  &video_modes);
-  minimgmode = 0;
+  minimgmode = DC1394_VIDEO_MODE_MIN;
 
   for (i = 0; i < video_modes.num; i++) {
     // Query properties of this mode and match them against our requirements:
@@ -543,6 +600,9 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
     
     // Skip non-format-7 types...
     if (mode < DC1394_VIDEO_MODE_FORMAT7_MIN || mode > DC1394_VIDEO_MODE_FORMAT7_MAX) continue;
+
+    // Increment count of available Format-7 modes:
+    numF7Available++;
 
     printf("PTB-Info: Probing Format-7 mode %i ...\n", mode);
 
@@ -560,8 +620,8 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
     }
     
     // ROI specified?
-    w = PsychGetWidthFromRect(capdev->roirect);
-    h = PsychGetHeightFromRect(capdev->roirect);
+    w = (int) PsychGetWidthFromRect(capdev->roirect);
+    h = (int) PsychGetHeightFromRect(capdev->roirect);
 
     if (capdev->roirect[kPsychLeft]==0 && capdev->roirect[kPsychTop]==0 && w==1 && h==1) {
       // No. Just set biggest one for this mode:
@@ -654,9 +714,14 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
   }
   
   // Sanity check: Any valid mode found?
-  if (minimgmode == 0) {
+  if (minimgmode == DC1394_VIDEO_MODE_MIN || numF7Available == 0) {
     // None found!
-    printf("PTB-INFO: Couldn't find any Format-7 capture mode settings for your camera which satisfy your minimum requirements!\n");
+    if (numF7Available > 0) {
+      printf("PTB-INFO: Couldn't find any Format-7 capture mode settings for your camera which satisfy your minimum requirements!\n");
+    }
+    else {
+      printf("PTB-INFO: This camera does not support *any* Format-7 capture modes.\n");
+    }
     printf("PTB-INFO: Will now try standard (non Format-7) capture modes for the best match and try to use that...\n");
     return(0);
   }
@@ -666,7 +731,7 @@ int PsychVideoFindFormat7Mode(PsychVidcapRecordType* capdev, double capturerate)
   // minimgmode contains the best matching Format-7 mode for our specs:
   mode = minimgmode;
   capdev->dc_imageformat = mode;
-  capdev->dc_framerate = 0;
+  capdev->dc_framerate = DC1394_FRAMERATE_MIN;
   packet_size = minpacket_size;
   framerate = mindifframerate;
 
@@ -749,9 +814,9 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
 {
   int dropped = 0;
   float framerate = 0;
-
-  unsigned int speed;
-  int maximgmode, mode, i, j, w, h, packetsize;
+  dc1394speed_t speed;
+  dc1394video_mode_t maximgmode, mode;
+  int i, j, w, h, packetsize;
   unsigned int mw, mh;
   dc1394framerate_t dc1394_framerate;
   dc1394framerates_t supported_framerates;
@@ -778,14 +843,15 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
     // Select best matching mode for requested image size and pixel format:
     // ====================================================================
 
-    w = PsychGetWidthFromRect(capdev->roirect);
-    h = PsychGetHeightFromRect(capdev->roirect);
+    w = (int) PsychGetWidthFromRect(capdev->roirect);
+    h = (int) PsychGetHeightFromRect(capdev->roirect);
 
     // Can we (potentially) get along with a non-Format-7 mode?
     // Check minimum requirements for non-Format-7 mode:
     if (!((capdev->roirect[kPsychLeft]==0 && capdev->roirect[kPsychTop]==0) &&
 	((capdev->roirect[kPsychRight]==1 && capdev->roirect[kPsychBottom]==1) || (w==640 && h==480) ||
-	 (w==800 && h==600) || (w==1024 && h==768) || (w==1280 && h==960) || (w==1600 && h==1200)) &&
+	 (w==800 && h==600) || (w==1024 && h==768) || (w==1280 && h==960) || (w==1600 && h==1200) ||
+	 (w==320 && h==240) || (w==160 && h==120)) &&
 	(capturerate==1.875 || capturerate==3.75 || capturerate==7.5 || capturerate==15 || capturerate==30 ||
 	 capturerate==60 || capturerate==120 || capturerate==240))) {
 
@@ -810,18 +876,29 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
     if (dc1394_video_get_iso_speed(capdev->camera, &speed)!=DC1394_SUCCESS) {
       PsychErrorExitMsg(PsychError_user, "Unable to query bus-speed - Start of video capture failed!");
     }
-	
+
+    // Special hack for Unibrain Fire-i: This camera can do 400 Megabit/second, but reports
+    // a speed of 100 MBit after a cold-start! We enforce a 400 Megabit speed if this is a
+    // Unibrain Fire-i:
+    if (strstr(capdev->camera->vendor, "Unibrain") && strstr(capdev->camera->model, "Fire-i")) {
+      // Unibrain Fire-i: Enforce correct speed:
+      speed = DC1394_ISO_SPEED_400;
+    }
+
     // Assign final mode and framerate:
     dc1394_framerate = capdev->dc_framerate;
     mode = capdev->dc_imageformat;
-    
+
+    // Query final color format of captured data:
+    dc1394_get_color_coding_from_video_mode(capdev->camera, mode, &color_code);
+    capdev->colormode = color_code;
+
     // Setup DMA engine:
     // =================
 
     // Format-7 capture?
     if (packetsize > 0) {
       // Format-7 capture DMA setup:
-      dc1394_get_color_coding_from_video_mode(capdev->camera, mode, &color_code);
       err = dc1394_dma_setup_format7_capture(capdev->camera, mode, color_code, speed, packetsize,
 					     (unsigned int) capdev->roirect[kPsychLeft],
 					     (unsigned int) capdev->roirect[kPsychTop],
@@ -905,12 +982,18 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
     capdev->fps = (double) framerate;
 
     // Setup size and position:
-    capdev->width  = PsychGetWidthFromRect(capdev->roirect);
-    capdev->height = PsychGetHeightFromRect(capdev->roirect);
+    capdev->width  = (int) PsychGetWidthFromRect(capdev->roirect);
+    capdev->height = (int) PsychGetHeightFromRect(capdev->roirect);
 
     // Ok, capture is now started:
     capdev->grabber_active = 1;
     
+    // Allocate conversion buffer if needed for YUV->RGB conversions.
+    if (capdev->pixeldepth == 24 && color_code!=DC1394_COLOR_CODING_RGB8) {
+      // Software conversion of YUV -> RGB needed. Allocate a proper scratch-buffer:
+      capdev->scratchbuffer = malloc(capdev->width * capdev->height * 3);
+    }
+
     printf("PTB-INFO: Capture started on device %i - Width x Height = %i x %i - Framerate: %f fps.\n", capturehandle,
 	   capdev->width, capdev->height, capdev->fps);
   }
@@ -937,6 +1020,12 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
       capdev->frame_ready = 0;
       capdev->grabber_active = 0;
     
+      if (capdev->scratchbuffer) {
+	// Release scratch-buffer:
+	free(capdev->scratchbuffer);
+	capdev->scratchbuffer = NULL;
+      }
+
       // Output count of dropped frames:
       if ((dropped=capdev->nr_droppedframes) > 0) {
 	printf("PTB-INFO: Video capture dropped %i frames on device %i to keep capture running in sync with realtime.\n", dropped, capturehandle); 
@@ -967,13 +1056,14 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes)
  *
  *  win = Window pointer of onscreen window for which a OpenGL texture should be created.
  *  capturehandle = Handle to the capture object.
- *  checkForImage = true == Just check if new image available, false == really retrieve the image, blocking if necessary.
- *  timeindex = When not in playback mode, this allows specification of a requested frame by presentation time.
- *              If set to -1, or if in realtime playback mode, this parameter is ignored and the next video frame is returned.
+ *  checkForImage = >0 == Just check if new image available, 0 == really retrieve the image, blocking if necessary.
+ *                   2 == Check for new image, block inside this function (if possible) if no image available.
+ *
+ *  timeindex = This parameter is currently ignored and reserved for future use.
  *  out_texture = Pointer to the Psychtoolbox texture-record where the new texture should be stored.
  *  presentation_timestamp = A ptr to a double variable, where the presentation timestamp of the returned frame should be stored.
  *  summed_intensity = An optional ptr to a double variable. If non-NULL, then sum of intensities over all channels is calculated and returned.
- *  Returns true (1) on success, false (0) if no new image available, -1 if no new image available and there won't be any in future.
+ *  Returns Number of pending or dropped frames after fetch on success (>=0), -1 if no new image available yet, -2 if no new image available and there won't be any in future.
  */
 int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, int checkForImage, double timeindex,
 			       PsychWindowRecordType *out_texture, double *presentation_timestamp, double* summed_intensity)
@@ -988,8 +1078,10 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
     double tstart, tend;
     unsigned int pixval, alphacount;
     dc1394error_t error;
+    int nrdropped;
+    unsigned char* input_image = NULL;
 
-    int waitforframe = (timeindex > 0) ? 1:0; // We misuse the timeindex as flag for blocking- non-blocking mode.
+    int waitforframe = (checkForImage > 1) ? 1:0; // Blocking wait for new image requested?
 
     // Retrieve device record for handle:
     PsychVidcapRecordType* capdev = PsychGetVidcapRecord(capturehandle);
@@ -997,15 +1089,11 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
     // Take start timestamp for timing stats:
     PsychGetAdjustedPrecisionTimerSeconds(&tstart);
         
-    if ((timeindex!=-1) && (timeindex < 0 || timeindex >= 10000.0)) {
-      PsychErrorExitMsg(PsychError_user, "Invalid timeindex provided.");
-    }
-    
     // Should we just check for new image?
     if (checkForImage) {
       if (capdev->grabber_active == 0) {
 	// Grabber stopped. We'll never get a new image:
-	return(-1);
+	return(-2);
       }
 
       // Grabber active: Polling mode or wait for new frame mode?
@@ -1035,9 +1123,9 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
 	if (capdev->dma_mode <= 0) {
 	  // Oops. Tried to use polling mode in non-DMA capture. This is not supported.
 	  printf("PTB-ERROR: Tried to call Screen('GetCapturedImage') in polling mode during non-DMA capture\n");
-	  printf("PTB-ERROR: This is not supported. Will return error code -1...\n");
+	  printf("PTB-ERROR: This is not supported. Will return error code -2...\n");
 	  fflush(NULL);
-	  return(-1);
+	  return(-2);
 	}
 
 	if (dc1394_dma_capture(&(capdev->camera), 1, DC1394_VIDEO1394_POLL) == DC1394_SUCCESS) {
@@ -1069,8 +1157,8 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
 	}
       }
 
-      // Return availability status:
-      return(capdev->frame_ready);
+      // Return availability status: 0 = new frame ready for retrieval. -1 = No new frame ready yet.
+      return((capdev->frame_ready) ? 0 : -1);
     }
     
     // This point is only reached if checkForImage == FALSE, which only happens
@@ -1091,24 +1179,32 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
     w=capdev->width;
     h=capdev->height;
     
-    // Hack: Need to extend rect by 4 pixels, because GWorlds are 4 pixels-aligned via
-    // image row padding:
-#if PSYCH_SYSTEM == PSYCH_OSX
-    padding = 4 + (4 - (w % 4)) % 4;
-#else
     padding= 0;
-#endif
-    
+
+    // input_image points to the image buffer in our cam:
+    input_image = (unsigned char*) (capdev->camera->capture.capture_buffer);
+
+    // Do we want to do something with the image data and have a
+    // scratch buffer for color conversion alloc'ed?
+    if ((capdev->scratchbuffer) && ((out_texture) || (summed_intensity))) {
+      // Yes. Perform color-conversion YUV->RGB from cameras DMA buffer
+      // into the scratch buffer and set scratch buffer as source for
+      // all further operations:
+
+      dc1394_convert_to_RGB8(input_image, capdev->scratchbuffer, capdev->width,
+			     capdev->height, DC1394_BYTE_ORDER_UYVY, capdev->colormode, 8);
+
+      // Ok, at this point we should have a RGB8 texture image ready in scratch_buffer.
+      // Set scratch buffer as our new image source for all further processing:
+      input_image = (unsigned char*) capdev->scratchbuffer;
+    }
+
     // Only setup if really a texture is requested (non-benchmarking mode):
     if (out_texture) {
       PsychMakeRect(out_texture->rect, 0, 0, w+padding, h);    
       
       // Set NULL - special texture object as part of the PTB texture record:
       out_texture->targetSpecific.QuickTimeGLTexture = NULL;
-      
-      // Set textureNumber to zero, which means "Not cached, don't recycle"
-      // Todo: Texture recycling like in PsychMovieSupport for higher efficiency!
-      out_texture->textureNumber = 0;
       
       // Set texture orientation as if it were an inverted Offscreen window: Upside-down.
       out_texture->textureOrientation = 3;
@@ -1121,21 +1217,21 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
       out_texture->depth = capdev->reqpixeldepth;
     
       // This will retrieve an OpenGL compatible pointer to the pixel data and assign it to our texmemptr:
-      out_texture->textureMemory = (GLuint*) (capdev->camera->capture.capture_buffer);
-      
+      out_texture->textureMemory = (GLuint*) input_image;
+
       // Let PsychCreateTexture() do the rest of the job of creating, setting up and
       // filling an OpenGL texture with content:
       PsychCreateTexture(out_texture);
       
       // Undo hack from above after texture creation: Now we need the real width of the
       // texture for proper texture coordinate assignments in drawing code et al.
-      PsychMakeRect(out_texture->rect, 0, 0, w-padding, h);    
+      PsychMakeRect(out_texture->rect, 0, 0, w, h);    
       // Ready to use the texture...
     }
     
     // Sum of pixel intensities requested?
     if(summed_intensity) {
-      pixptr = (unsigned char*) (capdev->camera->capture.capture_buffer);
+      pixptr = (unsigned char*) input_image;
       count = (w*h*((capdev->pixeldepth == 24) ? 3 : 1));
       for (i=0; i<count; i++) intensity+=(unsigned int) pixptr[i];
       *summed_intensity = ((double) intensity) / w / h / ((capdev->pixeldepth == 24) ? 3 : 1);
@@ -1157,7 +1253,10 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
       
       // Dropped frames?
       if (frames > 1 && capdev->last_pts>=0) {
-        capdev->nr_droppedframes += (int) (frames - 1 + 0.5);
+	nrdropped = (int) (frames - 1 + 0.5);
+      }
+      else {
+	nrdropped = 0;
       }
 
       // Record timestamp as reference for next check:    
@@ -1165,18 +1264,23 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
     }
     else {
       // New style - Only works with DMA capture engine. Just take values from Firewire subsystem:
-      capdev->nr_droppedframes += (int) capdev->camera->capture.num_dma_buffers_behind;
+      nrdropped = (int) capdev->camera->capture.num_dma_buffers_behind;
     }
     
+    // Update total count of dropped (or pending) frames:
+    capdev->nr_droppedframes += nrdropped;
+
     // Timestamping:
     PsychGetAdjustedPrecisionTimerSeconds(&tend);
+
     // Increase counter of retrieved textures:
     capdev->nrgfxframes++;
+
     // Update average time spent in texture conversion:
     capdev->avg_gfxtime+=(tend - tstart);
     
-    // We're successfully done!
-    return(TRUE);
+    // We're successfully done! Return number of dropped (or pending in DMA ringbuffer) frames:
+    return(nrdropped);
 }
 
 /* Set capture device specific parameters:
@@ -1210,6 +1314,14 @@ double PsychVideoCaptureSetParameter(int capturehandle, const char* pname, doubl
   // Check parameter name pname and call the appropriate subroutine:
   if (strcmp(pname, "PrintParameters")==0) {
     // Special command: List and print all features...
+    if (dc1394_get_camera_info(capdev->camera) !=DC1394_SUCCESS) {
+      printf("PTB-WARNING: Unable to query general information about camera.\n");
+    }
+    else {
+      printf("PTB-INFO: The camera provides the following generic information:\n");
+      dc1394_print_camera_info(capdev->camera);
+    }
+
     if (dc1394_get_camera_feature_set(capdev->camera, &features) !=DC1394_SUCCESS) {
       printf("PTB-WARNING: Unable to query feature set of camera.\n");
     }
@@ -1219,6 +1331,18 @@ double PsychVideoCaptureSetParameter(int capturehandle, const char* pname, doubl
     }
 
     fflush(NULL);    
+    return(0);
+  }
+
+  // Return vendor name string:
+  if (strcmp(pname, "GetVendorname")==0) {
+    PsychCopyOutCharArg(1, FALSE, capdev->camera->vendor);
+    return(0);
+  }
+
+  // Return model name string:
+  if (strcmp(pname, "GetModelname")==0) {
+    PsychCopyOutCharArg(1, FALSE, capdev->camera->model);
     return(0);
   }
 
@@ -1240,6 +1364,21 @@ double PsychVideoCaptureSetParameter(int capturehandle, const char* pname, doubl
   if (strcmp(pname, "Shutter")==0) {
     assigned = true;
     feature = DC1394_FEATURE_SHUTTER;    
+  }
+
+  if (strcmp(pname, "Sharpness")==0) {
+    assigned = true;
+    feature = DC1394_FEATURE_SHARPNESS;    
+  }
+
+  if (strcmp(pname, "Saturation")==0) {
+    assigned = true;
+    feature = DC1394_FEATURE_SATURATION;    
+  }
+
+  if (strcmp(pname, "Gamma")==0) {
+    assigned = true;
+    feature = DC1394_FEATURE_GAMMA;    
   }
 
   // Check if feature is present on this camera:
@@ -1271,10 +1410,18 @@ double PsychVideoCaptureSetParameter(int capturehandle, const char* pname, doubl
 	    fflush(NULL);      
 	  }
 	  else {
-	    // Ok intval is valid for this feature: Try to set it.
-	    if (dc1394_feature_set_value(capdev->camera, feature, intval)!=DC1394_SUCCESS) {
-	      printf("PTB-WARNING: Failed to set value of feature %s on camera %i to %i! Ignored.\n", pname, capturehandle, intval);
+	    // Ok intval is valid for this feature: Can we manually set this feature?
+	    // Switch feature to manual control mode:
+	    if (dc1394_feature_set_mode(capdev->camera, feature, DC1394_FEATURE_MODE_MANUAL)!=DC1394_SUCCESS) {
+	      printf("PTB-WARNING: Failed to set feature %s on camera %i to manual control! Ignored.\n", pname, capturehandle);
 	      fflush(NULL);
+	    }
+	    else {
+	      // Ok, try to set the features new value:
+	      if (dc1394_feature_set_value(capdev->camera, feature, intval)!=DC1394_SUCCESS) {
+		printf("PTB-WARNING: Failed to set value of feature %s on camera %i to %i! Ignored.\n", pname, capturehandle, intval);
+		fflush(NULL);
+	      }
 	    }
 	  }
 	}

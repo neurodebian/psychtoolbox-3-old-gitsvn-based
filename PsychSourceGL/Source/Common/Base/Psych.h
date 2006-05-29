@@ -24,6 +24,11 @@
 #ifndef PSYCH_IS_INCLUDED_Psych
 #define PSYCH_IS_INCLUDED_Psych
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+
 //can include this alone
 #include "PsychConstants.h"
 
@@ -43,8 +48,18 @@
 #include "PsychTimeGlue.h"
 #include "PsychInstrument.h"	
 
-//This is provided by the project.
+#ifndef PTBINSCRIPTINGGLUE
+// This is provided by the project. We do not
+// include it when building PsychScriptingGlue.cc
+// in order to prevent build-failure due to some
+// broken header dependencies...
 #include "RegisterProject.h"
 #include "TimeLists.h"
+#endif
+
+#if defined(__cplusplus)
+}
+#endif
+
 //end include once
 #endif
