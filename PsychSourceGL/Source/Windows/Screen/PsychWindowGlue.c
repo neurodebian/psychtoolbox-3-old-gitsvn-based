@@ -52,9 +52,18 @@ static HINSTANCE hInstance = 0;
 // Number of currently open onscreen windows:
 static int win32_windowcount = 0;
 
+// Mouse button states:
+static boolean mousebutton_l=FALSE;
+static boolean mousebutton_m=FALSE;
+static boolean mousebutton_r=FALSE;
+
 // Definitions for dynamic binding of VSYNC extension:
 typedef void (APIENTRY *PFNWGLEXTSWAPCONTROLPROC) (int);
 PFNWGLEXTSWAPCONTROLPROC wglSwapIntervalEXT = NULL;
+
+// Definitions for dynamic binding of wglChoosePixelformat extension:
+typedef BOOL (APIENTRY *PFNWGLCHOOSEPIXELFORMATPROC) (HDC,const int*, const FLOAT *, UINT, int*, UINT*);
+PFNWGLCHOOSEPIXELFORMATPROC wglChoosePixelFormatARB = NULL;
 
 /** PsychRealtimePriority: Temporarily boost priority to highest available priority in M$-Windows.
     PsychRealtimePriority(true) enables realtime-scheduling (like Priority(2) would do in Matlab).
@@ -113,19 +122,47 @@ LONG FAR PASCAL WndProc(HWND hWnd, unsigned uMsg, unsigned wParam, LONG lParam)
   int i, numWindows; 
 
   // What event happened?
-  switch(uMsg)
-    {
+  switch(uMsg) {
     case WM_SYSCOMMAND:
       // System command received: We intercept system commands that would start
       // the screensaver or put the display into powersaving sleep-mode:
-      switch(wParam)
-	{
-	case SC_SCREENSAVE:
-	case SC_MONITORPOWER:
-	  return(0);
-	}
-      break;
+      switch(wParam) {
+			case SC_SCREENSAVE:
+			case SC_MONITORPOWER:
+	  		return(0);
+		}
+    break;
+	
+	 case WM_LBUTTONDOWN:
+		// Left mouse button depressed:
+		mousebutton_l = TRUE;
+	 break;
 
+	 case WM_LBUTTONUP:
+		// Left mouse button released:
+		mousebutton_l = FALSE;
+	 break;
+
+	 case WM_MBUTTONDOWN:
+		// Middle mouse button depressed:
+		mousebutton_m = TRUE;
+	 break;
+
+	 case WM_MBUTTONUP:
+		// Middle mouse button released:
+		mousebutton_m = FALSE;
+	 break;
+
+	 case WM_RBUTTONDOWN:
+		// Right mouse button depressed:
+		mousebutton_r = TRUE;
+	 break;
+
+	 case WM_RBUTTONUP:
+		// Right mouse button released:
+		mousebutton_r = FALSE;
+	 break;
+	 
     case WM_PAINT:
       // Repaint event: This happens if a previously covered non-fullscreen window
       // got uncovered, so part of it needs to be redrawn. PTB's rendering model
@@ -176,6 +213,29 @@ LONG FAR PASCAL WndProc(HWND hWnd, unsigned uMsg, unsigned wParam, LONG lParam)
     }
 
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+/* PsychGetMouseButtonState: Returns current mouse button up-/down state. Called by SCREENGetMouseHelper. */
+void PsychGetMouseButtonState(double* buttonArray)
+{
+	MSG msg;
+
+	// Run our message dispatch loop until we've processed all mouse-related events
+	// in the queue:
+	while(PeekMessage(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
+		// Mouse event in queue. Dispatch it to our WndProc...
+		TranslateMessage(&msg);
+		// The WndProc will keep track of the current mouse button state by
+		// updating it according to the UP or DOWN message.
+		DispatchMessage(&msg);
+	}
+
+	// The routine expects a preallocated 3-element double matrix for the three mouse-buttons:
+	// It simply copies our internally held current state to the output matrix:
+	buttonArray[0]=(double) mousebutton_l;
+	buttonArray[1]=(double) mousebutton_m;
+	buttonArray[2]=(double) mousebutton_r;
+	return;
 }
 
 boolean ChangeScreenResolution (int width, int height, int bitsPerPixel, int fps)	// Change The Screen Resolution
@@ -232,11 +292,15 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
   PsychRectType             screenrect;
   CGDirectDisplayID         cgDisplayID;
   int         pf;
+  unsigned int nNumFormats;
   HDC         hDC;
   HWND        hWnd;
   WNDCLASS    wc;
   PIXELFORMATDESCRIPTOR pfd;
-  int x, y, width, height;
+  int         attribs[40];
+  int         attribcount;
+  float       fattribs[2]={0,0};
+  int x, y, width, height, i;
   DWORD flags;
   boolean fullscreen = FALSE;
   DWORD windowStyle = WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
@@ -293,11 +357,12 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
       wc.lpszClassName = "PTB-OpenGL";
 
       if (!RegisterClass(&wc)) {
-	hInstance = 0;
+		  hInstance = 0;
         printf("\nPTB-ERROR[Register Windowclass failed]: Unknown error, Win32 specific.\n\n");
         return(FALSE);
       }
     }
+
     //if (PSYCH_DEBUG == PSYCH_ON) printf("Creating Window...\n");
 
     // Adjust window bounds to account for the window borders if we are in non-fullscreen mode:
@@ -313,12 +378,11 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 			  "PTB Onscreen window",
 			  windowStyle,
 			  x, y, width, height, NULL, NULL, hInstance, NULL);
+
     if (hWnd == NULL) {
         printf("\nPTB-ERROR[CreateWindow() failed]: Unknown error, Win32 specific.\n\n");
         return(FALSE);
     }
-
-    //if (PSYCH_DEBUG == PSYCH_ON) printf("Getting Device context...\n");
 
     // Retrieve device context for the window:
     hDC = GetDC(hWnd);
@@ -327,23 +391,44 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     flags = 0;
     // Init pfd to zero:
     memset(&pfd, 0, sizeof(pfd));
+    attribcount = 0;
+
+	 attribs[attribcount++]=0x2001; // WGL_DRAW_TO_WINDOW_ARB
+	 attribs[attribcount++]=GL_TRUE;
+	 attribs[attribcount++]=0x2010; // WGL_SUPPORT_OPENGL_ARB
+	 attribs[attribcount++]=GL_TRUE;
+	 attribs[attribcount++]=0x2007; // WGL_SWAP_METHOD_ARB
+	 attribs[attribcount++]=0x2028; // WGL_SWAP_EXCHANGE_ARB
+	 attribs[attribcount++]=0x2013; // WGL_PIXEL_TYPE_ARB
+	 attribs[attribcount++]=0x202B; // WGL_TYPE_RGBA_ARB
+	 attribs[attribcount++]=0x2014; // WGL_COLOR_BITS_ARB
+	 attribs[attribcount++]=32;
+	 attribs[attribcount++]=0x201B; // WGL_ALPHA_BITS_ARB
+	 attribs[attribcount++]=8;
 
     // Stereo display support: If stereo display output is requested with OpenGL native stereo,
     // we request a stereo-enabled rendering context.
     if(stereomode==kPsychOpenGLStereo) {
       flags = flags | PFD_STEREO;
+		attribs[attribcount++]=0x2012; // WGL_STEREO_ARB
+		attribs[attribcount++]=GL_TRUE;
     }
 
     // Double buffering requested?
     if(numBuffers>=2) {
       // Enable double-buffering:
       flags = flags | PFD_DOUBLEBUFFER;
+		attribs[attribcount++]=0x2011; // WGL_DOUBLE_BUFFER_ARB
+		attribs[attribcount++]=GL_TRUE;
+
       // AUX buffers for Flip-Operations needed?
       if ((conserveVRAM & kPsychDisableAUXBuffers) == 0) {
-	// Allocate one or two (mono vs. stereo) AUX buffers for new "don't clear" mode of Screen('Flip'):
-	// Not clearing the framebuffer after "Flip" is implemented by storing a backup-copy of
-	// the backbuffer to AUXs before flip and restoring the content from AUXs after flip.
-	pfd.cAuxBuffers=(stereomode==kPsychOpenGLStereo || stereomode==kPsychCompressedTLBRStereo || stereomode==kPsychCompressedTRBLStereo) ? 2 : 1;
+			// Allocate one or two (mono vs. stereo) AUX buffers for new "don't clear" mode of Screen('Flip'):
+			// Not clearing the framebuffer after "Flip" is implemented by storing a backup-copy of
+			// the backbuffer to AUXs before flip and restoring the content from AUXs after flip.
+			pfd.cAuxBuffers=(stereomode==kPsychOpenGLStereo || stereomode==kPsychCompressedTLBRStereo || stereomode==kPsychCompressedTRBLStereo) ? 2 : 1;
+			attribs[attribcount++]=0x2024; // WGL_AUX_BUFFERS_ARB
+			attribs[attribcount++]=pfd.cAuxBuffers;
       }
     }
 
@@ -356,46 +441,57 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     pfd.iPixelType   = PFD_TYPE_RGBA; // Want a RGBA pixel format.
     pfd.cColorBits   = 32;            // 32 bpp at least...
     pfd.cAlphaBits   = 8;             // Want a 8 bit alpha-buffer.
-    
+
     // Support for OpenGL 3D rendering requested?
     if (PsychPrefStateGet_3DGfx()) {
 		// Yes. Allocate and attach a 24bit depth buffer and 8 bit stencil buffer:
 		pfd.cDepthBits = 24;
 		pfd.cStencilBits = 8;
+		attribs[attribcount++]=0x2022; // WGL_DEPTH_BITS_ARB
+	 	attribs[attribcount++]=24;
+		attribs[attribcount++]=0x2023; // WGL_STENCIL_BITS_ARB
+	 	attribs[attribcount++]=8;
     }
+
+    // Multisampled Anti-Aliasing requested?
+    if (windowRecord->multiSample > 0) {
+      // Request a multisample buffer:
+      attribs[attribcount++]= 0x2041; // WGL_SAMPLE_BUFFERS_ARB
+      attribs[attribcount++]= 1;
+      // Request at least multiSample samples per pixel:
+      attribs[attribcount++]= 0x2042; // WGL_SAMPLES_ARB
+      attribs[attribcount++]= windowRecord->multiSample;
+    }
+
+	 // Finalize attribs-array:
+    attribs[attribcount++]= 0;
 
     //if (PSYCH_DEBUG == PSYCH_ON) printf("Choosing pixelformat\n");
 
     // Create pixelformat:
-    pf = ChoosePixelFormat(hDC, &pfd);
+	 // This is typical Microsoft brain-damage: We first need to create a window the
+	 // conventional old way just to be able to get a handle to the new wglChoosePixelFormat
+	 // method, which will us - after destroying and recreating the new window - allow to
+	 // select the pixelformat we actually want!
+
+	 // Step 1: Choose pixelformat old-style:
+	 pf = ChoosePixelFormat(hDC, &pfd);
+
+	 // Do we have a valid pixelformat?
     if (pf == 0) {
+		// Nope. We give up!
       ReleaseDC(hDC, hWnd);
       DestroyWindow(hWnd);      
       printf("\nPTB-ERROR[ChoosePixelFormat() failed]: Unknown error, Win32 specific.\n\n");
       return(FALSE);
     }
 
-    //if (PSYCH_DEBUG == PSYCH_ON) printf("Setting pixelformat\n");
-
-    // Set it.
+    // Yes. Set it:
     if (SetPixelFormat(hDC, pf, &pfd) == FALSE) {
       ReleaseDC(hDC, hWnd);
       DestroyWindow(hWnd);      
 
       printf("\nPTB-ERROR[SetPixelFormat() failed]: Unknown error, Win32 specific.\n\n");
-      return(FALSE);
-    }
-
-    DescribePixelFormat(hDC, pf, sizeof(PIXELFORMATDESCRIPTOR), &pfd);
-
-    if ((stereomode==kPsychOpenGLStereo) && ((pfd.dwFlags & PFD_STEREO)==0)) {
-      // Ooops. Couldn't get the requested stereo-context from hardware :(
-      ReleaseDC(hDC, hWnd);
-      DestroyWindow(hWnd);
-
-      printf("PTB-ERROR: OpenGL native stereo mode unavailable. Your hardware may not support it,\n"
-	     "PTB-ERROR: or at least not on a flat-panel? Expect abortion of your script soon...");
-
       return(FALSE);
     }
 
@@ -416,16 +512,172 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     // Activate the rendering context:
     PsychOSSetGLContext(windowRecord);
 
+    DescribePixelFormat(hDC, pf, sizeof(PIXELFORMATDESCRIPTOR), &pfd);
+
+    if ((stereomode==kPsychOpenGLStereo) && ((pfd.dwFlags & PFD_STEREO)==0)) {
+      // Ooops. Couldn't get the requested stereo-context from hardware :(
+      ReleaseDC(hDC, hWnd);
+      DestroyWindow(hWnd);
+
+      printf("PTB-ERROR: OpenGL native stereo mode unavailable. Your hardware may not support it,\n"
+	     "PTB-ERROR: or at least not on a flat-panel? Expect abortion of your script soon...");
+
+      return(FALSE);
+    }
+
+	 // Step 2: Ok, we have an OpenGL rendering context: Query and bind wglChoosePixelFormat and friends...
+	 // Try to dynamically bind pixelformat extension. This will leave us with a NULL-Ptr if unsupported:
+    wglChoosePixelFormatARB=(PFNWGLCHOOSEPIXELFORMATPROC) wglGetProcAddress("wglChoosePixelFormatARB");
+	 if (wglChoosePixelFormatARB==NULL) wglChoosePixelFormatARB=(PFNWGLCHOOSEPIXELFORMATPROC) wglGetProcAddress("wglChoosePixelFormatEXT");
+	 if (wglChoosePixelFormatARB==NULL) wglChoosePixelFormatARB=(PFNWGLCHOOSEPIXELFORMATPROC) wglGetProcAddress("wglChoosePixelFormat");
+
+	 // Do we have it?
+	 if (wglChoosePixelFormatARB == NULL) {
+		// Failed. We will have to live without it :(
+		printf("PTB-WARNING: Could not bind wglChoosePixelFormat - Extension. Some features will be unavailable, e.g., Anti-Aliasing.\n");
+	 }
+	 else {
+		// Supported. We destroy the rendering context and window, then recreate it with
+		// the wglChoosePixelFormat - method...
+	   wglMakeCurrent(NULL, NULL);
+
+	   // Delete rendering context:
+  	   wglDeleteContext(windowRecord->targetSpecific.contextObject);
+      windowRecord->targetSpecific.contextObject=NULL;
+
+      // Release device context:
+      ReleaseDC(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle);
+      windowRecord->targetSpecific.deviceContext=NULL;
+
+   	// Close & Destroy the window:
+      DestroyWindow(windowRecord->targetSpecific.windowHandle);
+      windowRecord->targetSpecific.windowHandle=NULL;
+
+		// Ok, old window and stuff is dead. Create new window:
+    	hWnd = CreateWindowEx(windowExtendedStyle, "PTB-OpenGL", "PTB Onscreen window", windowStyle,
+			  						 x, y, width, height, NULL, NULL, hInstance, NULL);
+    	if (hWnd == NULL) {
+        printf("\nPTB-ERROR[CreateWindow() - II failed]: Unknown error, Win32 specific.\n\n");
+        return(FALSE);
+    	}
+
+	   // Retrieve device context for the window:
+    	hDC = GetDC(hWnd);
+
+		pf = 0;
+		nNumFormats=0;
+		wglChoosePixelFormatARB(hDC, &attribs[0], NULL, 1, &pf, &nNumFormats);
+      if (pf==0 && windowRecord->multiSample > 0) {
+		 	// Failed. Probably due to too demanding multisample requirements: Lets lower them...
+			for (i=0; i<attribcount && attribs[i]!=0x2042; i++);
+			// Reduce requested number of samples/pixel and retry until we get one:
+			while (pf==0 && windowRecord->multiSample > 0) {
+				// printf("Failed for multisampling level %i nNum=%i\n", windowRecord->multiSample, nNumFormats);
+				attribs[i+1]--;
+	  			windowRecord->multiSample--;
+				wglChoosePixelFormatARB(hDC, &attribs[0], NULL, 1, &pf, &nNumFormats);
+			}
+			// If we still do not get one with 0 samples per pixel, we can try to disable
+			// multisampling completely:
+			if (windowRecord->multiSample == 0 && pf==0) {
+				// printf("Failed for multisampling level %i nNum=%i --> Disabling multisampling...\n", windowRecord->multiSample, nNumFormats);
+				// We 0-Out all entries related to multi-sampling, including the
+				// GL_SAMPLES_ARB and GL_SAMPLE_BUFFERS_ARB enums themselves:
+				for (i=0; i<attribcount && attribs[i]!=0x2042; i++);
+	  			attribs[i]=0;
+	  			for (i=0; i<attribcount && attribs[i]!=0x2041; i++);
+	  			attribs[i]=0;
+	  			attribs[i+1]=0;
+				wglChoosePixelFormatARB(hDC, &attribs[0], NULL, 1, &pf, &nNumFormats);
+			}
+      }
+
+		if (pf==0 && numBuffers>=2) {
+			// We still don't have a valid pixelformat, but double-buffering is enabled.
+			// Let's try if we get one if we do not request any AUX-Buffers:
+			for (i=0; i<attribcount && attribs[i]!=0x2024; i++);
+			attribs[i+1] = 0; // Zero AUX-Buffers requested.
+			wglChoosePixelFormatARB(hDC, &attribs[0], NULL, 1, &pf, &nNumFormats);
+		}
+
+		if (pf==0 && numBuffers>=2) {
+			// We still don't have a valid pixelformat, but double-buffering is enabled.
+			// Let's try if we get one if we do not request SWAP_EXCHANGED double buffering anymore:
+			for (i=0; i<attribcount && attribs[i]!=0x2028; i++);
+			attribs[i] = 0x202A; // WGL_SWAP_UNDEFINED_ARB
+			wglChoosePixelFormatARB(hDC, &attribs[0], NULL, 1, &pf, &nNumFormats);
+		}
+
+		// Either we have a multisampled or non-multisampled format, or none. If we failed,
+		// then we can not do anything anymore about it.
+
+	   // Do we have a valid pixelformat?
+      if (pf == 0) {
+		   // Nope. We give up!
+         ReleaseDC(hDC, hWnd);
+         DestroyWindow(hWnd);      
+         printf("\nPTB-ERROR[wglChoosePixelFormat() failed]: Unknown error, Win32 specific.\n\n");
+         return(FALSE);
+      }
+
+      // Yes. Set it:
+      if (SetPixelFormat(hDC, pf, &pfd) == FALSE) {
+         ReleaseDC(hDC, hWnd);
+         DestroyWindow(hWnd);      
+
+         printf("\nPTB-ERROR[SetPixelFormat() - II failed]: Unknown error, Win32 specific.\n\n");
+         return(FALSE);
+      }
+
+      // Ok, create and attach the rendering context.
+      windowRecord->targetSpecific.contextObject = wglCreateContext(hDC);
+      if (windowRecord->targetSpecific.contextObject == NULL) {
+         ReleaseDC(hDC, hWnd);
+         DestroyWindow(hWnd);
+
+         printf("\nPTB-ERROR:[Context creation II failed] Unknown, Win32 specific.\n\n");
+         return(FALSE);
+      }
+    
+      // Store the handles...
+      windowRecord->targetSpecific.windowHandle = hWnd;
+      windowRecord->targetSpecific.deviceContext = hDC;
+
+      // Activate the rendering context:
+      PsychOSSetGLContext(windowRecord);
+
+      DescribePixelFormat(hDC, pf, sizeof(PIXELFORMATDESCRIPTOR), &pfd);
+
+      if ((stereomode==kPsychOpenGLStereo) && ((pfd.dwFlags & PFD_STEREO)==0)) {
+         // Ooops. Couldn't get the requested stereo-context from hardware :(
+         ReleaseDC(hDC, hWnd);
+         DestroyWindow(hWnd);
+
+         printf("PTB-ERROR: OpenGL native stereo mode unavailable. Your hardware may not support it,\n"
+	             "PTB-ERROR: or at least not on a flat-panel? Expect abortion of your script soon...");
+
+         return(FALSE);
+      }		
+		// Done with final window and OpenGL context setup. We've got our final context enabled.
+	 }
+
+	 // Enable multisampling if this was requested:
+    if (windowRecord->multiSample > 0) glEnable(0x809D); // 0x809D == GL_MULTISAMPLE_ARB
+	 // Throw away any error-state this could have created on old hardware...
+	 glGetError();
+
     // Finally, show our new window:
     ShowWindow(hWnd, SW_SHOW);
 
-    // Give it higher priority as other applications windows:
+    // Give it higher priority than other applications windows:
     SetForegroundWindow(hWnd);
 
     // Set the focus on it:
     SetFocus(hWnd);
 
-    // Capture the window if it is a fullscreen one, whatever that means...
+    // Capture the window if it is a fullscreen one: This window will receive all
+	 // mouse move and mouse button press events. Important for GetMouse() to work
+	 // properly...
     if (fullscreen) SetCapture(hWnd);
 
     // Increase our own open window counter:
