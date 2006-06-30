@@ -1,4 +1,4 @@
-function BubbleDemoOSX(mode, ms, myimgfile)
+function EyelinkBubbleDemo(mode, ms, myimgfile)
 %
 % OS X and WINDOWS: _______________________________________________________
 %
@@ -28,7 +28,8 @@ function BubbleDemoOSX(mode, ms, myimgfile)
 % mm/dd/yy 
 % 
 %  7/23/05    mk      Derived it from Frans Cornelissens AlphaImageDemoOSX.
-%   22/06/06    fwc     eyelinked
+%   22/06/06    fwc     eyelinked, derived from Mario Kleiner's BubbleDemo ;-)
+
 
 % Set hurryup = 1 for benchmarking - Syncing to retrace is disabled
 % in that case so we'll get the maximum refresh rate.
