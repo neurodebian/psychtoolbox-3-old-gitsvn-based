@@ -1,6 +1,5 @@
-function stressQuickTimeOSX(moviename, prefetch, durationSecs)
-%
-% stressQuickTimeOSX(moviename, prefetch, durationSecs)
+function StressQuickTimeOSX(moviename, prefetch, durationSecs)
+% StressQuickTimeOSX(moviename, prefetch, durationSecs)
 %
 % Stress test for OS-X movie playback function. Opens moviefile
 % 'moviename' repeatedly. Sequence is:
