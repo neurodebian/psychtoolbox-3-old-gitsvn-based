@@ -413,126 +413,118 @@ PsychError SCREENComputer(void)
 
     //fill in the process user, console user and machine name in the root struct.
 
-	tempCFStringRef= CSCopyMachineName();
+        tempCFStringRef= CSCopyMachineName();
 
-	stringLengthChars=(int)CFStringGetLength(tempCFStringRef);
+	stringLengthChars=(int) CFStringGetMaximumSizeForEncoding(CFStringGetLength(tempCFStringRef), kCFStringEncodingUTF8);
 
 	tempStrPtr=malloc(sizeof(char) * (stringLengthChars+1));
 
 	stringSuccess= CFStringGetCString(tempCFStringRef, tempStrPtr, stringLengthChars+1, kCFStringEncodingUTF8);
 
-	PsychSetStructArrayStringElement("machineName", 0, tempStrPtr, majorStruct);
-
+	if(stringSuccess) {
+            PsychSetStructArrayStringElement("machineName", 0, tempStrPtr, majorStruct);
+        }
+        else {
+            PsychSetStructArrayStringElement("machineName", 0, "UNKNOWN! QUERY FAILED DUE TO EMPTY OR PROBLEMATIC NAME.", majorStruct);
+        }
+        
 	free(tempStrPtr);
-
 	CFRelease(tempCFStringRef);
-
-	if(!stringSuccess)
-
-		PsychErrorExitMsg(PsychError_internal, "Failed to convert the \"machineName\" field CFString into a C String");
-
-		
-
-	
 
 	tempCFStringRef= CSCopyUserName(TRUE); //use short name
 
-	stringLengthChars=(int)CFStringGetLength(tempCFStringRef);
+	stringLengthChars=(int) CFStringGetMaximumSizeForEncoding(CFStringGetLength(tempCFStringRef), kCFStringEncodingUTF8);
 
 	tempStrPtr=malloc(sizeof(char) * (stringLengthChars+1));
 
 	stringSuccess= CFStringGetCString(tempCFStringRef, tempStrPtr, stringLengthChars+1, kCFStringEncodingUTF8);
 
-	PsychSetStructArrayStringElement("processUserShortName", 0, tempStrPtr, majorStruct);
+	if(stringSuccess) {
+            PsychSetStructArrayStringElement("processUserShortName", 0, tempStrPtr, majorStruct);
+        }
+        else {
+            PsychSetStructArrayStringElement("processUserShortName", 0, "UNKNOWN! QUERY FAILED DUE TO EMPTY OR PROBLEMATIC NAME.", majorStruct);
+        }
 
 	free(tempStrPtr);
 
 	CFRelease(tempCFStringRef);
-
-	if(!stringSuccess)
-
-		PsychErrorExitMsg(PsychError_internal, "Failed to convert the \"processUserShortName\" field CFString into a C String");
-
-	
 
 	tempCFStringRef= CSCopyUserName(FALSE); //use long name
 
-	stringLengthChars=(int)CFStringGetLength(tempCFStringRef);
+	stringLengthChars=(int) CFStringGetMaximumSizeForEncoding(CFStringGetLength(tempCFStringRef), kCFStringEncodingUTF8);
 
 	tempStrPtr=malloc(sizeof(char) * (stringLengthChars+1));
 
 	stringSuccess= CFStringGetCString(tempCFStringRef, tempStrPtr, stringLengthChars+1, kCFStringEncodingUTF8);
 
-	PsychSetStructArrayStringElement("processUserLongName", 0, tempStrPtr, majorStruct);
+	if(stringSuccess) {
+            PsychSetStructArrayStringElement("processUserLongName", 0, tempStrPtr, majorStruct);
+        }
+        else {
+            PsychSetStructArrayStringElement("processUserLongName", 0, "UNKNOWN! QUERY FAILED DUE TO EMPTY OR PROBLEMATIC NAME.", majorStruct);
+        }
 
 	free(tempStrPtr);
 
 	CFRelease(tempCFStringRef);
-
-	if(!stringSuccess)
-
-		PsychErrorExitMsg(PsychError_internal, "Failed to convert the \"processUserLongName\" field CFString into a C String");
-
-
 
 	tempCFStringRef= SCDynamicStoreCopyConsoleUser(NULL, NULL, NULL);
 
-	stringLengthChars=(int)CFStringGetLength(tempCFStringRef);
+	stringLengthChars=(int) CFStringGetMaximumSizeForEncoding(CFStringGetLength(tempCFStringRef), kCFStringEncodingUTF8);
 
 	tempStrPtr=malloc(sizeof(char) * (stringLengthChars+1));
 
 	stringSuccess= CFStringGetCString(tempCFStringRef, tempStrPtr, stringLengthChars+1, kCFStringEncodingUTF8);
 
-    PsychSetStructArrayStringElement("consoleUserName", 0, tempStrPtr, majorStruct);
-
+	if(stringSuccess) {
+            PsychSetStructArrayStringElement("consoleUserName", 0, tempStrPtr, majorStruct);
+        }
+        else {
+            PsychSetStructArrayStringElement("consoleUserName", 0, "UNKNOWN! QUERY FAILED DUE TO EMPTY OR PROBLEMATIC NAME.", majorStruct);
+        }
+        
 	free(tempStrPtr);
 
 	CFRelease(tempCFStringRef);
-
-	if(!stringSuccess)
-
-		PsychErrorExitMsg(PsychError_internal, "Failed to convert the \"consoleUserName\" field CFString into a C String");
-
-
 
 	tempCFStringRef= SCDynamicStoreCopyLocalHostName (NULL); 
 
-	stringLengthChars=(int)CFStringGetLength(tempCFStringRef);
+	stringLengthChars=(int) CFStringGetMaximumSizeForEncoding(CFStringGetLength(tempCFStringRef), kCFStringEncodingUTF8);
 
 	tempStrPtr=malloc(sizeof(char) * (stringLengthChars+1));
 
 	stringSuccess= CFStringGetCString(tempCFStringRef, tempStrPtr, stringLengthChars+1, kCFStringEncodingUTF8);
 
-    PsychSetStructArrayStringElement("localHostName", 0, tempStrPtr, majorStruct);
-
-	free(tempStrPtr);
-
+        if(stringSuccess) {
+            PsychSetStructArrayStringElement("localHostName", 0, tempStrPtr, majorStruct);
+        }
+        else {
+            PsychSetStructArrayStringElement("localHostName", 0, "UNKNOWN! QUERY FAILED DUE TO EMPTY OR PROBLEMATIC NAME.", majorStruct);
+        }
+        
+        free(tempStrPtr);
+        
 	CFRelease(tempCFStringRef);
-
-	if(!stringSuccess)
-
-		PsychErrorExitMsg(PsychError_internal, "Failed to convert the \"localHostName\" field CFString into a C String");
-
-
 
 	tempCFStringRef= SCDynamicStoreCopyLocation(NULL);
 
-	stringLengthChars=(int)CFStringGetLength(tempCFStringRef);
+	stringLengthChars=(int) CFStringGetMaximumSizeForEncoding(CFStringGetLength(tempCFStringRef), kCFStringEncodingUTF8);
 
 	tempStrPtr=malloc(sizeof(char) * (stringLengthChars+1));
 
 	stringSuccess= CFStringGetCString(tempCFStringRef, tempStrPtr, stringLengthChars+1, kCFStringEncodingUTF8);
 
-        PsychSetStructArrayStringElement("location", 0, tempStrPtr, majorStruct);
+	if(stringSuccess) {
+            PsychSetStructArrayStringElement("location", 0, tempStrPtr, majorStruct);
+        }
+        else {
+            PsychSetStructArrayStringElement("location", 0, "UNKNOWN! QUERY FAILED DUE TO EMPTY OR PROBLEMATIC NAME.", majorStruct);
+        }
 
 	free(tempStrPtr);
 
 	CFRelease(tempCFStringRef);
-
-	if(!stringSuccess)
-
-		PsychErrorExitMsg(PsychError_internal, "Failed to convert the \"location\" field CFString into a C String");
-
 
 	//Add the ethernet MAC address of the primary ethernet interface to the stuct.  This can serve as a unique identifier for the computer.  
 
@@ -640,18 +632,29 @@ PsychError SCREENComputer(void)
 
 #if PSYCH_SYSTEM == PSYCH_WINDOWS
 
+//#include <Windows.h>
+//#include <rpc.h>
+//#include <rpcdce.h>
+//#pragma comment(lib, "rpcrt4.lib")
+
 // M$-Windows implementation of Screen('Computer'): This is very rudimentary for now.
-// We only report the operating sytem type (="Windows") but don't report any more useful
-// information.
+// We only report the operating sytem type (="Windows") and MAC-Address, but don't report any more useful
+// information. MAC query does not work yet - We do not have the neccessary libraries to compile the code :(
 PsychError SCREENComputer(void)
 {
-    const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "kern", "hw", "processUserLongName", 
-        "processUserShortName", "consoleUserName", "machineName", "localHostName", "location", "MACAddress", "system" };
+    // const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "kern", "hw", "processUserLongName", 
+    //      "processUserShortName", "consoleUserName", "machineName", "localHostName", "location", "MACAddress", "system" };
+    const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "MACAddress"};
+
     const char *kernStructFieldNames[]={"ostype", "osrelease", "osrevision", "version","hostname"};
     const char *hwStructFieldNames[]={"machine", "model", "ncpu", "physmem", "usermem", "busfreq", "cpufreq"};
     int numMajorStructDimensions=1, numKernStructDimensions=1, numHwStructDimensions=1;
     int numMajorStructFieldNames=4, numKernStructFieldNames=5, numHwStructFieldNames=7;
-    
+    // char ethernetMACStr[20];
+    // unsigned char MACData[6];
+    // UUID uuid;
+    int i;
+
     PsychGenericScriptType	*kernStruct, *hwStruct, *majorStruct;
     //all subfunctions should have these two lines
     PsychPushHelp(useString, synopsisString, seeAlsoString);
@@ -667,6 +670,21 @@ PsychError SCREENComputer(void)
     PsychSetStructArrayDoubleElement("linux", 0, 0, majorStruct);
     PsychSetStructArrayDoubleElement("osx", 0, 0, majorStruct);
     
+    // Query hardware MAC address of primary ethernet interface: This is a unique id of the computer,
+    // good enough to disambiguate our statistics:
+    // sprintf(ethernetMACStr, "00:00:00:00:00:00");
+   
+    // Ask OS to create UUID. Windows uses the MAC address of primary interface
+    // in bytes 2 to 7  to do this:
+    //UuidCreateSequential( &uuid );    // Ask OS to create UUID
+    //for (i=2; i<8; i++) MACData[i - 2] = uuid.Data4[i];
+    //sprintf(ethernetMACStr, "%.2X:%.2X:%.2X:%.2X:%.2X:%.2X",
+	 //   MACData[0] & 0xff, MACData[1] & 0xff,
+	 //   MACData[2] & 0xff, MACData[3] & 0xff,
+	 //   MACData[4] & 0xff, MACData[5] & 0xff);
+	    	    	    
+    // PsychSetStructArrayStringElement("MACAddress", 0, ethernetMACStr, majorStruct);
+
     return(PsychError_none);
 }
 
@@ -675,18 +693,32 @@ PsychError SCREENComputer(void)
 #if PSYCH_SYSTEM == PSYCH_LINUX
 
 // GNU/Linux implementation of Screen('Computer'): This is very rudimentary for now.
-// We only report the operating sytem type (="Linux") but don't report any more useful
-// information.
+// We only report the operating sytem type (="Linux") and the MAC ethernet address of
+// the primary interface, but don't report any more useful information.
+
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <stdio.h>
+
 PsychError SCREENComputer(void)
 {
-    const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "kern", "hw", "processUserLongName", 
-        "processUserShortName", "consoleUserName", "machineName", "localHostName", "location", "MACAddress", "system" };
+    //    const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "kern", "hw", "processUserLongName", 
+    //    "processUserShortName", "consoleUserName", "machineName", "localHostName", "location", "MACAddress", "system" };
+    const char *majorStructFieldNames[]={"macintosh", "windows", "osx" ,"linux", "MACAddress"};
+
     const char *kernStructFieldNames[]={"ostype", "osrelease", "osrevision", "version","hostname"};
     const char *hwStructFieldNames[]={"machine", "model", "ncpu", "physmem", "usermem", "busfreq", "cpufreq"};
     int numMajorStructDimensions=1, numKernStructDimensions=1, numHwStructDimensions=1;
-    int numMajorStructFieldNames=4, numKernStructFieldNames=5, numHwStructFieldNames=7;
-    
+    int numMajorStructFieldNames=5, numKernStructFieldNames=5, numHwStructFieldNames=7;
+    char ethernetMACStr[20];
+    struct ifreq devea;
+    int s;
     PsychGenericScriptType	*kernStruct, *hwStruct, *majorStruct;
+
     //all subfunctions should have these two lines
     PsychPushHelp(useString, synopsisString, seeAlsoString);
     if(PsychIsGiveHelp()){PsychGiveHelp();return(PsychError_none);};
@@ -700,6 +732,25 @@ PsychError SCREENComputer(void)
     PsychSetStructArrayDoubleElement("windows", 0, 0, majorStruct);
     PsychSetStructArrayDoubleElement("linux", 0, 1, majorStruct);
     PsychSetStructArrayDoubleElement("osx", 0, 0, majorStruct);
+
+    // Query hardware MAC address of primary ethernet interface: This is a unique id of the computer,
+    // good enough to disambiguate our statistics:
+    sprintf(ethernetMACStr, "00:00:00:00:00:00");
+
+    s = socket(PF_INET, SOCK_DGRAM, 0);
+    if (s>=0) {
+      strcpy(devea.ifr_name, "eth0");
+      if (ioctl(s, SIOCGIFHWADDR, &devea) >= 0) {
+	sprintf(ethernetMACStr, "%.2X:%.2X:%.2X:%.2X:%.2X:%.2X",
+		devea.ifr_ifru.ifru_hwaddr.sa_data[0]&0xff, devea.ifr_ifru.ifru_hwaddr.sa_data[1]&0xff,
+		devea.ifr_ifru.ifru_hwaddr.sa_data[2]&0xff, devea.ifr_ifru.ifru_hwaddr.sa_data[3]&0xff,
+		devea.ifr_ifru.ifru_hwaddr.sa_data[4]&0xff, devea.ifr_ifru.ifru_hwaddr.sa_data[5]&0xff);
+      }
+
+      close(s);
+    }
+
+    PsychSetStructArrayStringElement("MACAddress", 0, ethernetMACStr, majorStruct);
     
     return(PsychError_none);
 }
