@@ -32,7 +32,10 @@ function PsychtoolboxRegistration(isUpdate, flavor)
 % The minimal network server for collecting the transmitted information would be the
 % following line of code, executed in the Linux/OS-X command window:
 %
-% while true; do nc -l -p 2000 | head -c 500 >> /tmp/testlog ; done
+% Linux: while true; do nc -l -p 2000 | head -c 500 >> /tmp/testlog ; done
+% MacOS-X: while true; do nc -l -p 2000 >> /tmp/testlog ; done
+%
+% A server script that does this can be found in managementtools/psychregistrationserver.sh
 %
 % This will receive data from network port 2000 (any number between 1025 and 65535
 % is valid), discard everything except the first 500 bytes (to prevent overflows due
@@ -47,7 +50,7 @@ function PsychtoolboxRegistration(isUpdate, flavor)
 % 18.08.2006 Written (MK)
 
 % Address and port number of our statistics server:
-ptbserveraddress = 'kumquat.kyb.local 2000';
+ptbserveraddress = 'platypus.psych.upenn.edu 2000';
 
 % Running under OpenGL-PTB? Otherwise we abort.
 AssertOpenGL;
@@ -86,7 +89,7 @@ try
     % Query runtime environment:
     if IsOctave
         runtimeenv = 'Octave';
-        runtimeversion = 'Unknown';
+        runtimeversion = version;
     else
         runtimeenv = 'Matlab';
         runtimeversion = version;
