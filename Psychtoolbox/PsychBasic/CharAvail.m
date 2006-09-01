@@ -1,9 +1,14 @@
-function avail = CharAvail
-% avail = CharAvail
-% 
-% Return 1 if a character is available in the event queue, 0 if not. Note
-% that this routine leaves the character in the queue.  Call GetChar to
-% remove the character from the event queue.
+function [avail, numChars] = CharAvail
+% [avail, numChars] = CharAvail
+%
+% CharAvail returns the availability of characters in the keyboard event
+% queue and the queue's current size. "avail" will be 1 if characters are
+% available, 0 otherwise.  "numChars" will hold the current number of
+% characters in the event queue.
+%
+% Note that this routine does not actually remove characters from the event
+% queue.  Call GetChar to remove characters from the queue.
+%
 % 
 % Mac:
 % 	Command-Period always causes an immediate exit.
@@ -50,7 +55,6 @@ elseif IsOSX
     if isempty(OSX_JAVA_GETCHAR)
         OSX_JAVA_GETCHAR = GetCharJava;
         OSX_JAVA_GETCHAR.register;
-        setappdata(0, 'OSX_JAVA_GETCHAR', OSX_JAVA_GETCHAR);
     end
     
     % Check to see if any characters are available.
@@ -61,5 +65,6 @@ elseif IsOSX
         error('GetChar buffer overflow. Use "FlushEvents" to clear error');
     end
     
+    numChars = avail;
     avail = avail > 0;
 end
