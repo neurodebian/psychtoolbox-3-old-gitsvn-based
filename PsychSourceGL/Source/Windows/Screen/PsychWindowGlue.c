@@ -218,23 +218,33 @@ LONG FAR PASCAL WndProc(HWND hWnd, unsigned uMsg, unsigned wParam, LONG lParam)
 /* PsychGetMouseButtonState: Returns current mouse button up-/down state. Called by SCREENGetMouseHelper. */
 void PsychGetMouseButtonState(double* buttonArray)
 {
-	MSG msg;
+  // MSG msg;
+	// Old-Style mouse button queries by parsing events in the event-queue and
+	// keeping track of state changes... Obsoleted by GetAsyncKeyState() below.
 
 	// Run our message dispatch loop until we've processed all mouse-related events
 	// in the queue:
-	while(PeekMessage(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
-		// Mouse event in queue. Dispatch it to our WndProc...
-		TranslateMessage(&msg);
-		// The WndProc will keep track of the current mouse button state by
-		// updating it according to the UP or DOWN message.
-		DispatchMessage(&msg);
-	}
+	//	while(PeekMessage(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
+	//	// Mouse event in queue. Dispatch it to our WndProc...
+	//	TranslateMessage(&msg);
+	//	// The WndProc will keep track of the current mouse button state by
+	//	// updating it according to the UP or DOWN message.
+	//	DispatchMessage(&msg);
+	// }
 
 	// The routine expects a preallocated 3-element double matrix for the three mouse-buttons:
 	// It simply copies our internally held current state to the output matrix:
-	buttonArray[0]=(double) mousebutton_l;
-	buttonArray[1]=(double) mousebutton_m;
-	buttonArray[2]=(double) mousebutton_r;
+	//buttonArray[0]=(double) mousebutton_l;
+	//buttonArray[1]=(double) mousebutton_m;
+	//buttonArray[2]=(double) mousebutton_r;
+
+	// GetAsyncKeyState() directly returns the current state of the physical mouse
+	// buttons, independent of window system event processing, keyboard or mouse
+	// focus and such. Much more robust.
+	buttonArray[0]=(double) ((GetAsyncKeyState(VK_LBUTTON) & -32768) ? 1 : 0);
+	buttonArray[1]=(double) ((GetAsyncKeyState(VK_MBUTTON) & -32768) ? 1 : 0);
+	buttonArray[2]=(double) ((GetAsyncKeyState(VK_RBUTTON) & -32768) ? 1 : 0);
+
 	return;
 }
 
@@ -304,7 +314,9 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
   DWORD flags;
   boolean fullscreen = FALSE;
   DWORD windowStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
-  DWORD windowExtendedStyle = WS_EX_APPWINDOW;
+  // The WS_EX_NOACTIVATE flag prevents the window from grabbing keyboard focus. That way,
+  // the new Java-GetChar can do its job.
+  DWORD windowExtendedStyle = WS_EX_APPWINDOW | 0x08000000; // const int WS_EX_NOACTIVATE = 0x08000000;
 
     // Map the logical screen number to a device handle for the corresponding
     // physical display device: CGDirectDisplayID is currently typedef'd to a
@@ -337,6 +349,7 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     }
     else {
       windowStyle |= WS_OVERLAPPEDWINDOW;
+      windowExtendedStyle |= WS_EX_TOPMOST;   // Set The Extended Window Style To WS_EX_TOPMOST
     }
 
     // Define final position and size of window:
@@ -674,10 +687,10 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     ShowWindow(hWnd, SW_SHOW);
 
     // Give it higher priority than other applications windows:
-    SetForegroundWindow(hWnd);
+    // Disabled: Interferes with JAVA-GetChar: SetForegroundWindow(hWnd);
 
     // Set the focus on it:
-    SetFocus(hWnd);
+    // Disabled: Interferes with JAVA-GetChar: SetFocus(hWnd);
 
     // Capture the window if it is a fullscreen one: This window will receive all
     // mouse move and mouse button press events. Important for GetMouse() to work
