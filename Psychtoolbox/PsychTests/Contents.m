@@ -13,7 +13,8 @@
 %   SimpleTimingTest                - 
 %   StructsFileTest                 - Test routines for reading and writing struct arrays to text files.
 %   TrolandTest                     - Colorimetric conversions.
-%   WavelengthSamplingTest          - Test conversion between representations of wavelength sampling information.
+%   WavelengthSamplingTest          - Test conversion between
+%   representations of wavelength sampling information.
 %   TestAlphaAddition               - Combine planes by OpenGL alpha addition and verify the result.
 %   TestAlphaBlending               - Multiple tests of OpenGL alpha blending. 
 %   TestAlphaBlendSetting           - Set and readback alpha blending settings by screen; verify match. 
@@ -37,7 +38,7 @@
 %   TestTextInOffscreenWindowOSX    - Compare text rendered into onscreen and offscreen windows. 
 %   TestTextureOSX                  - Exercise Screen('DrawTexture').
 %   VBLSyncTest                     - Tests syncing of PTB-OSX to the vertical retrace.
-
+%   VideoCaptureLatencyTest         - 
 
 
 

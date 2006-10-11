@@ -18,6 +18,7 @@
 %    DriftWaitDemoOSX        - Show how to optimally time animations.
 %    FitGammaDemo            - Demonstrate gamma fitting routine FitGamma.
 %    GazeContingentDemoOSX   - Implementation of a simple gaze contingent display 
+%    GratingDemo             - Basic display of a grating on the screen.
 %    IsomerizationsInDishDemo - Compute photoreceptor isomerizations for retina in a dish.
 %    IsomerizationsInEyeDemo  - Compute photoreceptor isomerizations for human eye.
 %    LineStippleDemoOSX      - Draw dotted and dashed lines.  
@@ -26,10 +27,10 @@
 %    MovieDemoOSX            - Animation without offscreen windows.
 %    NomogramDemo            - Compute photoreceptor nomograms.
 %    StereoDemo              - Drive stereo-displays e.g., CrystalEyes.
-%    SoundRecordingtest      - Why isn't this in PsychTests?
+%    SpriteDemo              - Animates an image that follows the mouse.
 %    SoundTrigger            -
 %    StoreBit                - Not at all clear why this is here
 %    StressQuickTimeOSX      - Why isn't this in PsychTests?
 %    ValetonVanNorrenDemo    - Exercise our code that implements the V-VN (1983) cone adaptation model.
 %    VideoCaptureDemoOSX     -
-%    VideoCaptureLatencyTest - Why isn't this in PsychTests?
+

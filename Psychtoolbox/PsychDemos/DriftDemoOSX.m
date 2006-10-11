@@ -98,7 +98,7 @@ try
     for i=1:movieDurationFrames
         Screen('DrawTexture', w, tex(movieFrameIndices(i)));
         Screen('Flip', w);
-	end;
+    end
 
     Priority(0);
 	
@@ -111,7 +111,7 @@ catch
     %above.  Importantly, it closes the onscreen window if its open.
     Screen('CloseAll');
     Priority(0);
-    psychrethrow(lasterror);
+    psychrethrow(psychlasterror);
 end %try..catch..
 
 

@@ -48,13 +48,18 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 % 1. If you don't already have it, you must install the Subversion client.
 % For Mac OSX, download the latest Mac OSX Subversion client from:
 % web http://metissian.com/projects/macosx/subversion/
+% (You can ignore the Subversion README file. If you do read it, you can
+% skip the instruction to manually add /usr/local/bin to your unix path.
+% That's tricky to do, and not needed for installation and updates because
+% we always specify the full path.)
+%
 % For Windows, download the Windows Subversion client from:
-% web http://subversion.tigris.org/files/documents/15/25364/svn-1.2.3-setup.exe
+% web http://subversion.tigris.org/files/documents/15/34093/svn-1.4.0-setup.exe
 % Install the Subversion client on your machine by double-clicking the
-% installer and following the instructions. (You can ignore the Subversion
-% README file. If you do read it, you can skip the instruction to manually
-% add /usr/local/bin to your unix path. That's tricky to do, and not needed
-% for installation and updates because we always specify the full path.)
+% installer and following the instructions. After installation of the
+% Subversion client, you will need to exit and restart Matlab, so it
+% can find the new subversion executable. In many cases it may be
+% neccessary to even reboot your computer after installation of subversion.
 %
 % 2. We strongly recommend that you install the Psychtoolbox in the
 % default location (/Applications or, failing that, /Users/Shared). Just
@@ -156,6 +161,7 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 % 06/27/06 dgp Cosmetic editing of comments and messages. Check for spaces
 %              in targetdirectory name.
 % 9/23/06  mk  Add clear mex call to flush mex files before downloading.
+% 10/5/06 mk   Add detection code for MacOS-X on Intel Macs.
 
 % Flush all MEX files: This is needed at least on M$-Windows for SVN to
 % work if Screen et al. are still loaded.
@@ -163,7 +169,7 @@ clear mex
 
 % Check OS
 isWin=strcmp(computer,'PCWIN');
-isOSX=strcmp(computer,'MAC');
+isOSX=strcmp(computer,'MAC') | strcmp(computer,'MACI');
 if ~isWin && ~isOSX
 os=computer;
 if strcmp(os,'MAC2')
@@ -388,7 +394,9 @@ if err
     fprintf('Sorry, the download command "CHECKOUT" failed with error code %d: \n',err);
     fprintf('%s\n',result);
     fprintf('The download failure might be due to temporary network or server problems. You may want to try again in a\n');
-    fprintf('few minutes.\n');
+    fprintf('few minutes. It could also be that the subversion client was not (properly) installed. On Microsoft\n');
+    fprintf('Windows you will need to exit and restart Matlab after installation of the Subversion client. If that\n');
+    fprintf('does not help, you will need to reboot your machine before proceeding.\n');
     error('Download failed.');
 end
 fprintf('Download succeeded!\n\n');
