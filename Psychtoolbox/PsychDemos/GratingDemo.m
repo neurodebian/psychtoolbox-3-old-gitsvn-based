@@ -1,5 +1,6 @@
 function GratingDemo
-
+% GratingDemo
+%
 % Displays a grating.  See also DriftDemo, EpsDemo.
 
 % ---------- Program History ----------
@@ -13,6 +14,8 @@ function GratingDemo
 %                pixelsPerPeriod, periodsCoveredByOneStandardDeviation and widthOfGrid.
 % 08/18/2006 rhh Expanded comments and created comment sections.
 % 10/04/2006 dhb Minimize warnings.
+% 10/11/2006 dhb Use maximum available screen.
+% 10/14/2006 dhb Save and restore altered prefs, more extensive comments for them
 
 % ---------- Parameter Setup ----------
 % Initializes the program's parameters.
@@ -30,7 +33,8 @@ spatialFrequency = 1 / pixelsPerPeriod; % How many periods/cycles are there in a
 radiansPerPixel = spatialFrequency * (2 * pi); % = (periods per pixel) * (2 pi radians per period)
 
 % *** To enlarge the gaussian mask, increase periodsCoveredByOneStandardDeviation.
-% The parameter "periodsCoveredByOneStandardDeviation" is approximately equal to
+% The parameter "periodsCoveredByOneStandardDeviation" is approximately
+% equal to
 % the number of periods/cycles covered by one standard deviation of the radius of
 % the gaussian mask.
 periodsCoveredByOneStandardDeviation = 1.5;
@@ -52,10 +56,17 @@ try
 	% ---------- Window Setup ----------
 	% Opens a window.
 
-	% Removes the blue screen flash and minimize extraneous warnings.
-	Screen('Preference', 'VisualDebugLevel', 3);
-    Screen('Preference', 'SuppressAllWarnings', 1);
+	% Screen is able to do a lot of configuration and performance checks on
+	% open, and will print out a fair amount of detailed information when
+	% it does.  These commands supress that checking behavior and just let
+    % the demo go straight into action.  See ScreenTest for an example of
+    % how to do detailed checking.
+	oldVisualDebugLevel = Screen('Preference', 'VisualDebugLevel', 3);
+    oldSupressAllWarnings = Screen('Preference', 'SuppressAllWarnings', 1);
 	
+    % Find out how many screens and use largest screen number.
+    whichScreen = max(Screen('Screens'));
+    
 	% Hides the mouse cursor
 	HideCursor;
 	
@@ -63,7 +74,7 @@ try
 	% multiple monitors connected to your computer, then you can specify
 	% a different monitor by supplying a different number in the second
 	% argument to OpenWindow, e.g. Screen('OpenWindow', 2).
-	window = Screen('OpenWindow', 0);
+	window = Screen('OpenWindow', whichScreen);
 
 	  
 	% ---------- Color Setup ----------
@@ -163,6 +174,9 @@ try
 	% Restores the mouse cursor.
 	ShowCursor;
 
+    % Restore preferences
+    Screen('Preference', 'VisualDebugLevel', oldVisualDebugLevel);
+    Screen('Preference', 'SuppressAllWarnings', oldSupressAllWarnings);
 catch
    
 	% ---------- Error Handling ---------- 
@@ -176,6 +190,10 @@ catch
 
 	% Restores the mouse cursor.
 	ShowCursor;
+    
+    % Restore preferences
+    Screen('Preference', 'VisualDebugLevel', oldVisualDebugLevel);
+    Screen('Preference', 'SuppressAllWarnings', oldSupressAllWarnings);
 
 	% We throw the error again so the user sees the error description.
 	psychrethrow(psychlasterror);
