@@ -1,16 +1,21 @@
-function FastFilteredNoiseDemo(filtertype, rectSize, kwidth, scale, syncToVBL, dontclear)
-% FastFilteredNoiseDemo([filtertype=1][, rectSize=128][, kwidth=5][, scale=1][, syncToVBL=1][, dontclear=0])
+function FastFilteredNoiseDemo(filtertype, rectSize, kwidth, scale, syncToVBL, dontclear, validate)
+% FastFilteredNoiseDemo([filtertype=1][, rectSize=128][, kwidth=5][, scale=1][, syncToVBL=1][, dontclear=0][, validate=0])
 %
-% Demonstrates how to generate and draw noise patches on-the-fly in a fast way. Can be
-% used to benchmark your system by varying the load. If you like this demo
+% Demonstrates how to generate, filter and draw noise patches on-the-fly 
+% in a fast way by use of GLSL fragment shaders.
+% Use it to benchmark your system by varying the load. If you like this demo
 % then also have a look at FastMaskedNoiseDemo that shows how to
 % efficiently draw a masked stimulus by use of alpha-blending.
 %
-% numRects = Number of random patches to generate and draw per frame.
+% filtertype = Type of filter to apply, see switch statement below for
+% supported filters. Zero selects no filtering, 1 is Gaussian blur.
 %
 % rectSize = Size of the generated random noise image: rectSize by rectSize
 %            pixels. This is also the size of the Psychtoolbox noise
 %            texture.
+%
+% kwidth = For filters which support a varying kernel size, the kernel
+% size. Will create a kwidth x kwidth convolution kernel.
 %
 % scale = Scalefactor to apply to texture during drawing: E.g. if you'd set
 % scale = 2, then each noise pixel would be replicated to draw an image
@@ -87,6 +92,9 @@ if dontclear > 0
     dontclear = 2;
 end
 
+if nargin < 7 || isempty(validate)
+    validate = 0;
+end
 
 try
     % Find screen with maximal index:
@@ -112,9 +120,12 @@ try
             kernel = fspecial('prewitt');
     end
 
+stype = 0;
+channels = 1;
+
     if filtertype > 0
         % Build shader from kernel:
-        shader = EXPCreateStatic2DConvolutionShader(kernel,0,1);
+        shader = EXPCreateStatic2DConvolutionShader(kernel,channels,stype,1);
         %shader = Create2DGaussianBlurShader;
         % Enable shader: It will apply to any further drawing operation:
         glUseProgram(shader);
@@ -141,8 +152,10 @@ try
         dstRect(i,:)=CenterRectOnPoint(objRect * scale, xc, yc);
     end
 
+
     % Init framecounter to zero and take initial timestamp:
-    count = 0;    
+    count = 0; 
+    glFinish;
     tstart = GetSecs;
     endtime = tstart + 5;
     
@@ -155,6 +168,10 @@ try
             % pixel computed independently:
             noiseimg=(50*randn(rectSize, rectSize) + 128);
 
+            if validate
+                noiseimg=uint8(noiseimg);
+            end
+            
             % Convert it to a texture 'tex':
             tex=Screen('MakeTexture', win, noiseimg);
 
@@ -167,9 +184,26 @@ try
             % neighbour filtering. This is important to preserve the
             % statistical independence of the noise pixels in the noise
             % texture! The default bilinear filtering would introduce local
-            % correlations when scaling is applied:
-            Screen('DrawTexture', win, tex, [], dstRect(i,:), [], 0);
-
+            % correlatio
+            if validate
+                glFinish;
+                tic
+                Screen('DrawTexture', win, tex, [], dstRect(i,:), [], 0);
+                glFinish;
+                gpu = toc
+            else                
+                Screen('DrawTexture', win, tex, [], dstRect(i,:), [], 0);
+            end
+            
+            if validate
+                % Compute same convolution on CPU:
+                noiseimg = single(noiseimg);
+                tic
+                ref = conv2(noiseimg, kernel, 'same');
+                cpu = toc
+                ref = uint8(0.5 + ref);
+            end
+            
             % After drawing, we can discard the noise texture.
             Screen('Close', tex);
         end
@@ -179,17 +213,31 @@ try
         % synchronized to vertical retrace. If 'asyncflag' is 2, bufferswap
         % will happen immediately -- Only useful for benchmarking!
         Screen('Flip', win, 0, dontclear, asyncflag);
-
+        
+        if validate
+            gpu = (Screen('GetImage', win, dstRect(1,:)));
+            difference = gpu(:,:,1) - ref;
+            difference = difference(length(kernel):end-length(kernel), length(kernel):end-length(kernel));
+            maxdiff = max(max(difference))
+        end
+        
         % Increase our frame counter:
         count = count + 1;
     end
 
     % We're done: Output average framerate:
+    glFinish;
     telapsed = GetSecs - tstart
     updaterate = count / telapsed
     
     % Disable shader: Standard fixed-function pipeline is activated.
     glUseProgram(0);
+
+    if validate
+        imagesc(difference);
+        figure;
+        imagesc(noiseimg);
+    end
 
     % Done. Close Screen, release all ressouces:
     Screen('CloseAll');
