@@ -1,5 +1,5 @@
-function FastFilteredNoiseDemo(filtertype, rectSize, kwidth, scale, syncToVBL, dontclear, validate)
-% FastFilteredNoiseDemo([filtertype=1][, rectSize=128][, kwidth=5][, scale=1][, syncToVBL=1][, dontclear=0][, validate=0])
+function FastSeparableFilteredNoiseDemo(filtertype, rectSize, kwidth, scale, syncToVBL, dontclear, validate)
+% FastSeparableFilteredNoiseDemo([filtertype=1][, rectSize=128][, kwidth=5][, scale=1][, syncToVBL=1][, dontclear=0][, validate=0])
 %
 % Demonstrates how to generate, filter and draw noise patches on-the-fly 
 % in a fast way by use of GLSL fragment shaders.
@@ -108,55 +108,50 @@ try
     % rectangle 'winRect' which defines the size of the window:
     [win, winRect] = Screen('OpenWindow', screenid, 128);
     
-    % Build a filter kernel:
+    % Build a separable filter kernel:
     stddev = kwidth / 3;
+stddev=10;
 
     switch(filtertype)
         case 0
             kernel = [];
         case 1
-            kernel = fspecial('gaussian', kwidth, stddev);
+            % Standard 2D gauss kernel:
+            kernel  = fspecial('gaussian', kwidth, stddev);
+            % Same kernel split up into two 1D kernels:
+            kernel1 = fspecial('gaussian', [kwidth, 1], stddev);
+            kernel2 = fspecial('gaussian', [1, kwidth], stddev);            
         case 2
             kernel = fspecial('prewitt');
     end
-
-stype = 0;
-channels = 1;
+    
+    stype = 0;
+    channels = 4;
 
     if filtertype > 0
-        % Build shader from kernel:
-        shader = EXPCreateStatic2DConvolutionShader(kernel, channels, 1, stype,1);
-        %shader = Create2DGaussianBlurShader;
-        % Enable shader: It will apply to any further drawing operation:
-        glUseProgram(shader);
+        % Build shaders from kernels:
+        shader1 = EXPCreateStatic2DConvolutionShader(kernel1, channels, 4, stype, 1);
+        shader2 = EXPCreateStatic2DConvolutionShader(kernel2, channels, 4, stype, 1);
     end
 
+    % Create a floating-point precision FBO for intermediate result of first filter pass:
+    [convolvefbo, convolvetex] = moglCreateFBO(rectSize, rectSize, 1, 4);
+    
+    % Sync us to the GPU so our timing benchmarks are ok:
     glFinish;
     
-    % Compute destination rectangle locations for the random noise patches:
-    
+    % Compute destination rectangle locations for the random noise patches:    
     % 'objRect' is a rectangle of the size 'rectSize' by 'rectSize' pixels of
     % our Matlab noise image matrix:
     objRect = SetRect(0,0, rectSize, rectSize);
-
-    % ArrangeRects creates 'numRects' copies of 'objRect', all nicely
-    % arranged / distributed in our window of size 'winRect':
-    dstRect = ArrangeRects(numRects, objRect, winRect);
-
-    % Now we rescale all rects: They are scaled in size by a factor 'scale':
-    for i=1:numRects
-        % Compute center position [xc,yc] of the i'th rectangle:
-        [xc, yc] = RectCenter(dstRect(i,:));
-        % Create a new rectange, centered at the same position, but 'scale'
-        % times the size of our pixel noise matrix 'objRect':
-        dstRect(i,:)=CenterRectOnPoint(objRect * scale, xc, yc);
-    end
+    % dstRect = CenterRect(objRect, winRect);
+    dstRect = objRect;
 
     % Init framecounter to zero and take initial timestamp:
     count = 0; 
     glFinish;
     tstart = GetSecs;
-    endtime = tstart + 5;
+    endtime = tstart + 15;
     
     % Run noise image drawing loop for 20 seconds.
     while GetSecs < endtime
@@ -165,40 +160,50 @@ channels = 1;
             % Compute noiseimg noise image matrix with Matlab:
             % Normally distributed noise with mean 128 and stddev. 50, each
             % pixel computed independently:
-            noiseimg=(50*randn(rectSize, rectSize) + 128);
+            if (count==0 | validate < 2) noiseimg=(50*randn(rectSize, rectSize) + 128); end
 
-            if validate
+            % Validation enabled?
+            if validate == 1
+                % Cast it to uint8 so GPU and CPU get exactly the same
+                % input data:
                 noiseimg=uint8(noiseimg);
             end
             
             % Convert it to a texture 'tex':
             tex=Screen('MakeTexture', win, noiseimg);
-
-            % Draw the texture into the screen location defined by the
-            % destination rectangle 'dstRect(i,:)'. If dstRect is bigger
-            % than our noise image 'noiseimg', PTB will automatically
-            % up-scale the noise image. We set the 'filterMode' flag for
-            % drawing of the noise image to zero: This way the bilinear
-            % filter gets disabled and replaced by standard nearest
-            % neighbour filtering. This is important to preserve the
-            % statistical independence of the noise pixels in the noise
-            % texture! The default bilinear filtering would introduce local
-            % correlatio
-            if validate
+            intex=Screen('GetOpenGLTexture', win, tex);
+            
+            if validate == 1
                 glFinish;
                 tic
-                Screen('DrawTexture', win, tex, [], dstRect(i,:), [], 0);
+            end
+
+            % Pass 1: Blit texture into our FBO, apply first kernel:
+            moglChooseFBO(convolvefbo);
+            glUseProgram(shader1);
+            moglBlitTexture(intex, [], [], [], [], 0, GL.CLAMP_TO_BORDER);
+
+            % Pass 2: Blit intermediate result into framebuffer, apply
+            % second kernel:
+            moglChooseFBO(0);
+            glUseProgram(shader2);
+            moglBlitTexture(convolvetex, [], [], [], [], 0, GL.CLAMP_TO_BORDER);
+
+            % Done. Disable shader:
+            glUseProgram(0);
+
+            if validate == 1
                 glFinish;
                 gpu = toc
-            else                
-                Screen('DrawTexture', win, tex, [], dstRect(i,:), [], 0);
             end
             
-            if validate
+            if validate == 1
                 % Compute same convolution on CPU:
                 noiseimg = single(noiseimg);
                 tic
-                ref = conv2(noiseimg, kernel, 'same');
+                %ref = conv2(noiseimg, single(kernel1), 'same');
+                %ref = conv2(ref, single(kernel2), 'same');
+                ref = conv2(noiseimg, (kernel), 'same');
                 cpu = toc
                 ref = uint8(0.5 + ref);
             end
@@ -213,8 +218,8 @@ channels = 1;
         % will happen immediately -- Only useful for benchmarking!
         Screen('Flip', win, 0, dontclear, asyncflag);
         
-        if validate
-            gpu = (Screen('GetImage', win, dstRect(1,:)));
+        if validate == 1
+            gpu = Screen('GetImage', win, dstRect);
             difference = gpu(:,:,1) - ref;
             difference = difference(length(kernel):end-length(kernel), length(kernel):end-length(kernel));
             maxdiff = max(max(difference))
@@ -232,7 +237,10 @@ channels = 1;
     % Disable shader: Standard fixed-function pipeline is activated.
     glUseProgram(0);
 
-    if validate
+    % Delete our FBO and its associated color buffer texture:
+    moglDeleteFBO(convolvefbo);
+    
+    if validate == 1
         imagesc(difference);
         figure;
         imagesc(noiseimg);
