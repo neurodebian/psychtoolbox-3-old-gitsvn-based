@@ -200,10 +200,12 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     CGOpenGLDisplayMask 			displayMask;
     CGLError					error;
     CGDirectDisplayID				cgDisplayID;
-    CGLPixelFormatAttribute			attribs[30];
+    CGLPixelFormatAttribute			attribs[32];
     long					numVirtualScreens;
     GLboolean					isDoubleBuffer, isFloatBuffer;
     GLint bpc;
+	GLenum glerr;
+	
     int attribcount=0;
     int i;
 
@@ -219,11 +221,12 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     if (windowRecord->depth == 30) {
       // Request a 10 bit per color component framebuffer with 2 bit alpha channel:
       printf("PTB-INFO: Trying to enable 10 bpc framebuffer...\n");
+	  attribs[attribcount++]=kCGLPFANoRecovery;
+	  attribs[attribcount++]=kCGLPFAAccelerated;
       attribs[attribcount++]=kCGLPFAColorSize;
-      attribs[attribcount++]=30;
+      attribs[attribcount++]=16*3;
       attribs[attribcount++]=kCGLPFAAlphaSize;
-      attribs[attribcount++]=2;
-	  attribs[attribcount++]=kCGLPFAMinimumPolicy;
+      attribs[attribcount++]=16;
     }
 
     // 16 bit per component, 64 bit framebuffer requested (16-16-16-16)?
@@ -339,6 +342,19 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
         return(FALSE);
     }
     
+	// Ok, the OpenGL rendering context is up and running. Auto-detect and bind all
+	// available OpenGL extensions via GLEW:
+	glerr = glewInit();
+	if (GLEW_OK != glerr)
+	{
+		/* Problem: glewInit failed, something is seriously wrong. */
+		printf("\nPTB-ERROR[GLEW init failed: %s]: Please report this to the forum. Will try to continue, but may crash soon!\n\n", glewGetErrorString(glerr));
+		fflush(NULL);
+	}
+	else {
+		printf("PTB-INFO: Using GLEW version %s for automatic detection of OpenGL extensions...\n", glewGetString(GLEW_VERSION));
+	}
+	
     // Enable multisampling if it was requested:
     if (windowRecord->multiSample > 0) glEnable(GL_MULTISAMPLE);
     
@@ -356,27 +372,6 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
         }
     }
     
-    if (windowRecord->depth == 30 || windowRecord->depth == 64 || windowRecord->depth == 128) {
-
-        // Floating point framebuffer active?
-        glGetBooleanv(GL_COLOR_FLOAT_APPLE, &isFloatBuffer);
-        if (isFloatBuffer) {
-            printf("PTB-INFO: Floating point precision framebuffer enabled.\n");
-        }
-        else {
-            printf("PTB-INFO: Fixed point precision integer framebuffer enabled.\n");
-        }
-        
-        // Query and show bpc for all channels:
-        glGetIntegerv(GL_RED_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for red channel.\n", bpc);
-        glGetIntegerv(GL_GREEN_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for green channel.\n", bpc);
-        glGetIntegerv(GL_BLUE_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for blue channel.\n", bpc);
-        glGetIntegerv(GL_ALPHA_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for alpha channel.\n", bpc);
-    }
     
     // Initialize a low-level mapping of Framebuffer device data structures into
     // our address space: Needed for additional timing checks:
