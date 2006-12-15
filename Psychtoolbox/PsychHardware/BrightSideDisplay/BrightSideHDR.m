@@ -1,4 +1,4 @@
-function BrightSideHDR(cmd, arg, dummy)
+function [win, winRect] = BrightSideHDR(cmd, arg, dummy, varargin)
 % BrightSideHDR(cmd [, arg1][, arg2]) -- Psychtoolbox interface to
 % BrightSide Technologies High Dynamic Range display device.
 %
@@ -12,23 +12,47 @@ function BrightSideHDR(cmd, arg, dummy)
 % cmd - The command that BrightSideHDR should execute. cmd can be any of
 % the following:
 %
+% Open a window on the HDR display as with Screen('OpenWindow', ...),
+% perform all HDR initialization:
+%
+% [win, winRect] = BrightSideHDR('OpenWindow', screenid, ...);
+%
+% This will execute Screen('OpenWindow') with all proper parameters,
+% followed by BrightSide HDR init routines. It is a completely sufficient
+% drop in replacement for Screen('OpenWindow'), accepting and returning
+% exactly the same arguments that Screen() would do, adjusting all
+% parameters to the constraints of the BrightSideHDR, if necessary.
+%
+% [win, winRect] = BrightSideHDR('DummyOpenWindow', screenid, ...);
+% Same as OpenWindow, but just init a dummy mode that operates on standard
+% displays without the Brightside-Libraries - useful for off-site testing.
+%
+% In 99% of all applications you won't ever need to use any of the commands
+% below, as PTB does all this stuff automatically behind the scenes...
+% Ignore them unless you know what you're doing.
+%
 % BrightSideHDR('Initialize', win [, dummy]); -- Initialize the BrightSide libraries
 % for HDR output into onscreen window 'win'. Onscreen window 'win' must have been
 % opened before on a screen which corresponds to the attached High Dynamic Range
 % display device. If you set 'dummy' to 1, then we are in emulation mode,
 % i.e., we work without invocation of the mex file and without a real HDR
-% display.
+% display. This call will also attach all callback functions to the proper
+% hooks for the given onscreen window 'win' inside the Screen() command.
 %
 % BrightSideHDR('Debuglevel', level); -- Set level of verbosity for
 % debugging. The default is zero which means to be silent. A level of 1
 % produces some debug output.
 %
-% BrightSideHDR('BeginDrawing'); -- Mark start of drawing operations into
+% Callbacks: Usually called automatically by Screen(), no need to use them
+% in your script directly! Some of them may disappear in the future,
+% getting subsumed by Screen()'s internal imaging pipeline.
+%
+% BrightSideHDR('BeginDrawing', win); -- Mark start of drawing operations into
 % the high dynamic range backbuffer. After this command you can issue
 % standard Screen or mogl OpenGL commands to draw into the high resolution
 % framebuffer.
 %
-% BrightSideHDR('EndDrawing'); -- Mark end of drawing operations. This will
+% BrightSideHDR('EndDrawing', win); -- Mark end of drawing operations. This will
 % convert the HDR image content in the HDR backbuffer into the special data
 % format needed by the HDR display hardware. After execution of this
 % command you can simply call the usual Screen('Flip', win, ...) command to
@@ -41,6 +65,9 @@ function BrightSideHDR(cmd, arg, dummy)
 % 10/30/2006 Initial prototype implementation. MK & Oguz Ahmet Akyuz (Dept. of
 % Computer Science, University of Central Florida)
 % 11/09/2006 Small fixes and improvements to make it really work. (MK + Oguz)
+% 12/12/2006 Integrate initial hook-plugin support for PTB's imaging
+% pipeline, so user code does not need to call these functions anymore.
+% 12/13/2006 Built-in 'OpenWindow' for simplified setup...
 
 global GL;
 persistent windowPtr;
@@ -81,8 +108,87 @@ if strcmp(cmd, 'Debuglevel')
     return;
 end
 
-if strcmp(cmd, 'Initialize')
-    % Initialization command:
+if strcmp(cmd, 'OpenWindow') | strcmp(cmd, 'DummyOpenWindow') | strcmp(cmd, 'Initialize')
+    if strcmp(cmd, 'OpenWindow') | strcmp(cmd, 'DummyOpenWindow')
+        % Execute the Screen('OpenWindow') command with proper flags, followed
+        % by our own Initialization. Return values of 'OpenWindow'.
+        % BrightSideHDR('OpenWindow', ...) is a drop-in replacement for
+        % Screen('OpenWindow', ...):
+
+        % OpenGL mode of Psychtoolbox already initialized?
+        if isempty(GL)
+            % Nope. Do it now:
+            InitializeMatlabOpenGL;
+        end
+
+        % Assign screen index:
+        if nargin < 2 || isempty(arg) || ~isa(arg, 'double')
+            error('BrightSideHDR: "OpenWindow" called without valid screen handle.');
+        end
+        screenid = arg;
+        
+        % Assign optional clear color:
+        if nargin < 3
+            clearcolor = [];
+        else
+            clearcolor = dummy;
+        end
+        
+        % windowRect is always full screen -- Anything else would make the
+        % HDR display fail.
+        winRect = [];
+        
+        % pixelSize is also fixed:
+        pixelSize = 32;
+        
+        % Same for double-buffering:
+        numbuffers = 2;
+        
+        % stereomode we take...
+        if nargin >= 7
+            stereomode = varargin{4};
+        else
+            stereomode = [];
+        end
+        
+        % multiSample gets overriden for now... Would probably interfere
+        % with HDR display controller:
+        multiSample = 0;
+        
+        % Imaging mode we take - and combine it with our own requirements:
+        if nargin >= 9
+            imagingmode = varargin{6};
+        else
+            imagingmode = [];
+        end
+        
+        % TODO for the future: Set imagingmode flags based on all previous
+        % input parameters... For now a no-op.
+        
+        % Open the window, pass all parameters (partially modified or
+        % overriden), return Screen's return values:
+        if nargin > 9
+            [win, winRect] = Screen('OpenWindow', screenid, clearcolor, winRect, pixelSize, numbuffers, stereomode, imagingmode, varargin{7:end});
+        else
+            [win, winRect] = Screen('OpenWindow', screenid, clearcolor, winRect, pixelSize, numbuffers, stereomode, imagingmode);
+        end
+        
+        % Ok, if we reach this point then we've got a proper onscreen
+        % window on the HDR. Let's reassign our arguments and continue with
+        % the init sequence:
+        arg = win;
+        
+        % Operate in dummy mode or real mode?
+        if strcmp(cmd, 'DummyOpenWindow')
+            dummy = 1;
+        else
+            dummy = 0;
+        end
+        
+        % Ok, should be safe to continue with standard Brightside init...
+    end
+
+    % BrightSide init sequence:
 
     % Child protection:
     if online
@@ -93,7 +199,7 @@ if strcmp(cmd, 'Initialize')
         error('BrightSideHDR: "Initialize" called without valid HDR onscreen window handle.');
     end
 
-    if nargin < 3 || isempty(dummy)
+    if strcmp(cmd, 'Initialize') && (nargin < 3 || isempty(dummy))
         dummymode = 0;
     else
         dummymode = dummy;
@@ -101,7 +207,8 @@ if strcmp(cmd, 'Initialize')
     
     % OpenGL mode of Psychtoolbox already initialized?
     if isempty(GL)
-        error('BrightSideHDR: OpenGL is offline! You need to call "InitializeMatlabOpenGL" before calling BrightSide functions.');
+        % Nope. Do it now:
+        InitializeMatlabOpenGL;
     end
 
     % Another bit of child protection:
@@ -124,10 +231,6 @@ if strcmp(cmd, 'Initialize')
     % core library for the HDR blit operation:
     [hdrfbo, hdrtexid] = moglCreateFBO(winwidth, winheight);
     
-	% BrightSide::DCGI.Initialize( "../", "DR-37P-beta.xml" );
-	% //when display is called, the texture in tex will be rendered to the back buffer
-	% BrightSide::DCGI.SetInputOutput(g_texture_tobe_displayed, 0);
-
     % We have our framebuffer. Pass the location of the HDR config file and
     % the texture handle of the framebuffers HDR colorbuffer texture to the
     % core library and initialize it:
@@ -159,6 +262,22 @@ if strcmp(cmd, 'Initialize')
     
     % Reset draw mode:
     inhdrdrawmode = 0;
+
+    % Add proper callback functions to Screen's hook-chains:
+    Screen('HookFunction', windowPtr, 'AppendMFunction', 'FinalOutputFormattingBlit', 'Execute BrightSide blit operation', 'BrightSideHDR(''EndDrawing'', win)');
+    Screen('HookFunction', windowPtr, 'Enable', 'FinalOutputFormattingBlit');
+    Screen('HookFunction', windowPtr, 'AppendMFunction', 'UserspaceBufferDrawingPrepare', 'Prepare FBO for drawing', 'BrightSideHDR(''BeginDrawing'', win)');
+    Screen('HookFunction', windowPtr, 'Enable', 'UserspaceBufferDrawingPrepare');
+    Screen('HookFunction', windowPtr, 'AppendMFunction', 'CloseOnscreenWindowPreGLShutdown', 'Shutdown BrightSide core before window close.', 'BrightSideHDR(''Shutdown'', win)');
+    Screen('HookFunction', windowPtr, 'Enable', 'CloseOnscreenWindowPreGLShutdown');
+
+    % Disable color clamping in the GL pipeline. It's not useful for our
+    % purpose, unless we are in dummymode. Also set color scaling to 1.0,
+    % i.e. do not scale color values at all - Doesn't make much sense with
+    % the BrightSide HDR display.
+    if ~dummymode
+        Screen('ColorRange', windowPtr, 1, 0);
+    end
 
     % We are online:
     online = 1;
@@ -282,6 +401,7 @@ if strcmp(cmd, 'EndDrawing')
         glPopAttrib;
     else
         % Dummy mode: We do it ourselves.
+        glColor4f(1,1,1,1);
         moglBlitTexture(hdrtexid);
     end
 

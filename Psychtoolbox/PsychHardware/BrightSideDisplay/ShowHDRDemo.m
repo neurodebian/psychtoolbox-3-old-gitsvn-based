@@ -23,8 +23,8 @@ AssertOpenGL;
 % in fixed-function mode.
 useshader = 0;
 
-% For now we skip the sync tests during debugging:
-Screen('Preference', 'SkipSyncTests', 2);
+% For now we shorten the sync tests during debugging:
+Screen('Preference', 'SkipSyncTests', 1);
 
 % Run demo in dummy mode?
 if nargin < 2
@@ -63,13 +63,8 @@ if nargin < 4 || isempty(halffloat)
     halffloat = 1;
 end
 
+% Scale image matrix by scalefactor 'sf':
 img=double(img) * sf;
-
-% No Alpha channel provided?
-if size(img, 3) < 4
-    % Add a dummy one with alpha set to fully opaque:
-    img(:,:,4) = ones(size(img,1), size(img,2));
-end;
 
 % img is now a height by width by 4 matrix with the (R,G,B,A) channels of our
 % image. Now we use Psychtoolbox to make a HDR texture out of it and show
@@ -85,22 +80,15 @@ try
     % Open a standard fullscreen onscreen window, double-buffered with black
     % background color, instead of the default white one: win is the window
     % handle for this window:
-    win = Screen('OpenWindow', screenid, 0);
-    prelut = Screen('ReadNormalizedGammaTable', screenid);
-
-    % Initialize the BrightSide HDR display library:
-    BrightSideHDR('Initialize', win, dummymode);
+    if dummymode
+        win = BrightSideHDR('DummyOpenWindow', screenid, 0);
+    else
+        win = BrightSideHDR('OpenWindow', screenid, 0);
+    end
     
-    % Enable OpenGL mode for our onscreen window: This is needed for HDR
-    % texture processing.
-    Screen('BeginOpenGL', win);
-
     % Build a Psychtoolbox 16 bpc half-float or 32 bpc float texture from the image array:
-    texid = moglMakeHDRTexture(win, img, halffloat);
-
-    % End of OpenGL processing:
-    Screen('EndOpenGL', win);
-
+    texid = Screen('MakeTexture', win, img, [], [], 2-halffloat);
+    
     % Load our bias and rescale shader:
     glslnormalizer = LoadGLSLProgramFromFiles('ScaleAndBiasShader');
     prebias = glGetUniformLocation(glslnormalizer, 'prescaleoffset');
@@ -142,42 +130,34 @@ try
     tstart = vbl;
     
     while ~KbCheck
-        % Select the HDR backbuffer for drawing:
-        BrightSideHDR('BeginDrawing', win);
-        if ~dummymode, BrightSideCore(5, 0); end
-        
-        % Clear it by overdrawing with a black full screen rect:
+        % Clear backbuffer by overdrawing with a black full screen rect:
         Screen('FillRect', win, 0);
 
         % Shall we use GLSL shaders?
         if useshader, glUseProgram(glslnormalizer); end;
 
         % Draw our texture into the backbuffer. We explicitely disable bilinear
-        % filtering here, because current Geforce 7000 series hardware is
-        % not capable of bilinear filtering of floating point textures in
-        % hardware. Bilinear filtering works, but framerate drops from 30
+        % filtering if halfffloat is 0, i.e., the texture is float32 format,
+        % because current Geforce 7000 series hardware is not capable of
+        % bilinear filtering of floating point 32 textures in hardware.
+        % Bilinear filtering would work, but framerate would drop from 30
         % fps to 0.5 fps when the driver switches to the slow software
-        % fallback path. If otoh halffloat is true, i.e. the texture is
+        % fallback path. If otoh halffloat is 1, i.e. the texture is
         % stored as 16 bpc half-floats, then we enable bilinear filtering,
         % as modern hardware is capable of filtering that.
         Screen('DrawTexture', win, texid, [], [], rotAngle, halffloat);
 
         % Draw some 2D primitives:
         if useshader, glUseProgram(glslcolor); end;
-        %Screen('FillOval', win, [255 * 255 * 10 255 0], [500 500 600 600]);
+        Screen('FillOval', win, [255 * 255 * 10 255 0], [500 500 600 600]);
         
         % And some text:
         Screen('TextSize', win, 30);
         Screen('TextStyle', win , 1);
-        %DrawFormattedText(win, 'If it works, it works.\nIf it doesn''t, it doesn''t.\n(Quoc Vuong, 2006)', 'center', 'center', [0 255*255*10 0]);
+        if dummymode==0
+            DrawFormattedText(win, 'If it works, it works.\nIf it doesn''t, it doesn''t.\n(Quoc Vuong, 2006)', 'center', 'center', [0 255*255*10 0]);
+        end
         
-        % Lightshow! Modulate LED intensity of the LED array:
-        % BrightSideCore(4, 0.5*(cos(rotAngle)+1));
-        
-        % End of drawing. Prepare HDR framebuffer for flip:
-        BrightSideHDR('EndDrawing', win);
-        actlut = Screen('ReadNormalizedGammaTable', screenid);
-
         % Show updated HDR framebuffer at next vertical retrace:
         vbl=Screen('Flip', win, vbl);
 
@@ -186,9 +166,6 @@ try
         
         % Count our frames...
         framecounter = framecounter + 1;
-
-        % Lets check if BrightSide knows how to handle gamma tables:
-        lutchanged = any(any(prelut - actlut))
     end
   
     % We're done. Print the stats:
@@ -196,10 +173,7 @@ try
     duration = vbl - tstart
     averagefps = framecounter / duration
     
-    % Shutdown BrightSide HDR:
-    BrightSideHDR('Shutdown', win);
-    
-    % Release all textures, close all windows:
+    % Release all textures, close all windows, shutdown BrightSide library:
     Screen('CloseAll');
     
     % Well done!
@@ -208,10 +182,7 @@ catch
     % Error handler: If something goes wrong between try and catch, we
     % close the window and abort.
 
-    % Shutdown BrightSide HDR if it is online:
-    BrightSideHDR('Shutdown', win);
-
-    % Release all textures, close all windows:
+    % Release all textures, close all windows, shutdown BrightSide library:
     Screen('CloseAll');
 
     % Rethrow the error, so higher level routines can handle it:

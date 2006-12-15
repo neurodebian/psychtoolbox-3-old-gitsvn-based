@@ -75,7 +75,7 @@ PsychError SCREENglPoint(void)
         PsychSetDrawingTarget(windowRecord);
 
 	PsychUpdateAlphaBlendingFactorLazily(windowRecord);
-	PsychSetGLColor(&color, depthValue);
+	PsychSetGLColor(&color, windowRecord);
 	glEnable(GL_POINT_SMOOTH);
 	glPointSize((float)dotSize);
 	glBegin(GL_POINTS);
@@ -90,6 +90,7 @@ PsychError SCREENglPoint(void)
  	//All psychfunctions require this.
 	return(PsychError_none);
 }
+
 
 
 

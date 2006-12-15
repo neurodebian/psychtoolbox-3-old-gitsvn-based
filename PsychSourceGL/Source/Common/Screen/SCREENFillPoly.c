@@ -120,7 +120,7 @@ PsychError SCREENFillPoly(void)
 	PsychSetGLContext(windowRecord);
 	PsychUpdateAlphaBlendingFactorLazily(windowRecord);
 		 
-	PsychSetGLColor(&color, depthValue);
+	PsychSetGLColor(&color, windowRecord);
         // Enable this windowRecords framebuffer as current drawingtarget:
         PsychSetDrawingTarget(windowRecord);
 
@@ -210,3 +210,4 @@ PsychError SCREENFillPoly(void)
 
 	return(PsychError_none);
 }
+

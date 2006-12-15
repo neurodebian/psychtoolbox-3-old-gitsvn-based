@@ -42,6 +42,9 @@ typedef double 	*PsychFlagListType;
 //NaN
 double PsychGetNanValue(void);
 
+// Simple function evaluation by scripting environment via feval() style functions:
+int		PsychRuntimeEvaluateString(const char* cmdstring);
+
 //for integers
 boolean PsychCopyInIntegerArg(int position, PsychArgRequirementType isRequired, int *value);
 boolean PsychAllocInIntegerListArg(int position, PsychArgRequirementType isRequired, int *numElements, int **array);
@@ -124,4 +127,5 @@ const mxArray *PsychGetInArgMxPtr(int position);
 
 //end include once
 #endif
+
 

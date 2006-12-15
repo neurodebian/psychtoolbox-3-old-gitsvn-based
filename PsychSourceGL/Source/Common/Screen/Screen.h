@@ -43,6 +43,7 @@
 #include "PsychTextureSupport.h"
 #include "PsychAlphaBlending.h"
 #include "PsychVideoCaptureSupport.h"
+#include "PsychImagingPipelineSupport.h"
 
 #include "ScreenArguments.h"
 #include "RegisterProject.h"
@@ -69,9 +70,9 @@ void InitializeSynopsis();				//ScreenExit.c
 void ScreenCloseAllWindows();           //SCREENCloseAll.c
 
 //PsychGLGlue.c
-int		PsychConvertColorAndDepthToDoubleVector(PsychColorType *color, int depthValue, GLdouble *valueArray);
-int		PsychConvertColorAndColorSizeToDoubleVector(PsychColorType *color, int colorSize, GLdouble *valueArray);
-void		PsychSetGLColor(PsychColorType *color, int depthValue);
+int		PsychConvertColorToDoubleVector(PsychColorType *color, PsychWindowRecordType *windowRecord, GLdouble *valueArray);
+// int		PsychConvertColorAndColorSizeToDoubleVector(PsychColorType *color, int colorSize, GLdouble *valueArray);
+void		PsychSetGLColor(PsychColorType *color, PsychWindowRecordType *windowRecord);
 void		PsychGLRect(double *psychRect);
 char		*PsychGetGLErrorNameString(GLenum errorConstant);
 #define		PsychTestForGLErrors()		PsychTestForGLErrorsC(__LINE__, __func__, __FILE__) 
@@ -174,6 +175,8 @@ PsychError      SCREENEndOpenGL(void);
 PsychError      SCREENLoadCLUT(void);
 PsychError      SCREENDisplaySize(void);
 PsychError      SCREENSetOpenGLTextureFromMemPointer(void);
+PsychError		SCREENColorRange(void);
+PsychError		SCREENHookFunction(void);
 
 //experimental
 PsychError SCREENGetMouseHelper(void);
@@ -183,3 +186,4 @@ PsychError SCREENGetMouseHelper(void);
 
 //end include once
 #endif
+
