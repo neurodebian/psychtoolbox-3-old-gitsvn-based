@@ -113,7 +113,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "oldStyle=Screen('TextStyle', windowPtr [,style]);";
 	synopsis[i++] = "[oldFontName,oldFontNumber]=Screen(windowPtr,'TextFont' [,fontNameOrNumber]);";
 	synopsis[i++] = "[normBoundsRect, offsetBoundsRect]=Screen('TextBounds', windowPtr, text);";
-	synopsis[i++] = "[newX,newY]=Screen('DrawText', windowPtr, text [,x] [,y] [,color]);";
+	synopsis[i++] = "[newX,newY]=Screen('DrawText', windowPtr, text [,x] [,y] [,color] [,backgroundColor] [,yPositionIsBaseline]);";
 	synopsis[i++] = "oldTextColor=Screen('TextColor', windowPtr [,colorVector]);";
 	synopsis[i++] = "oldTextBackgroundColor=Screen('TextBackgroundColor', windowPtr [,colorVector]);";
 	
@@ -136,7 +136,7 @@ void InitializeSynopsis()
 
 	// Load color lookup table of the window's screen (on-screen only)
 	synopsis[i++] = "\n% Load color lookup table of the window's screen (on-screen only):";
-	synopsis[i++] = "Screen('ReadNormalizedGammaTable', windowPtrOrScreenNumber);";
+	synopsis[i++] = "[gammatable, dacbits] = Screen('ReadNormalizedGammaTable', windowPtrOrScreenNumber);";
 	synopsis[i++] = "Screen('LoadNormalizedGammaTable', windowPtrOrScreenNumber, table [, loadOnNextFlip]);";
 	synopsis[i++] = "oldclut = Screen('LoadCLUT', windowPtrOrScreenNumber [, clut] [, startEntry=0] [, bits=8]);";
 
@@ -156,7 +156,6 @@ void InitializeSynopsis()
 	synopsis[i++] = "[width, height]=Screen('WindowSize', windowPointerOrScreenNumber);";
 	synopsis[i++] = "[width, height]=Screen('DisplaySize', ScreenNumber);";
 	synopsis[i++] = "[oldmaximumvalue oldclampcolors] = Screen('ColorRange', windowPtr [, maximumvalue][, clampcolors=1]);";
-	synopsis[i++] = "[ret1, ret2] = Screen('HookFunction', windowPtr, 'Subcommand', 'HookName', arg1, arg2);";
 
 	// Get and set information about the environment, computer, and video card (i.e. screen):
 	synopsis[i++] = "\n% Get/set details of environment, computer, and video card (i.e. screen):";
@@ -222,12 +221,15 @@ void InitializeSynopsis()
         // Interfacing with external OpenGL rendering code (MOGL and external OpenGL Mexfiles):
 	synopsis[i++] = "\n% Support for 3D graphics rendering and for interfacing with external OpenGL code:";
         synopsis[i++] = "Screen('Preference', 'Enable3DGraphics', [enableFlag]);  % Enable 3D gfx support.";
-        synopsis[i++] = "Screen('BeginOpenGL', windowPtr);  % Prepare window for external OpenGL drawing.";
+        synopsis[i++] = "Screen('BeginOpenGL', windowPtr [, sharecontext]);  % Prepare window for external OpenGL drawing.";
         synopsis[i++] = "Screen('EndOpenGL', windowPtr);  % Finish external OpenGL drawing.";
 	synopsis[i++] = "[textureHandle rect] = Screen('SetOpenGLTextureFromMemPointer', windowPtr, textureHandle, imagePtr, width, height, depth [, upsidedown][, target][, glinternalformat][, gltype][, extdataformat]);";
         synopsis[i++] = "[textureHandle rect] = Screen('SetOpenGLTexture', windowPtr, textureHandle, glTexid, target [, glWidth] [, glHeight] [, glDepth]);";
         synopsis[i++] = "[ gltexid gltextarget texcoord_u texcoord_v ] =Screen('GetOpenGLTexture', windowPtr, textureHandle [, x][, y]);";
-        
+
+		synopsis[i++] = "\n% Support for plugins and for builtin high performance image processing pipeline:";
+		synopsis[i++] = "[ret1, ret2, ...] = Screen('HookFunction', windowPtr, 'Subcommand', 'HookName', arg1, arg2, ...);";
+
         synopsis[i++] = NULL;  //this tells PsychDisplayScreenSynopsis where to stop
 	if (i > MAX_SYNOPSIS_STRINGS) {
 		PrintfExit("%s: increase dimension of synopsis[] from %ld to at least %ld and recompile.",__FILE__,(long)MAX_SYNOPSIS_STRINGS,(long)i);

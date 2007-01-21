@@ -68,8 +68,12 @@ PsychError SCREENSetOpenGLTexture(void)
         textureRecord->screenNumber = windowRecord->screenNumber;
         textureRecord->targetSpecific.contextObject = windowRecord->targetSpecific.contextObject;
         textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
+        textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
 		
 		textureRecord->colorRange = windowRecord->colorRange;
+		
+		// Copy imaging mode flags from parent:
+		textureRecord->imagingMode = windowRecord->imagingMode;
 
         // Mark it valid and return handle to userspace:
         PsychSetWindowRecordValid(textureRecord);
@@ -129,6 +133,10 @@ PsychError SCREENSetOpenGLTexture(void)
     // Ok, setup texture record for texture:
     PsychInitWindowRecordTextureFields(textureRecord);
     textureRecord->depth = d;
+	
+	// Assume this texture has four channels. FIXME: Is this problematic?
+	textureRecord->nrchannels = 4;
+
     PsychMakeRect(textureRecord->rect, 0, 0, w, h);
 
     textureRecord->texturetarget = target;

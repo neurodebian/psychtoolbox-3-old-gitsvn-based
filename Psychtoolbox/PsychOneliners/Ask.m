@@ -1,5 +1,5 @@
-function reply=Ask(window,message,textColor,bgColor,replyFun,rectAlign1,rectAlign2)
-% reply=Ask(window,message,[textColor],[bgColor],[replyFun],[rectAlign1],[rectAlign2])
+function reply = Ask(window,message,textColor,bgColor,replyFun,rectAlign1,rectAlign2)
+% reply = Ask(window,message,[textColor],[bgColor],[replyFun],[rectAlign1],[rectAlign2])
 %
 % Draw the message, using textColor, right-justified in the upper right of
 % the window, call reply=eval(replyFun), then erase (by drawing text again
@@ -15,16 +15,6 @@ function reply=Ask(window,message,textColor,bgColor,replyFun,rectAlign1,rectAlig
 % reply=Ask(window,'What''s your name?',[],[],'GetString');
 % reply=Ask(window,'Who are you?',[],[],'GetEchoString',RectLeft,RectTop);
 % 
-% BUG
-% 
-% If text smoothing (antialiasing) is enabled, Ask may fail to completely
-% erase its text when it's done, leaving a faint halo around each erased
-% character. To disable antialiasing, open your Appearance Control Panel,
-% go to Fonts and turn off smoothing. Do the same with the ~ATM (Adobe
-% Type Manager) Control panel, if you have it. A better solution would be
-% to rewrite Ask to erase a rect that includes the text instead of
-% assuming that overwriting will erase. - dgp 3/19/00
-% 
 % See also GetString, GetEchoString, GetNumber.
 
 % 3/9/97  dgp	Wrote it, based on dhb's WaitForClick.m
@@ -37,53 +27,59 @@ if ~Screen(window, 'WindowKind')
 	error('Invalid window')
 end
 
+% Make the look a bit nicer than the default.
+Screen('TextFont', window, 'Times');
+Screen('TextSize', window, 30);
+
+% Create the box to hold the text that will be drawn on the screen.
 screenRect = Screen('Rect', window);
-%height=Screen(window,'TextWidth',' ');
-height = Screen('TextSize', window);
-if height == 0
-	height = 12; % A weird Mac OS convention: zero means 12.
-end
-% width=Screen(window,'TextWidth',[message '  ']);
-width = size([message, ' '], 2);
-r=[0 0 width height+30];
-r=AlignRect(r,screenRect,RectRight,RectTop);
-if nargin>6
+[tbx, tby] = Screen('TextBounds', window, message);
+width = tbx(3);
+height = tbx(4);
+r = [0 0 width+30 height];
+r = AlignRect(r, screenRect, RectRight, RectTop);
+
+if nargin > 6
 	if ~isa(rectAlign2,'double')
 		error('Ask: rectAlign2 must be a double, e.g. RectLeft.');
 	end
-	r=AlignRect(r,screenRect,rectAlign2);
+	r = AlignRect(r,screenRect,rectAlign2);
 end
-if nargin>5
+if nargin > 5
 	if ~isa(rectAlign1,'double')
 		error('Ask: rectAlign1 must be a double, e.g. RectLeft.');
 	end
-	r=AlignRect(r,screenRect,rectAlign1);
+	r = AlignRect(r, screenRect, rectAlign1);
 end
-if nargin>4 
+if nargin > 4 
 	if isempty(replyFun)
-		replyFun='GetClicks';
+		replyFun = 'GetClicks';
 	end
-	if isa(replyFun,'double')
+	if isa(replyFun, 'double')
 		error('Ask: replyFun must be [] or a string, e.g. ''GetClicks''.');
 	end
 end
-if nargin<5
-	replyFun='GetClicks';
+if nargin < 5
+	replyFun = 'GetClicks';
 end
-if nargin<4 | isempty(bgColor)
-	bgColor=WhiteIndex(window);
+if nargin < 4 || isempty(bgColor)
+	bgColor = WhiteIndex(window);
 end
-if nargin<3 | isempty(textColor)
-	textColor=BlackIndex(window);
+if nargin < 3 || isempty(textColor)
+	textColor = BlackIndex(window);
 end
-Screen(window,'WindowToFront');
-Screen(window,'DrawText',message,r(RectLeft),r(RectBottom),textColor);
-reply=eval(replyFun);
-%Screen(window,'DrawText',message,r(RectLeft),r(RectBottom),bgColor);
-bounds=[0 0 width height];
-bounds=AlignRect(bounds,r,RectBottom,RectLeft);
+
+% Draw our message on the screen and wait for the reply.
+Screen('DrawText', window, message, r(RectLeft), r(RectBottom), textColor);
+Screen('Flip', window, 0, 1);
+reply = eval(replyFun);
+
+% Erase the text off the screen.
+bounds = [0 0 width height];
+bounds = AlignRect(bounds, r, RectBottom,RectLeft);
 % Text may extend beyond the nominal bounds suggested 
 % by start and end points and line spacing. So we extend our erasing box
 % by a generous amount to make sure we erase all traces of what we drew.
-bounds=InsetRect(bounds,-2*height,-height);
-Screen(window,'FillRect',bgColor,bounds);
+bounds = InsetRect(bounds, -2*height, -height);
+Screen('FillRect', window, bgColor, bounds);
+Screen('Flip', window, 0, 1);

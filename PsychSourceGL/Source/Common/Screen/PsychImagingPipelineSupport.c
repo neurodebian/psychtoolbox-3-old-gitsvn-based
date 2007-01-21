@@ -3,7 +3,7 @@
 	
 	PLATFORMS:	
 	
-		All.  
+		All. Well, all with sufficiently advanced graphics hardware...
 				
 	AUTHORS:
 		
@@ -24,16 +24,61 @@
 	NOTES:
 	
 	TO DO: 
+	
+		We could implement a less capable minimal fallback-path for gfx-hardware that doesn't support
+		framebuffer objects, but does support rectangle textures. Such hw would be limited to the initial
+		pipeline stage (image processing) and would only allow single-pass processing, no multi-pass algs
+		due to the lack of bounce buffers. But it could still allow for slightly more precise textures,
+		and simple shaders (if supported) or basic fixed-function processing, e.g., simple contrast
+		corrections or geometric undistortion.
 
 */
 
 #include "Screen.h"
 
+// Source code for our GLSL anaglyph stereo shader:
+char anaglyphshadersrc[] = 
+"/* Weight vector for conversion from RGB to Luminance, according to NTSC spec. */ \n"
+"uniform vec3 ColorToGrayWeights; \n"
+"/* Left image channel and right image channel: */ \n"
+"uniform sampler2DRect Image1; \n"
+"uniform sampler2DRect Image2; \n"
+"uniform vec3 Gains1;\n"
+"uniform vec3 Gains2;\n"
+"\n"
+"void main()\n"
+"{\n"
+"    /* Lookup RGBA pixel colors in left- and right buffer and convert to Luminance */\n"
+"    vec3 incolor1 = texture2DRect(Image1, gl_TexCoord[0].st).rgb;\n"
+"    float luminance1 = dot(incolor1, ColorToGrayWeights);\n"
+"    vec3 incolor2 = texture2DRect(Image2, gl_TexCoord[0].st).rgb;\n"
+"    float luminance2 = dot(incolor2, ColorToGrayWeights);\n"
+"    /* Replicate in own RGBA tupel */\n"
+"    vec3 channel1 = vec3(luminance1);\n"
+"    vec3 channel2 = vec3(luminance2);\n"
+"    /* Mask with per channel weights: */\n"
+"    channel1 = channel1 * Gains1;\n"
+"    channel2 = channel2 * Gains2;\n"
+"    /* Add them up to form final output fragment: */\n"
+"    gl_FragColor.rgb = channel1 + channel2;\n"
+"    /* Alpha is forced to 1 - It does not matter anymore: */\n"
+"    gl_FragColor.a = 1.0;\n"
+"}\n\0";
+
+char passthroughshadersrc[] =
+"uniform sampler2DRect Image1; \n"
+"\n"
+"void main()\n"
+"{\n"
+"    gl_FragColor.rgb = texture2DRect(Image1, gl_TexCoord[0].st).rgb;\n"
+"    gl_FragColor.a = 1.0;\n"
+"}\n\0";
+
 // This array maps hook point name strings to indices. The symbolic constants in
 // PsychImagingPipelineSupport.h define symbolic names for the indices for fast
 // lookup by name:
 #define MAX_HOOKNAME_LENGTH 40
-#define MAX_HOOKSYNOPSIS_LENGTH 120
+#define MAX_HOOKSYNOPSIS_LENGTH 1024
 
 char PsychHookPointNames[MAX_SCREEN_HOOKS][MAX_HOOKNAME_LENGTH] = {
 	"CloseOnscreenWindowPreGLShutdown",
@@ -44,19 +89,25 @@ char PsychHookPointNames[MAX_SCREEN_HOOKS][MAX_HOOKNAME_LENGTH] = {
 	"StereoCompositingBlit",
 	"PostCompositingBlit",
 	"FinalOutputFormattingBlit",
-	"UserspaceBufferDrawingPrepare"
+	"UserspaceBufferDrawingPrepare",
+	"IdentityBlitChain",
+	"LeftFinalizerBlitChain",
+	"RightFinalizerBlitChain"
 };
 
 char PsychHookPointSynopsis[MAX_SCREEN_HOOKS][MAX_HOOKSYNOPSIS_LENGTH] = {
-	"HelpCloseOnscreenWindowPreGLShutdown",
-	"HelpCloseOnscreenWindowPostGLShutdown",
-	"HelpUserspaceBufferDrawingFinished",
-	"HelpStereoLeftCompositingBlit",
-	"HelpStereoRightCompositingBlit",
-	"HelpStereoCompositingBlit",
-	"HelpPostCompositingBlit",
-	"HelpFinalOutputFormattingBlit",
-	"HelpUserspaceBufferDrawingPrepare"
+	"OpenGL based actions to be performed when an onscreen window is closed, e.g., teardown for special output devices.",
+	"Non-graphics actions to be performed when an onscreen window is closed, e.g., teardown for special output devices.",
+	"Operations to be performed after last drawing command, i.e. in Screen('Flip') or Screen('DrawingFinshed').",
+	"Perform generic user-defined image processing on image content of left-eye (or mono) buffer.",
+	"Perform generic user-defined image processing on image content of right-eye buffer.",
+	"Internal(preinitialized): Compose left- and right-eye view into one combined image for all stereo modes except quad-buffered flip-frame stereo.",
+	"Not yet used.",
+	"Perform post-processing indifferent of stereo mode, e.g., special data formatting for devices like BrightSideHDR, Bits++, Video attenuators...",
+	"Operations to be performed immediately after Screen('Flip') in order to prepare drawing commands of users script.",
+	"Internal(preinitialized): Only for internal use. Only modify for debugging and testing of pipeline itself!",
+	"Internal(preinitialized): Perform last time operation on left (or mono) channel, e.g., draw blue-sync lines.",
+	"Internal(preinitialized): Perform last time operation on right channel, e.g., draw blue-sync lines."
 };
 
 /* PsychInitImagingPipelineDefaultsForWindowRecord()
@@ -73,6 +124,22 @@ void PsychInitImagingPipelineDefaultsForWindowRecord(PsychWindowRecordType *wind
 		windowRecord->HookChain[i]=NULL;
 	}
 	
+	// Disable all special framebuffer objects by default:
+	windowRecord->drawBufferFBO[0]=-1;
+	windowRecord->drawBufferFBO[1]=-1;
+	windowRecord->processedDrawBufferFBO[0]=-1;
+	windowRecord->processedDrawBufferFBO[1]=-1;
+	windowRecord->processedDrawBufferFBO[2]=-1;
+	windowRecord->preConversionFBO[0]=-1;
+	windowRecord->preConversionFBO[1]=-1;
+	windowRecord->preConversionFBO[2]=-1;
+	windowRecord->finalizedFBO[0]=-1;
+	windowRecord->finalizedFBO[1]=-1;
+	windowRecord->fboCount = 0;
+
+	// NULL-out fboTable:
+	for (i=0; i<MAX_FBOTABLE_SLOTS; i++) windowRecord->fboTable[i] = NULL;
+	
 	// Setup mode switch in record to "all off":
 	windowRecord->imagingMode = 0;
 
@@ -87,25 +154,855 @@ void PsychInitImagingPipelineDefaultsForWindowRecord(PsychWindowRecordType *wind
  *  default values in the windowRecord (imaging pipe is disabled by default if imagingmode is zero), based on
  *  the imagingmode flags and all the windowRecord and OpenGL settings.
  *
- *  1. All hook chains are initialized to empty & disabled.
- *  2. FBO's are setup according to the requested imagingmode, stereomode and color depth of a window.
- *  3. Depending on stereo mode and imagingmode, some default GLSL shaders may get created and attached to
+ *  1. FBO's are setup according to the requested imagingmode, stereomode and color depth of a window.
+ *  2. Depending on stereo mode and imagingmode, some default GLSL shaders may get created and attached to
  *     some hook-chains for advanced stereo processing.
  */
 void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int imagingmode)
 {	
+	GLenum fboInternalFormat;
+	int newimagingmode = 0;
+	int fbocount = 0;
+	int winwidth, winheight;
+	Boolean needzbuffer, needoutputconversion, needimageprocessing, needseparatestreams, needfastbackingstore, targetisfinalFB;
+	GLuint glsl;
+	float rg, gg, bg;	// Gains for color channels and color masking for anaglyph shader setup.
+	char blittercfg[100];
+
 	// Processing ends here after minimal "all off" setup, if pipeline is disabled:
-	if (imagingmode<=0) return;
+	if (imagingmode<=0) {
+		imagingmode=0;
+		return;
+	}
 	
+	// Safe default:
+	targetisfinalFB = FALSE;
+	
+	// Activate rendering context of this window:
+	PsychSetGLContext(windowRecord);
+
 	// Specific setup of pipeline if real imaging ops are requested:
-	if (PsychPrefStateGet_Verbosity()>2) printf("PTB-INFO: Psychtoolbox imaging pipeline enabled for window with imaging flags %i ...\n", imagingmode);
+	if (PsychPrefStateGet_Verbosity()>2) printf("PTB-INFO: Psychtoolbox imaging pipeline starting up for window with requested imagingmode %i ...\n", imagingmode);
 	fflush(NULL);
 	
 	// Setup mode switch in record:
 	windowRecord->imagingMode = imagingmode;
 	
+	// Determine required precision for our framebuffer objects:
+
+	// Start off with standard 8 bpc fixed point:
+	fboInternalFormat = GL_RGBA8;
+	
+	// Need 16 bpc fixed point precision?
+	if (imagingmode & kPsychNeed16BPCFixed) fboInternalFormat = GL_RGBA16;
+	 
+	// Need 16 bpc floating point precision?
+	if (imagingmode & kPsychNeed16BPCFloat) fboInternalFormat = GL_RGBA_FLOAT16_APPLE;
+	
+	// Need 32 bpc floating point precision?
+	if (imagingmode & kPsychNeed32BPCFloat) fboInternalFormat = GL_RGBA_FLOAT32_APPLE;
+
+	// Do we need additional depth buffer attachments?
+	needzbuffer = (PsychPrefStateGet_3DGfx()>0) ? TRUE : FALSE;
+	
+	// Do we need separate streams for stereo? Only for OpenGL quad-buffered mode:
+	needseparatestreams = (windowRecord->stereomode == kPsychOpenGLStereo) ? TRUE : FALSE;
+
+	// Do we need some intermediate image processing?
+	needimageprocessing= (imagingmode & kPsychNeedImageProcessing) ? TRUE : FALSE;
+
+	// Do we need some final output formatting?
+	needoutputconversion = (imagingmode & kPsychNeedOutputConversion) ? TRUE : FALSE;
+	
+	// Do we need fast backing store?
+	needfastbackingstore = (imagingmode & kPsychNeedFastBackingStore) ? TRUE : FALSE;
+	
+	// Consolidate settings:
+	if (needoutputconversion || needimageprocessing || windowRecord->stereomode > 0) needfastbackingstore = TRUE;
+	
+	// Check if this system does support OpenGL framebuffer objects and rectangle textures:
+	if (!glewIsSupported("GL_EXT_framebuffer_object") || (!glewIsSupported("GL_EXT_texture_rectangle") && !glewIsSupported("GL_ARB_texture_rectangle") && !glewIsSupported("GL_NV_texture_rectangle"))) {
+		// Unsupported! This is a complete no-go :(
+		printf("PTB-ERROR: Initialization of the built-in image processing pipeline failed. Your graphics hardware or graphics driver does not support\n");
+		printf("PTB-ERROR: the required OpenGL framebuffer object extension. You may want to upgrade to the latest drivers or if that doesn't help, to a\n");
+		printf("PTB-ERROR: more recent graphics card. You'll need at minimum a NVidia GeforceFX-5000 or a ATI Radeon 9600 or Intel GMA 950 for this to work.\n");
+		printf("PTB-ERROR: See the www.psychtoolbox.org Wiki for recommendations. You can still use basic stereo support (with restricted performance and features)\n");
+		printf("PTB-ERROR: by disabling the imaging pipeline (imagingmode = 0) but still selecting a stereomode in the 'OpenWindow' subfunction.\n");
+		fflush(NULL);
+		PsychErrorExitMsg(PsychError_user, "Imaging Pipeline setup: Sorry, your graphics card does not meet the minimum requirements for use of the imaging pipeline.");
+	}
+
+	// Another child protection:
+	if ((windowRecord->windowType != kPsychDoubleBufferOnscreen) || PsychPrefStateGet_EmulateOldPTB()>0) {
+		PsychErrorExitMsg(PsychError_user, "Imaging Pipeline setup: Sorry, imaging pipeline only supported on double buffered onscreen windows in non-emulation mode for old PTB.\n");
+	}
+
+	// Try to allocate and configure proper FBO's:
+	fbocount = 0;
+	
+	// Define final default output buffers as system framebuffers: We create some pseudo-FBO's for these
+	// which describe the system framebuffer (backbuffer). This is done to simplify pipeline design:
+
+	// Allocate empty FBO info struct and assign it:
+	winwidth=PsychGetWidthFromRect(windowRecord->rect);
+	winheight=PsychGetHeightFromRect(windowRecord->rect);
+
+	if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), 0, FALSE, winwidth, winheight)) {
+		// Failed!
+		PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 0 of imaging pipeline.");
+	}
+
+	// The pseudo-FBO initially contains a fboid of zero == system framebuffer, and empty (zero) attachments.
+	// The up to now only useful information is the viewport geometry ie winwidth and winheight.
+
+	// We use the same struct for both buffers, because in the end, there is only one backbuffer. Separate channels
+	// with same mapping allow some interesting extensions in the future for additional stereo modes or snapshot
+	// creation...
+	windowRecord->finalizedFBO[0]=fbocount;
+	windowRecord->finalizedFBO[1]=fbocount;
+	fbocount++;
+
+	// Now we preinit all further stages with the finalizedFBO assignment. This way 
+	
+	if (needfastbackingstore) {
+		// We need at least the 1st level drawBufferFBO's as rendertargets for all
+		// user-space drawing, ie Screen 2D drawing functions, MOGL OpenGL rendering and
+		// C-MEX OpenGL rendering plugins...
+		
+		// Define dimensions of 1st stage FBO:
+		winwidth=PsychGetWidthFromRect(windowRecord->rect);
+		winheight=PsychGetHeightFromRect(windowRecord->rect);
+
+		// Adapt it for some stereo modes:
+		if (windowRecord->stereomode==kPsychFreeFusionStereo || windowRecord->stereomode==kPsychFreeCrossFusionStereo) {
+			// Special case for stereo: Only half the real window width:
+			winwidth = winwidth / 2;
+		}
+
+		// These FBO's may need a z-buffer or stencil buffer as well if 3D rendering is
+		// enabled:
+		if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, needzbuffer, winwidth, winheight)) {
+			// Failed!
+			PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 1 of imaging pipeline.");
+		}
+		
+		// Assign this FBO as drawBuffer for left-eye or mono channel:
+		windowRecord->drawBufferFBO[0] = fbocount;
+		fbocount++;
+		
+		// If we are in stereo mode, we'll need a 2nd buffer for the right-eye channel:
+		if (windowRecord->stereomode > 0) {
+			if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, needzbuffer, winwidth, winheight)) {
+				// Failed!
+				PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 1 of imaging pipeline.");
+			}
+			
+			// Assign this FBO as drawBuffer for right-eye channel:
+			windowRecord->drawBufferFBO[1] = fbocount;
+			fbocount++;
+		}
+		
+		// Windows with fast backing store always have 4 color channels RGBA, regardless what the
+		// associated system framebuffer has:
+		windowRecord->nrchannels = 4;
+
+	}
+	
+	// Do we need 2nd stage FBOs? We need them as targets for the processed data if support for misc image processing ops is requested.
+	if (needimageprocessing) {
+		// Need real FBO's as targets for image processing:
+
+		// Define dimensions of 2nd stage FBO:
+		winwidth=PsychGetWidthFromRect(windowRecord->rect);
+		winheight=PsychGetHeightFromRect(windowRecord->rect);
+
+		// Adapt it for some stereo modes:
+		if (windowRecord->stereomode==kPsychFreeFusionStereo || windowRecord->stereomode==kPsychFreeCrossFusionStereo) {
+			// Special case for stereo: Only half the real window width:
+			winwidth = winwidth / 2;
+		}
+
+		// Is the target of imageprocessing (our processedDrawBufferFBO) the final destination? This is true if there is no further need
+		// for more rendering passes in later processing stages and we don't do any processing here with more than 2 rendering passes. In that
+		// case we can directly output to the finalizedFBO without need for one more intermediate buffer -- faster!
+		// In all other cases, we'll need an additional buffer. We also exclude quad-buffered stereo, because the image processing blit chains
+		// cannot switch between left- and right backbuffer of the system framebuffer...
+		targetisfinalFB = ( !(imagingmode & kPsychNeedMultiPass) && (windowRecord->stereomode == kPsychMonoscopic) && !needoutputconversion ) ? TRUE : FALSE;
+
+		if (!targetisfinalFB) {
+			// These FBO's don't need z- or stencil buffers anymore:
+			if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, FALSE, winwidth, winheight)) {
+				// Failed!
+				PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 2 of imaging pipeline.");
+			}			
+
+			// Assign this FBO as processedDrawBuffer for left-eye or mono channel:
+			windowRecord->processedDrawBufferFBO[0] = fbocount;
+			fbocount++;			
+		}
+		else {
+			// Can assign final destination:
+			windowRecord->processedDrawBufferFBO[0] = windowRecord->finalizedFBO[0];
+		}
+				
+		// If we are in stereo mode, we'll need a 2nd buffer for the right-eye channel:
+		if (windowRecord->stereomode > 0) {
+			if (!targetisfinalFB) {
+				// These FBO's don't need z- or stencil buffers anymore:
+				if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, FALSE, winwidth, winheight)) {
+					// Failed!
+					PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 2 of imaging pipeline.");
+				}			
+				
+				// Assign this FBO as processedDrawBuffer for right-eye channel:
+				windowRecord->processedDrawBufferFBO[1] = fbocount;
+				fbocount++;
+			}
+			else {
+				// Can assign final destination:
+				windowRecord->processedDrawBufferFBO[1] = windowRecord->finalizedFBO[1];
+			}
+		}
+		else {
+			// Mono mode: No right-eye buffer:
+			windowRecord->processedDrawBufferFBO[1] = -1;
+		}
+		
+		// Allocate a bounce-buffer as well if multi-pass rendering is requested:
+		if (imagingmode & kPsychNeedDualPass || imagingmode & kPsychNeedMultiPass) {
+			if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, FALSE, winwidth, winheight)) {
+				// Failed!
+				PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 2 of imaging pipeline.");
+			}
+			
+			// Assign this FBO as processedDrawBuffer for bounce buffer ops in multi-pass rendering:
+			windowRecord->processedDrawBufferFBO[2] = fbocount;
+			fbocount++;
+		}
+		else {
+			// No need for bounce-buffers, only single-pass processing requested.
+			windowRecord->processedDrawBufferFBO[2] = -1;
+		}
+	}
+	else {
+		// No image processing: Set 2nd stage FBO's to 1st stage FBO's:
+		windowRecord->processedDrawBufferFBO[0] = windowRecord->drawBufferFBO[0];
+		windowRecord->processedDrawBufferFBO[1] = windowRecord->drawBufferFBO[1];
+		windowRecord->processedDrawBufferFBO[2] = -1;
+	}
+	
+	// Stage 2 ready. Any need for real merged FBO's? We need a merged FBO if we are in stereo mode
+	// and in need to merge output from the two views and to postprocess that output. In all other
+	// cases there's no need for real merged FBO's and we do just a "pass-through" assignment.
+	if ((windowRecord->stereomode > 0) && (!needseparatestreams) && (needoutputconversion)) {
+		// Need real FBO's as targets for merger output.
+
+		// Define dimensions of 3rd stage FBO:
+		winwidth=PsychGetWidthFromRect(windowRecord->rect);
+		winheight=PsychGetHeightFromRect(windowRecord->rect);
+
+		// These FBO's don't need z- or stencil buffers anymore:
+		if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, FALSE, winwidth, winheight)) {
+			// Failed!
+			PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 3 of imaging pipeline.");
+		}
+		
+		// Assign this FBO for left-eye and right-eye channel: The FBO is shared accross channels...
+		windowRecord->preConversionFBO[0] = fbocount;
+		windowRecord->preConversionFBO[1] = fbocount;
+		fbocount++;
+
+		// Request bounce buffer:
+		windowRecord->preConversionFBO[2] = -1000;
+	}
+	else {
+		if ((windowRecord->stereomode > 0) && (!needseparatestreams)) {
+			// Need to merge two streams, but don't need any output conversion on them. We
+			// don't need an extra FBO for the merge results! We just write our merge results
+			// into whatever the final framebuffer is - Could be another FBO if framebuffer
+			// snapshotting is requested, but most likely its the pseudo-FBO of the system
+			// backbuffer. Anyway, the proper ones are stored in finalizedFBO[]:
+			windowRecord->preConversionFBO[0] = windowRecord->finalizedFBO[0];
+			windowRecord->preConversionFBO[1] = windowRecord->finalizedFBO[1];
+			// Request bounce buffer:
+			windowRecord->preConversionFBO[2] = -1000;
+		}
+		else {		
+			// No merge operation needed. Do we need output conversion?
+			if (needoutputconversion) {
+				// Output conversion needed. Set input for this stage to output of the
+				// image processing.
+				windowRecord->preConversionFBO[0] = windowRecord->processedDrawBufferFBO[0];
+				windowRecord->preConversionFBO[1] = windowRecord->processedDrawBufferFBO[1];
+				// Request bounce buffer:
+				windowRecord->preConversionFBO[2] = -1000;
+			}
+			else {
+				// No merge and no output conversion needed. In that case, PsychPreFlipOperations()
+				// will behave as if output conversion is requested, but with the identity blit chain,
+				// and merge stage is skipped, so we need to set the preConversionFBO's as if conversion
+				// is done.
+				windowRecord->preConversionFBO[0] = windowRecord->processedDrawBufferFBO[0];
+				windowRecord->preConversionFBO[1] = windowRecord->processedDrawBufferFBO[1];
+				// No bounce buffer needed:
+				windowRecord->preConversionFBO[2] = -1;
+			}
+			
+		}		
+	}
+
+	// Do we need a bounce buffer for merging and/or conversion?
+	if (windowRecord->preConversionFBO[2] == -1000) {
+		// Yes. We can reuse/share the bounce buffer of the image processing stage if
+		// one exists and is of suitable size i.e. we're not in dual-view stereo - in
+		// that case all buffers are of same size.
+		if ((windowRecord->processedDrawBufferFBO[2]!=-1) && 
+			!(windowRecord->stereomode==kPsychFreeFusionStereo || windowRecord->stereomode==kPsychFreeCrossFusionStereo)) {
+			// Stage 1 bounce buffer is suitable for sharing, assign it:
+			windowRecord->preConversionFBO[2] = windowRecord->processedDrawBufferFBO[2];
+		}
+		else {
+			// We need a new, private bounce-buffer:
+			if (!PsychCreateFBO(&(windowRecord->fboTable[fbocount]), fboInternalFormat, FALSE, winwidth, winheight)) {
+				// Failed!
+				PsychErrorExitMsg(PsychError_internal, "Imaging Pipeline setup: Could not setup stage 3 of imaging pipeline.");
+			}
+			
+			windowRecord->preConversionFBO[2] = fbocount;
+			fbocount++;				
+		}
+	}		
+	
+	// Setup imaging mode flags:
+	newimagingmode = (needseparatestreams) ? kPsychNeedSeparateStreams : 0;
+	if (!needseparatestreams && (windowRecord->stereomode > 0)) newimagingmode |= kPsychNeedStereoMergeOp;
+	if (needfastbackingstore) newimagingmode |= kPsychNeedFastBackingStore;
+	if (needoutputconversion) newimagingmode |= kPsychNeedOutputConversion;
+	if (needimageprocessing)  newimagingmode |= kPsychNeedImageProcessing;
+	if (imagingmode & kPsychNeed32BPCFloat) {
+		newimagingmode |= kPsychNeed32BPCFloat;
+	}
+	else if (imagingmode & kPsychNeed16BPCFloat) {
+		newimagingmode |= kPsychNeed16BPCFloat;
+	}
+	else if (imagingmode & kPsychNeed16BPCFixed) {
+		newimagingmode |= kPsychNeed16BPCFixed;
+	}
+	
+	// Set new final imaging mode and fbocount:
+	windowRecord->imagingMode = newimagingmode;
+	windowRecord->fboCount = fbocount;
+
+	// The pipelines buffers and information flow are configured now...
+	if (PsychPrefStateGet_Verbosity()>4) {
+		printf("PTB-DEBUG: Buffer mappings follow...\n");
+		printf("fboCount = %i\n", windowRecord->fboCount);
+		printf("finalizedFBO = %i, %i\n", windowRecord->finalizedFBO[0], windowRecord->finalizedFBO[1]);
+		printf("preConversionFBO = %i, %i, %i\n", windowRecord->preConversionFBO[0], windowRecord->preConversionFBO[1], windowRecord->preConversionFBO[2]);
+		printf("processedDrawBufferFBO = %i %i %i\n", windowRecord->processedDrawBufferFBO[0], windowRecord->processedDrawBufferFBO[1], windowRecord->processedDrawBufferFBO[2]);
+		printf("drawBufferFBO = %i %i \n", windowRecord->drawBufferFBO[0], windowRecord->drawBufferFBO[1]);
+		printf("-------------------------------------\n\n");
+		fflush(NULL);
+	}
+
+	// Setup our default chain: This chain is executed if some stage of the imaging pipe is set up according
+	// to imagingMode, but the corresponding hook-chain is empty or disabled. In that case we need to copy
+	// the data for that stage from its input buffers to its output buffers via a simple blit operation.
+	PsychPipelineAddBuiltinFunctionToHook(windowRecord, "IdentityBlitChain", "Builtin:IdentityBlit", TRUE, "");
+	PsychPipelineEnableHook(windowRecord, "IdentityBlitChain");
+
+	// Setup of GLSL stereo shaders for stereo modes that need some merging operations:
+	// Quad-buffered stereo and mono mode don't need these...
+	if (windowRecord->stereomode > kPsychOpenGLStereo) {
+		// Merged stereo mode requested.
+		glsl = 0;
+		
+		// Which mode?
+		switch(windowRecord->stereomode) {
+			// Anaglyph mode?
+			case kPsychAnaglyphRGStereo:
+			case kPsychAnaglyphGRStereo:
+			case kPsychAnaglyphRBStereo:
+			case kPsychAnaglyphBRStereo:
+				// These share all code...
+				
+				// Create anaglyph shader and set proper defaults: These can be changed from the M-File if wanted.
+				if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: Creating internal anaglyph stereo compositing shader...\n");
+				glsl = PsychCreateGLSLProgram(anaglyphshadersrc, NULL, NULL);
+				if (glsl) {
+					// Bind it:
+					glUseProgram(glsl);
+
+					// Set channel to texture units assignments:
+					glUniform1i(glGetUniformLocation(glsl, "Image1"), 0);
+					glUniform1i(glGetUniformLocation(glsl, "Image2"), 1);
+					
+					// Set per-channel color gains: 0 masks the channel, >0 enables it. The values can be used
+					// to compensate for differences in the color reproduction of different monitors to reduce
+					// cross-talk / ghosting:
+					
+					// Left-eye channel (channel 1):
+					rg = (windowRecord->stereomode==kPsychAnaglyphRGStereo || windowRecord->stereomode==kPsychAnaglyphRBStereo) ? 1.0 : 0.0;
+					gg = (windowRecord->stereomode==kPsychAnaglyphGRStereo) ? 1.0 : 0.0;
+					bg = (windowRecord->stereomode==kPsychAnaglyphBRStereo) ? 1.0 : 0.0;
+					glUniform3f(glGetUniformLocation(glsl, "Gains1"), rg, gg, bg);
+
+					// Right-eye channel (channel 2):
+					rg = (windowRecord->stereomode==kPsychAnaglyphGRStereo || windowRecord->stereomode==kPsychAnaglyphBRStereo) ? 1.0 : 0.0;
+					gg = (windowRecord->stereomode==kPsychAnaglyphRGStereo) ? 1.0 : 0.0;
+					bg = (windowRecord->stereomode==kPsychAnaglyphRBStereo) ? 1.0 : 0.0;
+					glUniform3f(glGetUniformLocation(glsl, "Gains2"), rg, gg, bg);
+					
+					// Define default weights for RGB -> Luminance conversion: We default to the standardized NTSC color weights.
+					glUniform3f(glGetUniformLocation(glsl, "ColorToGrayWeights"), 0.3, 0.59, 0.11);
+					
+					// Unbind it, its ready!
+					glUseProgram(0);
+
+					if (glsl) {
+						// Add shader to processing chain:
+						PsychPipelineAddShaderToHook(windowRecord, "StereoCompositingBlit", "StereoCompositingShaderAnaglyph", TRUE, glsl, "", 0) ;
+						
+						// Enable stereo compositor:
+						PsychPipelineEnableHook(windowRecord, "StereoCompositingBlit");		
+					}
+				}
+				else {
+					PsychErrorExitMsg(PsychError_user, "PTB-ERROR: Failed to create anaglyph stereo processing shader -- Anaglyph stereo won't work!\n");
+				}
+			break;
+			
+			case kPsychFreeFusionStereo:
+				if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: Creating internal dualview stereo compositing shader...\n");
+				
+				glsl = PsychCreateGLSLProgram(passthroughshadersrc, NULL, NULL);
+				if (glsl) {
+					// Bind it:
+					glUseProgram(glsl);
+					// Set channel to texture units assignments:
+					glUniform1i(glGetUniformLocation(glsl, "Image1"), 0);
+					glUseProgram(0);
+					
+					// Add shader to processing chain:
+					sprintf(blittercfg, "Builtin:IdentityBlit:Offset:%i:%i", 0, 0);
+					PsychPipelineAddShaderToHook(windowRecord, "StereoCompositingBlit", "StereoCompositingShaderDualViewLeft", TRUE, glsl, blittercfg, 0);
+				}
+				else {
+					PsychErrorExitMsg(PsychError_user, "PTB-ERROR: Failed to create left channel dualview stereo processing shader -- Dualview stereo won't work!\n");
+				}
+				
+				glsl = PsychCreateGLSLProgram(passthroughshadersrc, NULL, NULL);
+				if (glsl) {
+					// Bind it:
+					glUseProgram(glsl);
+					// Set channel to texture units assignments:
+					glUniform1i(glGetUniformLocation(glsl, "Image1"), 1);
+					glUseProgram(0);
+					
+					// Add shader to processing chain:
+					sprintf(blittercfg, "Builtin:IdentityBlit:Offset:%i:%i", 840, 0);
+					PsychPipelineAddShaderToHook(windowRecord, "StereoCompositingBlit", "StereoCompositingShaderDualViewRight", TRUE, glsl, blittercfg, 0);
+				}
+				else {
+					PsychErrorExitMsg(PsychError_user, "PTB-ERROR: Failed to create right channel dualview stereo processing shader -- Dualview stereo won't work!\n");
+				}
+
+				// Enable stereo compositor:
+				PsychPipelineEnableHook(windowRecord, "StereoCompositingBlit");		
+			break;
+			
+			default:
+				PsychErrorExitMsg(PsychError_internal, "Unknown stereo mode encountered! FIX SCREENOpenWindow.c to catch this at the appropriate place!\n");
+		}
+		
+	}
+	
+
+	//PsychPipelineAddBuiltinFunctionToHook(windowRecord, "FinalOutputFormattingBlit", "Builtin:IdentityBlit", TRUE, "");
+	//PsychPipelineEnableHook(windowRecord, "FinalOutputFormattingBlit");
+
+	//PsychPipelineAddBuiltinFunctionToHook(windowRecord, "StereoLeftCompositingBlit", "Builtin:IdentityBlit", TRUE, "");
+	//PsychPipelineAddBuiltinFunctionToHook(windowRecord, "StereoLeftCompositingBlit", "Builtin:FlipFBOs", TRUE, "");
+	//PsychPipelineAddBuiltinFunctionToHook(windowRecord, "StereoLeftCompositingBlit", "Builtin:IdentityBlit", TRUE, "");
+	//PsychPipelineEnableHook(windowRecord, "StereoLeftCompositingBlit");
+
+	// Perform a full reset of current drawing target. This is a warm-start of PTB's drawing
+	// engine, so the next drawing command will trigger binding the proper FBO of our pipeline.
+	// Before this point (==OpenWindow time), all drawing was directly directed to the system
+	// framebuffer - important for all the timing tests and calibrations to work correctly.
+	PsychSetDrawingTarget(NULL);
+
 	// Well done.
 	return;
+}
+
+/* PsychCreateGLSLProgram()
+ *  Try to create GLSL shader from source strings and return handle to new shader.
+ *  Returns the shader handle if it worked, 0 otherwise.
+ *
+ *  fragmentsrc - Source string for fragment shader. NULL if none needed.
+ *  vertexsrc   - Source string for vertex shader. NULL if none needed.
+ *  primitivesrc - Source string for primitive shader. NULL if none needed.
+ *
+ */
+GLuint PsychCreateGLSLProgram(const char* fragmentsrc, const char* vertexsrc, const char* primitivesrc)
+{
+	GLuint glsl = 0;
+	GLuint shader;
+	GLint status;
+	char errtxt[10000];
+	
+	// Reset error state:
+	while (glGetError());
+	
+	// Supported at all on this hardware?
+	if (!glewIsSupported("GL_ARB_shader_objects") || !glewIsSupported("GL_ARB_shading_language_100")) {
+		printf("PTB-ERROR: Your graphics hardware does not support GLSL fragment shaders! Use of imaging pipeline with current settings impossible!\n");
+		return(0);
+	}
+	
+	// Create GLSL program object:
+	glsl = glCreateProgram();
+	
+	// Fragment shader wanted?
+	if (fragmentsrc) {
+		if (PsychPrefStateGet_Verbosity()>4)  printf("PTB-INFO: Creating the following fragment shader, GLSL source code follows:\n\n%s\n\n", fragmentsrc);
+
+		// Supported on this hardware?
+		if (!glewIsSupported("GL_ARB_fragment_shader")) {
+			printf("PTB-ERROR: Your graphics hardware does not support GLSL fragment shaders! Use of imaging pipeline with current settings impossible!\n");
+			return(0);
+		}
+		
+		// Create shader object:
+		shader = glCreateShader(GL_FRAGMENT_SHADER);
+		// Feed it with GLSL source code:
+		glShaderSource(shader, 1, (const char**) &fragmentsrc, NULL);
+		
+		// Compile shader:
+		glCompileShader(shader);
+		
+		glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+		if (status != GL_TRUE) {
+			printf("PTB-ERROR: Shader compilation for builtin fragment shader failed:\n");
+			glGetShaderInfoLog(shader, 9999, NULL, (GLchar*) &errtxt);
+			printf("%s\n\n", errtxt);
+			glDeleteShader(shader);
+			glDeleteProgram(glsl);
+			// Failed!
+			while (glGetError());
+
+			return(0);
+		}
+		
+		// Attach it to program object:
+		glAttachShader(glsl, shader);
+	}
+
+	// Vertex shader wanted?
+	if (vertexsrc) {
+		if (PsychPrefStateGet_Verbosity()>4)  printf("PTB-INFO: Creating the following vertex shader, GLSL source code follows:\n\n%s\n\n", vertexsrc);
+
+		// Supported on this hardware?
+		if (!glewIsSupported("GL_ARB_vertex_shader")) {
+			printf("PTB-ERROR: Your graphics hardware does not support GLSL vertex shaders! Use of imaging pipeline with current settings impossible!\n");
+			return(0);
+		}
+
+		// Create shader object:
+		shader = glCreateShader(GL_VERTEX_SHADER);
+		
+		// Feed it with GLSL source code:
+		glShaderSource(shader, 1, (const char**) &vertexsrc, NULL);
+		
+		// Compile shader:
+		glCompileShader(shader);
+		
+		glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+		if (status != GL_TRUE) {
+			printf("PTB-ERROR: Shader compilation for builtin vertex shader failed:\n");
+			glGetShaderInfoLog(shader, 9999, NULL, (GLchar*) &errtxt);
+			printf("%s\n\n", errtxt);
+			glDeleteShader(shader);
+			glDeleteProgram(glsl);
+			// Failed!
+			while (glGetError());
+			return(0);
+		}
+		
+		// Attach it to program object:
+		glAttachShader(glsl, shader);
+	}
+
+	// Link into final program object:
+	glLinkProgram(glsl);
+
+	// Check link status:
+	glGetProgramiv(glsl, GL_LINK_STATUS, &status);
+	if (status != GL_TRUE) {
+		printf("PTB-ERROR: Shader link operation for builtin glsl program failed:\n");
+		glGetProgramInfoLog(glsl, 9999, NULL, (GLchar*) &errtxt);
+		printf("Error output follows:\n\n%s\n\n", errtxt);
+		glDeleteProgram(glsl);
+		// Failed!
+		while (glGetError());
+
+		return(0);
+	}
+	
+	while (glGetError());
+
+	// Return new GLSL program object handle:
+	return(glsl);
+}
+
+/* PsychCreateFBO()
+ * Create OpenGL framebuffer object for internal rendering, setup PTB info struct for it.
+ * This function creates an OpenGL framebuffer object, creates and attaches a texture of suitable size
+ * (width x height) pixels with format fboInternalFormat as color buffer (color attachment 0). Optionally,
+ * (if needzbuffer is true) it also creates and attaches suitable z-buffer and stencil-buffer attachments.
+ * It checks for correct setup and then stores all relevant information in the PsychFBO struct, pointed by
+ * fbo. On success it returns true, on failure it returns false.
+ */
+Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbuffer, int width, int height)
+{
+	GLenum fborc;
+	GLint bpc;
+	GLboolean isFloatBuffer;
+	
+	// Eat all GL errors:
+	PsychTestForGLErrors();
+	
+	// If fboInternalFomrat!=1 then we need to allocate and assign a proper PsychFBO struct first:
+	if (fboInternalFormat!=1) {
+		*fbo = (PsychFBO*) malloc(sizeof(PsychFBO));
+		if (*fbo == NULL) PsychErrorExitMsg(PsychError_outofMemory, "Out of system memory when trying to allocate PsychFBO struct!");
+
+		// Start cleanly for error handling:
+		(*fbo)->fboid = 0;
+		(*fbo)->stexid = 0;
+		(*fbo)->ztexid = 0;
+		
+		(*fbo)->width = width;
+		(*fbo)->height = height;
+		
+		// fboInternalFormat == 0 --> Only allocate and assign, don't initialize FBO.
+		if (fboInternalFormat==0) return(TRUE);
+	}
+
+	// Is there already a texture object defined for the color attachment?
+	if (fboInternalFormat != (GLenum) 1) {
+		// No, need to create one:
+		
+		// Build color buffer: Create a new texture handle for the color buffer attachment.
+		glGenTextures(1, (GLuint*) &((*fbo)->coltexid));
+		
+		// Bind it as rectangle texture:
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, (*fbo)->coltexid);
+		
+		// Create proper texture: Just allocate proper format, don't assign data.
+		glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, fboInternalFormat, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+	}
+	else {
+		// Yes. Bind it as rectangle texture:
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, (*fbo)->coltexid);
+	}
+	
+	if (glGetError()!=GL_NO_ERROR) {
+		printf("PTB-ERROR: Failed to setup internal framebuffer objects color buffer attachment for imaging pipeline!\n");
+		printf("PTB-ERROR: Most likely the requested size & depth of the window or texture is not supported by your graphics hardware.\n");
+		return(FALSE);
+	}
+	
+    // Setup texture wrapping behaviour to clamp, as other behaviours are
+    // unsupported on many gfx-cards for rectangle textures:
+    glTexParameterf(GL_TEXTURE_RECTANGLE_EXT,GL_TEXTURE_WRAP_S,GL_CLAMP);
+    glTexParameterf(GL_TEXTURE_RECTANGLE_EXT,GL_TEXTURE_WRAP_T,GL_CLAMP);
+	
+    // Setup filtering for the textures - Use nearest neighbour by default, as floating
+    // point filtering usually unsupported.
+    glTexParameterf(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+
+	// Texture ready, unbind it.
+	glBindTexture(GL_TEXTURE_RECTANGLE_EXT, 0);
+
+	// Create a new framebuffer object and bind it:
+	glGenFramebuffersEXT(1, (GLuint*) &((*fbo)->fboid));
+	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, (*fbo)->fboid);
+	
+	// Attach the texture as color buffer zero:
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_RECTANGLE_EXT, (*fbo)->coltexid, 0);
+	
+	// Check for framebuffer completeness:
+	fborc = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+	if (fborc!=GL_FRAMEBUFFER_COMPLETE_EXT) {
+		// Framebuffer incomplete!
+		while(glGetError());
+		printf("PTB-ERROR: Failed to setup internal framebuffer objects color buffer attachment for imaging pipeline!\n");
+		if (fborc==GL_FRAMEBUFFER_UNSUPPORTED_EXT) {
+			printf("PTB-ERROR: Your graphics hardware does not support the selected or requested texture- or offscreen window format for drawing into it.\n");
+			printf("PTB-ERROR: Most graphics cards do not support drawing into textures or offscreen windows which are not true-color, i.e. 1 layer pure\n");
+			printf("PTB-ERROR: luminance or 2 layer luminance+alpha textures or offscreen windows may not work, but 3-layer RGB or 4-layer RGBA textures\n");
+			printf("PTB-ERROR: or offscreen windows will work. Another reason could be that the specific colordepth is not supported on your hardware:\n");
+			printf("PTB-ERROR: 8 bits per color component are supported on nearly all hardware, 16 bpc or 32 bpc floating point format only on recent\n");
+			printf("PTB-ERROR: hardware. 16 bpc fixed precision is not supported on many systems either, or only under restricted conditions.\n");
+		}
+		else {
+			printf("PTB-ERROR: Exact reason for failure is unknown, glCheckFramebufferStatus() returns code %i\n", fborc);
+		}
+		printf("PTB-ERROR: You may want to retry with the lowest acceptable (for your study) size and depth of the onscreen window or offscreen window.\n");
+		return(FALSE);
+	}
+	
+	// Do we need additional buffers for 3D rendering?
+	if (needzbuffer) {
+		// Yes. Try to setup and attach them:
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Trying to attach depth+stencil attachments to FBO...\n"); 
+		if (!glewIsSupported("GL_ARB_depth_texture")) {
+			printf("PTB-ERROR: Failed to setup internal framebuffer object for imaging pipeline! Your graphics hardware does not support\n");
+			printf("PTB-ERROR: the required GL_ARB_depth_texture extension. You'll need at least a NVidia GeforceFX 5200 or ATI Radeon 9600\n");
+			printf("PTB-ERROR: for this to work.\n");
+			return(FALSE);
+		}
+		
+		// Create texture object for z-buffer (or z+stencil buffer) and set it up:
+		glGenTextures(1, (GLuint*) &((*fbo)->ztexid));
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, (*fbo)->ztexid);
+		
+		// Setup texture wrapping behaviour to clamp, as other behaviours are
+		// unsupported on many gfx-cards for rectangle textures:
+		glTexParameterf(GL_TEXTURE_RECTANGLE_EXT,GL_TEXTURE_WRAP_S,GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_RECTANGLE_EXT,GL_TEXTURE_WRAP_T,GL_CLAMP);
+		
+		// Setup filtering for the textures - Use nearest neighbour by default, as floating
+		// point filtering usually unsupported.
+		glTexParameterf(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+		
+		// Just to be safe...
+		PsychTestForGLErrors();
+
+		// Do we have support for combined 24 bit depth and 8 bit stencil buffer textures?
+		if (glewIsSupported("GL_EXT_packed_depth_stencil")) {
+			// Yes! Create combined depth and stencil texture:
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: packed_depth_stencil supported. Attaching combined 24 bit depth + 8 bit stencil texture...\n"); 
+
+			// Create proper texture: Just allocate proper format, don't assign data.
+			glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH24_STENCIL8_EXT, width, height, 0, GL_DEPTH_STENCIL_EXT, GL_UNSIGNED_INT_24_8_EXT, NULL);
+			PsychTestForGLErrors();
+
+			// Texture ready, unbind it.
+			glBindTexture(GL_TEXTURE_RECTANGLE_EXT, 0);
+			
+			// Attach the texture as depth buffer...
+			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_TEXTURE_RECTANGLE_EXT, (*fbo)->ztexid, 0);
+			// ... and as stencil buffer ...
+			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_TEXTURE_RECTANGLE_EXT, (*fbo)->ztexid, 0);
+		}
+		else {
+			// Packed depth+stencil textures unsupported :( 
+			// Allocate a single depth texture and attach it. Then see what we can do about the stencil attachment...
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: packed_depth_stencil unsupported. Attaching 24 bit depth texture and 8 bit stencil renderbuffer...\n"); 
+
+			// Create proper texture: Just allocate proper format, don't assign data.
+			glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+
+			// Depth texture ready, unbind it.
+			glBindTexture(GL_TEXTURE_RECTANGLE_EXT, 0);
+			
+			// Attach the texture as depth buffer...
+			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_TEXTURE_RECTANGLE_EXT, (*fbo)->ztexid, 0);
+			
+			// Create and attach renderbuffer as a stencil buffer of 8 bit depths:
+			glGenRenderbuffersEXT(1, (GLuint*) &((*fbo)->stexid));
+			glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, (*fbo)->stexid);
+			glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_STENCIL_INDEX8_EXT, width, height);
+			glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, (*fbo)->stexid);
+			
+			// See if we are framebuffer complete:
+			if (GL_FRAMEBUFFER_COMPLETE_EXT != glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT)) {
+				// Nope. Our trick doesn't work, this hardware won't let us attach a stencil buffer at all. Remove it
+				// and live with a depth-buffer only setup.
+				if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Stencil renderbuffer attachment failed! Detaching stencil buffer...\n"); 
+				if (PsychPrefStateGet_Verbosity()>1) {
+					printf("PTB-WARNING: OpenGL stencil buffers not supported in imagingmode by your hardware. This won't affect Screen 2D drawing functions and won't affect\n");
+					printf("PTB-WARNING: the majority of OpenGL (MOGL) 3D drawing code either, but OpenGL code that needs a stencil buffer will misbehave or fail in random ways!\n");
+					printf("PTB-WARNING: If you need to use such code, you'll either have to disable the internal imaging pipeline, or carefully work-around this limitation by\n");
+					printf("PTB-WARNING: proper modifications and testing of the affected code. Good luck... Alternatively, upgrade your graphics hardware. According to specs,\n");
+					printf("PTB-WARNING: all gfx-cards starting with GeForceFX 5000 on Windows and Linux and all cards on Intel-Macs except the Intel GMA cards should work, whereas\n");
+					printf("PTB-WARNING: none of the PowerPC hardware is supported as of OS-X 10.4.8.\n"); 
+				}
+				
+				glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, 0);
+				glDeleteRenderbuffersEXT(1, (GLuint*) &((*fbo)->stexid));
+				(*fbo)->stexid = 0;
+			}
+		}
+	}
+	else {
+		// Initialize additional buffers to zero:
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Only colorbuffer texture attached to FBO, no depth- or stencil buffers requested...\n"); 
+		(*fbo)->stexid = 0;
+		(*fbo)->ztexid = 0;
+	}
+	
+	// Store dimensions:
+	(*fbo)->width = width;
+	(*fbo)->height = height;
+	
+	// Check for framebuffer completeness:
+	fborc = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+	if (fborc!=GL_FRAMEBUFFER_COMPLETE_EXT) {
+		// Framebuffer incomplete!
+		while(glGetError());
+		printf("PTB-ERROR: Failed to setup internal framebuffer object for imaging pipeline [%s]! The most likely cause is that your hardware does not support\n", (fborc==GL_FRAMEBUFFER_UNSUPPORTED_EXT) ? "Unsupported format" : "Unknown error");
+		printf("PTB-ERROR: the required buffers at the given screen resolution (Additional 3D buffers for z- and stencil are %s).\n", (needzbuffer) ? "requested" : "disabled");
+		printf("PTB-ERROR: You may want to retry with the lowest acceptable (for your study) display resolution or with 3D rendering support disabled.\n");
+		return(FALSE);
+	}
+	
+	if (PsychPrefStateGet_Verbosity()>4) {
+		// Output framebuffer properties:
+		glGetIntegerv(GL_RED_BITS, &bpc);
+		printf("PTB-DEBUG: FBO has %i bits precision per color component in ", bpc);
+		if (glewIsSupported("GL_ARB_color_buffer_float")) {
+			glGetBooleanv(GL_RGBA_FLOAT_MODE_ARB, &isFloatBuffer);
+			if (isFloatBuffer) {
+				printf("floating point format ");
+			}
+			else {
+				printf("fixed point format ");
+			}
+		}
+		else if (glewIsSupported("GL_APPLE_float_pixels")) { 
+			glGetBooleanv(GL_COLOR_FLOAT_APPLE, &isFloatBuffer);
+			if (isFloatBuffer) {
+				printf("floating point format ");
+			}
+			else {
+				printf("fixed point foramt ");
+			}
+		}
+		else {
+			isFloatBuffer = FALSE;
+			printf("unknown format ");
+		}
+
+		glGetIntegerv(GL_DEPTH_BITS, &bpc);
+		printf("with  %i depths buffer bits ", bpc);
+		glGetIntegerv(GL_STENCIL_BITS, &bpc);
+		printf("and %i stencil buffer bits.\n", bpc);
+	}
+
+	// Unbind FBO:
+	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+
+	// Test all GL errors:
+	PsychTestForGLErrors();
+
+	// Well done.
+	return(TRUE);
 }
 
 /* PsychShutdownImagingPipeline()
@@ -115,12 +1012,35 @@ void PsychShutdownImagingPipeline(PsychWindowRecordType *windowRecord, Boolean o
 {
 	int i;
 	PtrPsychHookFunction hookfunc, hookiter;
+	PsychFBO* fboptr;
 	
-	// Imaging enabled?
-	if (windowRecord->imagingMode>0) {
+	// Imaging enabled? Do OpenGL specific cleanup:
+	if (windowRecord->imagingMode>0 && openglpart) {
 		// Yes. Mode specific cleanup:
+		for (i=0; i<windowRecord->fboCount; i++) {
+			// Delete i'th FBO, if any:
+			fboptr = windowRecord->fboTable[i];
+			if (fboptr!=NULL) { 
+				// Delete all remaining references to this fbo:
+				for (i=0; i<windowRecord->fboCount; i++) if (fboptr == windowRecord->fboTable[i]) windowRecord->fboTable[i] = NULL;
+				
+				// Detach and delete color buffer texture:
+				if (fboptr->coltexid) glDeleteTextures(1, &(fboptr->coltexid));
+				// Detach and delete depth buffer (and probably stencil buffer) texture, if any:
+				if (fboptr->ztexid) glDeleteTextures(1, &(fboptr->ztexid));
+				// Detach and delete stencil renderbuffer, if a separate stencil buffer was needed:
+				if (fboptr->stexid) glDeleteRenderbuffersEXT(1, &(fboptr->stexid));
+				// Delete FBO itself:
+				if (fboptr->fboid) glDeleteFramebuffersEXT(1, &(fboptr->fboid));
+				
+				// Delete PsychFBO struct associated with this FBO:
+				free(fboptr); fboptr = NULL;
+			}
+		}
 	} 
 
+	// The following cleanup must only happen after OpenGL rendering context is already detached and
+	// destroyed. It's part of phase-2 "post GL shutdown" of Screen('Close') and friends...
 	if (!openglpart) {
 		// Clear all hook chains:
 		for (i=0; i<MAX_SCREEN_HOOKS; i++) {
@@ -350,7 +1270,8 @@ void PsychPipelineAddBuiltinFunctionToHook(PsychWindowRecordType *windowRecord, 
  * windowRecord - Query for this window/texture.
  * hookString   - Query this named chain.
  * idString     - This string defines the specific slot to query. Can contain an integral number, then the associated slot is
- *				  queried, or a idString (as assigned during creation), then a slot with that name is queried.
+ *				  queried, or a idString (as assigned during creation), then a slot with that name is queried. Partial name
+ *				  matches are also accepted to search for substrings...
  *
  * On successfull return, the following values are assigned, on unsuccessfull return (=-1), nothing is assigned:
  * idString = The name string of this slot *Read-Only*
@@ -373,7 +1294,7 @@ int PsychPipelineQueryHookSlot(PsychWindowRecordType *windowRecord, const char* 
 	
 	// Perform linear search until proper slot reached or proper name reached:
 	hookfunc = windowRecord->HookChain[hookidx]; 
-	while(hookfunc && ((targetidx>-1 && idx<targetidx) || (targetidx==-1 && strcmp(*idString, hookfunc->idString)!=0))) {
+	while(hookfunc && ((targetidx>-1 && idx<targetidx) || (targetidx==-1 && strstr(hookfunc->idString, *idString)==NULL))) {
 			hookfunc = hookfunc->next;
 			idx++;
 	}
@@ -463,33 +1384,109 @@ void PsychPipelineDumpAllHooks(PsychWindowRecordType *windowRecord)
 	return;
 }
 
+boolean PsychIsHookChainOperational(PsychWindowRecordType *windowRecord, int hookid)
+{
+	// Child protection:
+	if (hookid<0 || hookid>=MAX_SCREEN_HOOKS) PsychErrorExitMsg(PsychError_internal, "In PsychIsHookChainOperational: Was asked to check unknown (non-existent) hook chain with invalid id!");
+
+	// Hook chain enabled for processing and contains at least one hook slot?
+	if ((!windowRecord->HookChainEnabled[hookid]) || (windowRecord->HookChain[hookid] == NULL)) {
+		// Chain is empty or disabled.
+		return(FALSE);
+	}
+	
+	// Chain operational:
+	return(TRUE);
+}
+
 /* PsychPipelineExecuteHook()
  * Execute the full hook processing chain for a specific hook and a specific windowRecord.
  * This checks if the chain is enabled. If it isn't enabled, it skips processing.
  * If it is enabled, it iterates over the full chain, executes all assigned hook functions in order and uses the FBO's between minfbo and maxfbo
  * as pingpong buffers if neccessary.
  */
-void PsychPipelineExecuteHook(PsychWindowRecordType *windowRecord, int hookId, void* hookUserData, void* hookBlitterFunction, int minfbo, int maxfbo)
+boolean PsychPipelineExecuteHook(PsychWindowRecordType *windowRecord, int hookId, void* hookUserData, void* hookBlitterFunction, boolean srcIsReadonly, boolean allowFBOSwizzle, PsychFBO** srcfbo1, PsychFBO** srcfbo2, PsychFBO** dstfbo, PsychFBO** bouncefbo)
 {
 	PtrPsychHookFunction hookfunc;
 	int i=0;
-	int srcfbo, dstfbo;
-	srcfbo = minfbo;
-	dstfbo = maxfbo;
+	int pendingFBOpingpongs = 0;
+	PsychFBO *mysrcfbo1, *mysrcfbo2, *mydstfbo, *mynxtfbo; 
+	boolean gfxprocessing;
+	GLint restorefboid = 0;
 	
 	// Child protection:
 	if (hookId<0 || hookId>=MAX_SCREEN_HOOKS) PsychErrorExitMsg(PsychError_internal, "In PsychPipelineExecuteHook: Was asked to execute unknown (non-existent) hook chain with invalid id!");
-	// Hook chain enabled for processing? We skip otherwise.
-	if (!windowRecord->HookChainEnabled[hookId]) return;
+
+	// Hook chain enabled for processing and contains at least one hook slot?
+	if ((!windowRecord->HookChainEnabled[hookId]) || (windowRecord->HookChain[hookId] == NULL)) {
+		// Chain is empty or disabled.
+		return(TRUE);
+	}
 	
+	// Is this an image processing hook?
+	gfxprocessing = (srcfbo1!=NULL && dstfbo!=NULL) ? TRUE : FALSE;
+		
 	// Get start of enabled chain:
+	hookfunc = windowRecord->HookChain[hookId];
+
+	// Count number of needed ping-pong FBO switches inside this chain:
+	while(hookfunc) {
+		// Pingpong command?
+		if (hookfunc->hookfunctype == kPsychBuiltinFunc && strcmp(hookfunc->idString, "Builtin:FlipFBOs")==0) pendingFBOpingpongs++;
+		// Process next hookfunc slot in chain, if any:
+		hookfunc = hookfunc->next;
+	}
+
+	if (gfxprocessing) {
+		// Prepare gfx-processing:
+
+		// If this is a multi-pass chain we'll need a bounce buffer FBO:
+		if ((pendingFBOpingpongs > 0 && bouncefbo == NULL) || (pendingFBOpingpongs > 1 && ((*dstfbo)->fboid == 0))) {
+			printf("PTB-ERROR: Hook processing chain '%s' is a multi-pass processing chain with %i passes,\n", PsychHookPointNames[hookId], pendingFBOpingpongs + 1);
+			printf("PTB-ERROR: but imaging pipeline is not configured for multi-pass processing! You need to supply the additional flag\n");
+			printf("PTB-ERROR: %s as imagingmode to Screen('OpenWindow') to tell PTB about these requirements and then restart.\n\n",
+					(pendingFBOpingpongs > 1) ? "kPsychNeedMultiPass" : "kPsychNeedDualPass");
+			// Ok, abort...
+			PsychErrorExitMsg(PsychError_user, "Insufficient pipeline configuration for processing. Adapt the 'imagingmode' flag according to my tips!");
+		}
+		
+		if ((pendingFBOpingpongs % 2) == 0) {
+			// Even number of ping-pongs needed in this chain. We stream from source fbo to
+			// destination fbo in first pass.
+			mysrcfbo1 = *srcfbo1;
+			mysrcfbo2 = (srcfbo2) ? *srcfbo2 : NULL;
+			mydstfbo  = *dstfbo;
+			mynxtfbo  = (bouncefbo) ? *bouncefbo : NULL;
+		}
+		else {
+			// Odd number of ping-pongs needed. Initially stream from source to bouncefbo:
+			mysrcfbo1 = *srcfbo1;
+			mysrcfbo2 = (srcfbo2) ? *srcfbo2 : NULL;
+			mydstfbo  = (bouncefbo) ? *bouncefbo : NULL;
+			mynxtfbo  = *dstfbo;
+		}
+				
+		// Enable associated GL context:
+		PsychSetGLContext(windowRecord);
+		
+		// Save current FBO bindings for later restore:
+		if (glBindFramebufferEXT) {
+			glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &restorefboid);
+		}
+		
+		// Setup initial source -> target binding:
+		PsychPipelineSetupRenderFlow(mysrcfbo1, mysrcfbo2, mydstfbo);
+	}
+
+	
+	// Reget start of enabled chain:
 	hookfunc = windowRecord->HookChain[hookId];
 
 	// Iterate over all slots:
 	while(hookfunc) {
 		// Debug output, if requested:
 		if (PsychPrefStateGet_Verbosity()>4) {
-			printf("Hookchain %i : Slot %i: Id='%s' : ", hookId, i, hookfunc->idString);
+			printf("Hookchain '%s' : Slot %i: Id='%s' : ", PsychHookPointNames[hookId], i, hookfunc->idString);
 			switch(hookfunc->hookfunctype) {
 				case kPsychShaderFunc:
 					printf("GLSL-Shader      : id=%i , luttex1=%i , blitter=%s\n", hookfunc->shaderid, hookfunc->luttexid1, hookfunc->pString1);
@@ -509,49 +1506,328 @@ void PsychPipelineExecuteHook(PsychWindowRecordType *windowRecord, int hookId, v
 			}
 		}
 		
-		// Process this hook function:
-		PsychPipelineExecuteHookSlot(windowRecord, hookId, hookfunc, hookUserData, hookBlitterFunction, &srcfbo, &dstfbo);
+		// Is this a ping-pong command?
+		if (hookfunc->hookfunctype == kPsychBuiltinFunc && strcmp(hookfunc->idString, "Builtin:FlipFBOs")==0) {
+			// Ping pong buffer swap requested:
+			pendingFBOpingpongs--;
+			mysrcfbo1 = mydstfbo;
+			mydstfbo  = mynxtfbo;
+			if ((pendingFBOpingpongs % 2) == 0) {
+				// Even number of ping-pongs remaining in this chain.
+				mynxtfbo  = (bouncefbo) ? *bouncefbo : NULL;
+			}
+			else {
+				// Odd number of ping-pongs remaining.
+				mynxtfbo  = *dstfbo;
+			}
+			
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: SWAPPING PING-PONG FBOS, %i swaps pending...\n", pendingFBOpingpongs);
+			
+			// Set new src -> dst binding:
+			PsychPipelineSetupRenderFlow(mysrcfbo1, mysrcfbo2, mydstfbo);
+		}
+		else {
+			// Normal hook function - Process this hook function:
+			if (!PsychPipelineExecuteHookSlot(windowRecord, hookId, hookfunc, hookUserData, hookBlitterFunction, srcIsReadonly, allowFBOSwizzle, &mysrcfbo1, &mysrcfbo2, &mydstfbo, &mynxtfbo)) {
+				// Failed!
+				if (PsychPrefStateGet_Verbosity()>0) {
+					printf("PTB-ERROR: Failed in processing of Hookchain '%s' : Slot %i: Id='%s'  --> Aborting chain processing. Set verbosity to 5 for extended debug output.\n", PsychHookPointNames[hookId], i, hookfunc->idString);
+				}
+				return(FALSE);
+			}
+		}
 		
 		// Process next hookfunc slot in chain, if any:
 		i++;
 		hookfunc = hookfunc->next;
 	}
 
+	if (gfxprocessing) {
+		// Disable renderflow:
+		PsychPipelineSetupRenderFlow(NULL, NULL, NULL);
+		
+		// Restore old FBO bindings:
+		if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, restorefboid);
+	}
+
 	// Done.
-	return;
+	return(TRUE);
 }
 
 /* PsychPipelineExecuteHookSlot()
  * Execute a single hookfunction slot in a hook chain for a specific window.
  */
-void PsychPipelineExecuteHookSlot(PsychWindowRecordType *windowRecord, int hookId, PsychHookFunction* hookfunc, void* hookUserData, void* hookBlitterFunction, int* srcfbo, int* dstfbo)
+boolean PsychPipelineExecuteHookSlot(PsychWindowRecordType *windowRecord, int hookId, PsychHookFunction* hookfunc, void* hookUserData, void* hookBlitterFunction, boolean srcIsReadonly, boolean allowFBOSwizzle, PsychFBO** srcfbo1, PsychFBO** srcfbo2, PsychFBO** dstfbo, PsychFBO** bouncefbo)
 {
+	boolean dispatched = FALSE;
+	
 	// Dispatch by hook function type:
 	switch(hookfunc->hookfunctype) {
 		case kPsychShaderFunc:
-			printf("TODO: EXECUTE -- GLSL-Shader      : id=%i , luttex1=%i , blitter=%s\n", hookfunc->shaderid, hookfunc->luttexid1, hookfunc->pString1);
-			break;
+			// Call a GLSL shader to do some image processing: We just execute the blitter, the shader gets assigned inside
+			// this function.
+			if (!PsychPipelineExecuteBlitter(windowRecord, hookfunc, hookUserData, hookBlitterFunction, srcIsReadonly, allowFBOSwizzle, srcfbo1, srcfbo2, dstfbo, bouncefbo)) {
+				// Blitter failed!
+				return(FALSE);
+			}
+			dispatched=TRUE;
+		break;
 			
 		case kPsychCFunc:
+			// Call a C callback function via the given memory function pointer:
 			printf("TODO: EXECUTE -- C-Callback       : void*= %p\n", hookfunc->cprocfunc);
-			break;
+			dispatched=TRUE;
+		break;
 			
 		case kPsychMFunc:
-			// printf("EXECUTING: Runtime-Function : Evalstring= %s\n", hookfunc->pString1);
-			#if PSYCH_LANGUAGE == PSYCH_MATLAB
-				PsychRuntimeEvaluateString(hookfunc->pString1);
-			#else
-				printf("TODO: Implement runtime function support in GNU/Octave!\n");
-			#endif
-			break;
+			// Call the eval() function of our scripting runtime environment to evaluate
+			// function string pString1. Currently supported are Matlab & Octave, so this
+			// can be the call string of an arbitrary Matlab/Octave builtin or M-Function.
+			// Care has to be taken that the called functions do not invoke any Screen
+			// subfunctions! Screen is not reentrant, so that would likely screw seriously!
+
+			// TODO: Substitute specific placeholders in pString1 by parameters from us.
+			PsychRuntimeEvaluateString(hookfunc->pString1);
+			dispatched=TRUE;
+		break;
 			
 		case kPsychBuiltinFunc:
-			printf("TODO: EXECUTE -- Builtin-Function : Name= %s\n", hookfunc->idString);
-			break;
+			// Dispatch to a builtin function:
+			if (strcmp(hookfunc->idString, "Builtin:FlipFBOs")==0) { dispatched=TRUE; } // No op here. Done in upper layer...
+			if (strcmp(hookfunc->idString, "Builtin:IdentityBlit")==0) {
+				// Perform the most simple blit operation: A simple one-to-one copy of input FBO to output FBO:
+				if (!PsychPipelineExecuteBlitter(windowRecord, hookfunc, NULL, NULL, TRUE, FALSE, srcfbo1, NULL, dstfbo, NULL)) {
+					// Blitter failed!
+					return(FALSE);
+				}
+				dispatched=TRUE;
+			}
+		break;
 			
 		default:
 			PsychErrorExitMsg(PsychError_internal, "In PsychPipelineExecuteHookSlot: Was asked to execute unknown (non-existent) hook function type!");
 	}
 	
+	if (!dispatched) {
+		if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Failed to dispatch hook slot - Unknown command or failure in command execution.\n");
+		return(FALSE);
+	}
+	
+	return(TRUE);
+}
+
+void PsychPipelineSetupRenderFlow(PsychFBO* srcfbo1, PsychFBO* srcfbo2, PsychFBO* dstfbo)
+{
+	static int ow=0;
+	static int oh=0;
+	int w, h;
+
+	// Select rendertarget:
+	if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, (dstfbo) ? dstfbo->fboid : 0);
+
+	// Assign color texture of srcfbo2, if any,  to texture unit 1:
+	glActiveTextureARB(GL_TEXTURE1_ARB);
+	if (srcfbo2) {
+		// srcfbo2 is valid: Assign its color buffer texture:
+		if (PsychPrefStateGet_Verbosity()>4) printf("TexUnit 1 reading from texid -- %i\n", srcfbo2->coltexid);
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, srcfbo2->coltexid);
+		// Set texture application mode to replace:
+		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		glEnable(GL_TEXTURE_RECTANGLE_EXT);
+		glDisable(GL_TEXTURE_2D);
+	}
+	else {
+		// srcfbo2 doesn't exist: Unbind and deactivate 2nd unit:
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, 0);
+		glDisable(GL_TEXTURE_RECTANGLE_EXT);
+	}
+	
+
+	// Assign color texture of srcfbo1 to texture unit 0:
+	glActiveTextureARB(GL_TEXTURE0_ARB);
+	if (srcfbo1) {
+		// srcfbo1 is valid: Assign its color buffer texture:
+		if (PsychPrefStateGet_Verbosity()>4) printf("TexUnit 0 reading from texid -- %i\n", srcfbo1->coltexid);
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, srcfbo1->coltexid);
+
+		// Set texture application mode to replace:
+		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		glEnable(GL_TEXTURE_RECTANGLE_EXT);
+		glDisable(GL_TEXTURE_2D);
+	}
+	else {
+		// srcfbo1 doesn't exist: Unbind and deactivate 1st unit:
+		glBindTexture(GL_TEXTURE_RECTANGLE_EXT, 0);
+		glDisable(GL_TEXTURE_RECTANGLE_EXT);
+	}
+
+	
+	if (dstfbo) {
+		// Setup viewport, scissor rectangle and projection matrix for orthonormal rendering into the
+		// target FBO or system framebuffer:
+		w = (int) dstfbo->width;
+		h = (int) dstfbo->height;
+		if (PsychPrefStateGet_Verbosity()>4) printf("Blitting to Targettex = %i , w x h = %i %i\n", dstfbo->coltexid, w, h);
+		
+		// Settings changed? We skip if not - state changes are expensive...
+		if (w!=ow || h!=oh) {
+			ow=w;
+			oh=h;
+			
+			// Setup viewport and scissor for full FBO area:
+			glViewport(0, 0, w, h);
+			glScissor(0, 0, w, h);
+			
+			// Setup projection matrix for a proper orthonormal projection for this framebuffer:
+			glMatrixMode(GL_PROJECTION);
+			glLoadIdentity();
+			gluOrtho2D(0, w, h, 0);
+
+			// Switch back to modelview matrix, but leave it unaltered:
+			glMatrixMode(GL_MODELVIEW);
+		}
+	}
+	else {
+		// Reset our cached settings:
+		ow=0;
+		oh=0;
+	}
+
 	return;
+}
+
+boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc, void* hookUserData, void* hookBlitterFunction, boolean srcIsReadonly, boolean allowFBOSwizzle, PsychFBO** srcfbo1, PsychFBO** srcfbo2, PsychFBO** dstfbo, PsychFBO** bouncefbo)
+{
+	boolean rc = TRUE;
+	PsychBlitterFunc blitterfnc = NULL;
+	GLenum glerr;
+	
+	// Select proper blitter function:
+	
+	// Any special override blitter defined in parameter string?
+	if (strstr(hookfunc->pString1, "Blitter:")) {
+		// Yes. Which one?
+		hookBlitterFunction = NULL;
+		
+		// Standard blitter? This one does a one-to-one copy without special geometric transformations.
+		if (strstr(hookfunc->pString1, "Blitter:IdentityBlit")) blitterfnc = &PsychBlitterIdentity; // Assign our standard one-to-one blitter.
+		
+		// Blitter assigned?
+		if (blitterfnc == NULL) {
+			if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Invalid (unknown) blitter specified in blitter string. Blit aborted.\n");
+			return(FALSE);
+		}
+	}
+	
+	// Master blitter function set?
+	if (hookBlitterFunction == NULL) {
+		// No blitter set up to now. Assign the default blitter:
+		blitterfnc = &PsychBlitterIdentity; // Assign our standard one-to-one blitter.
+	} else {
+		// Override blitter defined: Assign it.
+		blitterfnc = (PsychBlitterFunc) hookBlitterFunction;
+	}
+	
+	// TODO: Common setup code for texturing, filtering, alpha blending, z-test and such...
+
+	// Need a shader for this blit op?
+	if (hookfunc->shaderid) {
+		// Setup shader, if any:
+		if (!glUseProgram){
+			if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Blitter invocation failed: Blitter needs to attach GLSL shaders, but shaders are not supported on your hardware!\n");
+			rc = FALSE;
+		} else {
+			// Attach shader:
+			while(glGetError());
+			glUseProgram(hookfunc->shaderid);
+			if ((glerr = glGetError())!=GL_NO_ERROR) {
+				if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Blitter invocation failed: glUseProgram(%i) failed with error: %s\n", hookfunc->shaderid, gluErrorString(glerr));
+				rc = FALSE;
+			}
+		}
+	}
+	
+	// Execute blitter function:
+	rc = (rc && blitterfnc(windowRecord, hookfunc, hookUserData, srcIsReadonly, allowFBOSwizzle, srcfbo1, srcfbo2, dstfbo, bouncefbo));
+	if (!rc) {
+		if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Blitter invocation failed: OpenGL error state is: %s\n", gluErrorString(glGetError()));
+		while(glGetError());
+	}
+	
+	// TODO: Common teardown code for texturing, filtering and such...
+
+	// Reset shader assignment, if any:
+	if ((hookfunc->shaderid) && glUseProgram) glUseProgram(0);
+
+	// Return result code:
+	return(rc);
+}
+
+/* PsychBlitterIdentity()  -- Default blitter.
+ *
+ * Identity blitter: Blits from srcfbo1 color attachment to dstfbo without geometric transformations or other extras.
+ * This is the most common one for one-to-one copies or simple shader image processing. It gets automatically used
+ * when no special (non-default) blitter is requested by core code or users blitter parameter string:
+ */
+boolean PsychBlitterIdentity(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc, void* hookUserData, boolean srcIsReadonly, boolean allowFBOSwizzle, PsychFBO** srcfbo1, PsychFBO** srcfbo2, PsychFBO** dstfbo, PsychFBO** bouncefbo)
+{
+	int w, h, x, y;
+	char* strp;
+	
+	// We only accept one (optional) parameter in the blitterString: An integral (x,y)
+	// offset for the destination of the blit. This allows to blit the srcfbo1, without
+	// scaling or filtering it, to a different start location than (0,0):
+	x=0;
+	y=0;
+	
+	if (strp=strstr(hookfunc->pString1, "Offset:")) {
+		// Parse and assign offset:
+		if (sscanf(strp, "Offset:%i:%i", &x, &y)!=2) {
+			PsychErrorExitMsg(PsychError_internal, "In PsychBlitterIdentity(): Offset: blit string parameter is invalid! Parse error...\n");
+		}
+	}
+	
+	// We basically ignore all parameters and just blit the bound texture(s) into the
+	// attached rendertarget, assuming a one-to-one correspondence of texture coordinates to
+	// fragment coordinates, i.e., the geometry if fully specified by size of dstfbo:
+	if (srcfbo1 && (*srcfbo1)) {
+		// Query dimensions of viewport:
+		w = (*srcfbo1)->width;
+		h = (*srcfbo1)->height;
+		
+		// Do the blit, using a rectangular quad:
+		glBegin(GL_QUADS);
+
+		// Note the swapped y-coord for textures wrt. y-coord of vertex position!
+		// Texture coordinate system has origin at bottom-left, y-axis pointing upward,
+		// but PTB has framebuffer coordinate system with origin at top-left, with
+		// y-axis pointing downward! Normally OpenGL would have origin always bottom-left,
+		// but PTB has to use a different system (changed by special gluOrtho2D) transform),
+		// because our 2D coordinate system needs to conform to the standards of the old
+		// Psychtoolboxes and of typical windowing systems. -- A tribute to the past.
+		
+		// Upper left vertex in window
+		glTexCoord2f(0, h);
+		glVertex2f(x, y);		
+
+		// Lower left vertex in window
+		glTexCoord2f(0, 0);
+		glVertex2f(x, h+y);		
+
+		// Lower right  vertex in window
+		glTexCoord2f(w, 0);
+		glVertex2f(w+x, h+y);		
+
+		// Upper right in window
+		glTexCoord2f(w, h);
+		glVertex2f(w+x, y);		
+
+		glEnd();
+	}
+	else {
+		PsychErrorExitMsg(PsychError_internal, "In PsychBlitterIdentity(): srcfbo1 is a NULL - Pointer!!!");
+	}
+	
+	// Done.
+	return(TRUE);
 }

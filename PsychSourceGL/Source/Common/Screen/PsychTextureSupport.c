@@ -69,6 +69,8 @@ void PsychDetectTextureTarget(PsychWindowRecordType *win)
     // First time invocation?
     if (texturetarget==0) {
         // Yes. Need to auto-detect texturetarget to use...
+		PsychSetGLContext(win);
+
         if (strstr(glGetString(GL_EXTENSIONS), "GL_EXT_texture_rectangle") && GL_TEXTURE_RECTANGLE_EXT != GL_TEXTURE_2D) {
 	    // Great! GL_TEXTURE_RECTANGLE_EXT is available! Use it.
 	    texturetarget = GL_TEXTURE_RECTANGLE_EXT;
@@ -214,7 +216,8 @@ void PsychCreateTexture(PsychWindowRecordType *win)
         int twidth, theight;
 	void* texmemptr;
 	bool recycle = FALSE;
-
+// TEST:
+if (win->textureOrientation==0 && renderswap) win->textureOrientation=1;
         // Enable the proper OpenGL rendering context for the window associated with this
         // texture:
 	PsychSetGLContext(win);
@@ -550,8 +553,9 @@ void PsychBlitTextureToDisplay(PsychWindowRecordType *source, PsychWindowRecordT
         // Query target for this specific texture:
         texturetarget = PsychGetTextureTarget(source);
         
-        // Enable target's framebuffer as current drawingtarget:
-        PsychSetDrawingTarget(target);
+        // Enable target's framebuffer as current drawingtarget, except if this is a
+		// blit operation from a window into itself and the imaging pipe is on:
+        if ((source != target) || (target->imagingMode==0)) PsychSetDrawingTarget(target);
         
         // This code allows the application of sourceRect, as it is meant to be:
         // CAUTION: This calculation with sourceHeight - xxxx  depends on if GPU texture swapping
@@ -759,14 +763,15 @@ GLenum PsychGetTextureTarget(PsychWindowRecordType *win)
         // we don't win anything...
     }
     
-    // Setup texture-target if not already done:
-    PsychSetGLContext(win);
-    PsychDetectTextureTarget(win);
-
     // If texturetaget field for this texture isn't yet initialized, then
     // init it now from our global setting:
-    if (win->texturetarget == 0) win->texturetarget = texturetarget;
-    
+    if (win->texturetarget == 0) {
+		// Setup texture-target if not already done:
+		PsychDetectTextureTarget(win);
+
+		win->texturetarget = texturetarget;
+	}
+	
     // Return texturetarget for this window:
     return(win->texturetarget);
 }

@@ -83,8 +83,11 @@ PsychError SCREENSetOpenGLTextureFromMemPointer(void)
         textureRecord->screenNumber = windowRecord->screenNumber;
         textureRecord->targetSpecific.contextObject = windowRecord->targetSpecific.contextObject;
         textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
+        textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
 		
 		textureRecord->colorRange = windowRecord->colorRange;
+		// Copy imaging mode flags from parent:
+		textureRecord->imagingMode = windowRecord->imagingMode;
 
         // Mark it valid and return handle to userspace:
         PsychSetWindowRecordValid(textureRecord);
@@ -160,6 +163,7 @@ PsychError SCREENSetOpenGLTextureFromMemPointer(void)
     // Ok, setup texture record for texture:
     PsychInitWindowRecordTextureFields(textureRecord);
     textureRecord->depth = d * 8;
+	textureRecord->nrchannels = d;
     PsychMakeRect(textureRecord->rect, 0, 0, w, h);
 
     // Override texture target, if one was provided:

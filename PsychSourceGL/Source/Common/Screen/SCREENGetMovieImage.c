@@ -121,6 +121,8 @@ PsychError SCREENGetMovieImage(void)
     textureRecord->screenNumber=windowRecord->screenNumber;
     // It is always a 32 bit texture for movie textures:
     textureRecord->depth=32;
+	textureRecord->nrchannels = 4;
+
     // Create default rectangle which describes the dimensions of the image. Will be overwritten
     // later on.
     PsychMakeRect(rect, 0, 0, 10, 10);
@@ -134,8 +136,11 @@ PsychError SCREENGetMovieImage(void)
     // MK: Is this the proper way to do it???
     textureRecord->targetSpecific.contextObject = windowRecord->targetSpecific.contextObject;
     textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
+	textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
     textureRecord->colorRange = windowRecord->colorRange;
-    
+	// Copy imaging mode flags from parent:
+	textureRecord->imagingMode = windowRecord->imagingMode;
+
     // Try to fetch an image from the movie object and return it as texture:
     PsychGetTextureFromMovie(windowRecord, moviehandle, FALSE, requestedTimeIndex, textureRecord, &presentation_timestamp);
 

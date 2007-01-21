@@ -209,7 +209,8 @@ PsychError SCREENMakeTexture(void)
 			for(ix=0;ix<iters;ix++){
 				*(texturePointer_f++)= (GLfloat) *(doubleMatrix++);  
 			}
-			textureRecord->depth=8;
+			textureRecord->depth=(usefloatformat==1) ? 16 : 32;
+
 			textureRecord->textureinternalformat = (usefloatformat==1) ? GL_LUMINANCE_FLOAT16_APPLE : GL_LUMINANCE_FLOAT32_APPLE; 
 			textureRecord->textureexternalformat = GL_LUMINANCE;
 		}
@@ -222,7 +223,7 @@ PsychError SCREENMakeTexture(void)
 				*(texturePointer_f++)= (GLfloat) *(rp++);  
 				*(texturePointer_f++)= (GLfloat) *(ap++);  
 			}
-			textureRecord->depth=16;
+			textureRecord->depth=(usefloatformat==1) ? 32 : 64;
 			textureRecord->textureinternalformat = (usefloatformat==1) ? GL_LUMINANCE_ALPHA_FLOAT16_APPLE : GL_LUMINANCE_ALPHA_FLOAT32_APPLE; 
 			textureRecord->textureexternalformat = GL_LUMINANCE_ALPHA;
 		}
@@ -237,7 +238,7 @@ PsychError SCREENMakeTexture(void)
 				*(texturePointer_f++)= (GLfloat) *(gp++);  
 				*(texturePointer_f++)= (GLfloat) *(bp++);  
 			}
-			textureRecord->depth=24;
+			textureRecord->depth=(usefloatformat==1) ? 48 : 96;
 			textureRecord->textureinternalformat = (usefloatformat==1) ? GL_RGB_FLOAT16_APPLE : GL_RGB_FLOAT32_APPLE; 
 			textureRecord->textureexternalformat = GL_RGB;
 		}
@@ -254,7 +255,7 @@ PsychError SCREENMakeTexture(void)
 				*(texturePointer_f++)= (GLfloat) *(bp++);  
 				*(texturePointer_f++)= (GLfloat) *(ap++);  
 			}			
-			textureRecord->depth=32;
+			textureRecord->depth=(usefloatformat==1) ? 64 : 128;
 			textureRecord->textureinternalformat = (usefloatformat==1) ? GL_RGBA_FLOAT16_APPLE : GL_RGBA_FLOAT32_APPLE; 
 			textureRecord->textureexternalformat = GL_RGBA;
 		}
@@ -409,11 +410,18 @@ PsychError SCREENMakeTexture(void)
     // MK: Is this the proper way to do it???
     textureRecord->targetSpecific.contextObject = windowRecord->targetSpecific.contextObject;
     textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
+	textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
+
 	textureRecord->colorRange = windowRecord->colorRange;
+	// Copy imaging mode flags from parent:
+	textureRecord->imagingMode = windowRecord->imagingMode;
 
     // Texture orientation is zero aka transposed aka non-renderswapped.
     textureRecord->textureOrientation = 0;
     
+	// This is our best guess about the number of image channels:
+	textureRecord->nrchannels = numMatrixPlanes;
+
     // Let's create and bind a new texture object and fill it with our new texture data.
     PsychCreateTexture(textureRecord);
     
