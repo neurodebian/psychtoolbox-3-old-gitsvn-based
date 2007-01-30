@@ -136,7 +136,7 @@ void InitializeSynopsis()
 
 	// Load color lookup table of the window's screen (on-screen only)
 	synopsis[i++] = "\n% Load color lookup table of the window's screen (on-screen only):";
-	synopsis[i++] = "[gammatable, dacbits] = Screen('ReadNormalizedGammaTable', windowPtrOrScreenNumber);";
+	synopsis[i++] = "[gammatable, dacbits, reallutsize] = Screen('ReadNormalizedGammaTable', windowPtrOrScreenNumber);";
 	synopsis[i++] = "Screen('LoadNormalizedGammaTable', windowPtrOrScreenNumber, table [, loadOnNextFlip]);";
 	synopsis[i++] = "oldclut = Screen('LoadCLUT', windowPtrOrScreenNumber [, clut] [, startEntry=0] [, bits=8]);";
 
@@ -229,6 +229,8 @@ void InitializeSynopsis()
 
 		synopsis[i++] = "\n% Support for plugins and for builtin high performance image processing pipeline:";
 		synopsis[i++] = "[ret1, ret2, ...] = Screen('HookFunction', windowPtr, 'Subcommand', 'HookName', arg1, arg2, ...);";
+		synopsis[i++] = "proxyPtr = Screen('OpenProxy', windowPtr [, imagingmode]);";
+		synopsis[i++] = "transtexid = Screen('TransformTexture', sourceTexture, transformProxyPtr [, targetTexture]);";
 
         synopsis[i++] = NULL;  //this tells PsychDisplayScreenSynopsis where to stop
 	if (i > MAX_SYNOPSIS_STRINGS) {

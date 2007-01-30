@@ -71,7 +71,7 @@ T0 DO:
 #define PSYCH_INVALID_SCUMBER				-1
 
 // Maximum number of different hook chains:
-#define MAX_SCREEN_HOOKS 12
+#define MAX_SCREEN_HOOKS 13
 
 // Maximum number of slots in windowRecords fboTable:
 #define MAX_FBOTABLE_SLOTS 2+3+3+2
@@ -151,7 +151,7 @@ typedef struct{
   int             	pixelFormatObject;   // Just here for compatibility. Its a dummy entry without meaning.
   Display*              deviceContext;       // Pointer to the X11 display connection.
   Window                windowHandle;        // Handle to the onscreen window.
-  GLXContext		glusercontextObject;	   // OpenGL context for userspace rendering code, e.g., moglcore...
+  GLXContext		glusercontextObject; // OpenGL context for userspace rendering code, e.g., moglcore...
   CVOpenGLTextureRef QuickTimeGLTexture;     // Used for textures returned by movie routines in PsychMovieSupport.c
   // CVOpenGLTextureRef is not ready yet. Its typedefd to a void* to make the compiler happy.
 } PsychTargetSpecificWindowRecordType;
@@ -227,6 +227,7 @@ typedef struct _PsychWindowRecordType_{
 	float* inRedTable;
 	float* inGreenTable;
 	float* inBlueTable;
+	int    inTableSize;		// Number of slots in the LUT tables.
 	
 	// Settings for the image processing and hook callback pipeline: See PsychImagingPipelineSupport.hc for definition and implementation:
 	double					colorRange;								// Maximum allowable color component value. See SCREENColorRange.c for explanation.
