@@ -79,7 +79,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "\n% Open or close a window or texture:";
 	synopsis[i++] = "[windowPtr,rect]=Screen('OpenWindow',windowPtrOrScreenNumber [,color] [,rect] [,pixelSize] [,numberOfBuffers] [,stereomode] [,multisample][,imagingmode]);";	
         synopsis[i++] = "[windowPtr,rect]=Screen('OpenOffscreenWindow',windowPtrOrScreenNumber [,color] [,rect] [,pixelSize]);";
-	synopsis[i++] = "textureIndex=Screen('MakeTexture', WindowIndex, imageMatrix [, optimizeForDrawAngle=0] [, enforcepot=0] [, floatprecision=0]);";	
+	synopsis[i++] = "textureIndex=Screen('MakeTexture', WindowIndex, imageMatrix [, optimizeForDrawAngle=0] [, enforcepot=0] [, floatprecision=0] [, textureOrientation=0]);";	
 	synopsis[i++] = "Screen('Close', windowOrTextureIndex);";
 	synopsis[i++] = "Screen('CloseAll');";
 	
@@ -200,7 +200,7 @@ void InitializeSynopsis()
         
         // Video capture support:
 	synopsis[i++] = "\n% Video capture functions:";
-        synopsis[i++] = "videoPtr =Screen('OpenVideoCapture', windowPtr [, deviceIndex] [,roirectangle] [, pixeldepth] [, numbuffers] [, allowfallback]);";
+        synopsis[i++] = "videoPtr =Screen('OpenVideoCapture', windowPtr [, deviceIndex] [,roirectangle] [, pixeldepth] [, numbuffers] [, allowfallback] [, targetmoviename] [, recordingflags]);";
         synopsis[i++] = "Screen('CloseVideoCapture', capturePtr);";
         synopsis[i++] = "[fps starttime] = Screen('StartVideoCapture', capturePtr [, captureRateFPS] [, dropframes=0] [, startAt]);";
         synopsis[i++] = "droppedframes = Screen('StopVideoCapture', capturePtr);";

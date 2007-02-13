@@ -21,6 +21,7 @@
 %    GrayIndex               - Any graylevel from black (0) to white (1).
 %    GroupStructArrayByFields - An aid to sorting data kept in structure arrays.
 %    hexstr                  - Hex string of lowest 32 bits of any number.
+%    ImageToVec              - Convert a grayscale image to vector format.
 %    IsLinux                 - Shorthand for testing whether running under Linux.
 %    IsOctave                - Shortand for testing whether running under Octave.
 %    IsOS9                   - Shorthand for streq(computer,'MAC2').
@@ -34,11 +35,11 @@
 %    MakeCosImage            - Make a cosinusoidal image.
 %    MakeSincImage           - Make a sinc image.
 %    MakeSineImage           - Make a sinusoidal image.
-% 	 MapIndexColorThroughClut - Convert an index color image and clut to a true color image.
+%    MapIndexColorThroughClut - Convert an index color image and clut to a true color image.
 %    NameBytes               - Nicely format memory size for human readers.
 %    NameFrequency           - Nicely format clock rate for human readers.
 %    OSName                  - Convential English-language name of your operating system.
-%    PackColorImage        - Pack three color planes into one m by n by three matrix.
+%    PackColorImage          - Pack three color planes into one m by n by three matrix.
 %    PsychtoolboxRoot        - Robust way to get path to Psychtoolbox folder, even if renamed.
 %    RemoveSVNPaths          - Removes .svn folders from the path.
 %    sca                     - Shorthand for Screen('CloseAll').  Using this is a good way to make your code obscure.
@@ -47,9 +48,10 @@
 %    streq                   - strcmp.
 %    TextBounds              - Draw string, return enclosing rect.
 %    TextCenteredBounds      - Draw string, centered, return enclosing rect.
+%    UnpackColorImage      - Extract three color planes from an m by n by 3 color image.
+%    VecToImage              - Convert a grayscale image from vector to image format.
 %    WhiteIndex              - Returns number that will produce the color white.
 %    WrapString              - Word wrap (break into lines).
-%
 %
 % The following is a list of old one-liners that might some day be updated
 % from PTB-2, but haven't been yet.
@@ -63,14 +65,12 @@
 %   GetEchoNumber         - Get a number typed on-screen.
 %   GetEchoString         - Get a string typed on-screen.
 %   GetNumber             - Get a number typed at the keyboard.
-%   ImageToVec            - Convert a grayscale image to vector format.
 %   IsDownArrow           - Is char the down arrow?
 %   IsLeftArrow           - Is char the left arrow?
 %   IsRightArrow          - Is char the right arrow?
 %   IsUpArrow             - Is char the up arrow?
 %   IsInOrder             - Are the two strings in alphabetical order?
 %   IsPopCharProInstalled - Is the Control Panel "PopChar Pro" installed?
-
 %   MaxPriorityGetSecs    - Figure out the maximum priority compatible with GetSecs. Slow.
 %   NearestResolution     - Returns the screen resolution most similar to your wish.
 %   ScreenClutSize        - How many entries in the graphic card Color Lookup Table?
@@ -79,6 +79,6 @@
 %   SetResolution         - Sets the screen resolution: width, height, hz, and pixelSize.
 %   ShowTiff              - Show a TIFF file, calibrated.
 %   TextCenteredBounds    - Draw string, centered, return enclosing rect.
-%   UnpackColorImage      - Extract three color planes from an m by n by 3 color image.
-%   VecToImage            - Convert a grayscale image from vector to image format.
+
+
 

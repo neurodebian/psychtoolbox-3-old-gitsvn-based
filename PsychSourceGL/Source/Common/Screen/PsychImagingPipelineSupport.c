@@ -40,6 +40,8 @@
 char anaglyphshadersrc[] = 
 "/* Weight vector for conversion from RGB to Luminance, according to NTSC spec. */ \n"
 "uniform vec3 ColorToGrayWeights; \n"
+"/* Bias to add to final product - The background color (normally (0,0,0)). */ \n"
+"uniform vec3 ChannelBias; \n"
 "/* Left image channel and right image channel: */ \n"
 "uniform sampler2DRect Image1; \n"
 "uniform sampler2DRect Image2; \n"
@@ -60,7 +62,7 @@ char anaglyphshadersrc[] =
 "    channel1 = channel1 * Gains1;\n"
 "    channel2 = channel2 * Gains2;\n"
 "    /* Add them up to form final output fragment: */\n"
-"    gl_FragColor.rgb = channel1 + channel2;\n"
+"    gl_FragColor.rgb = channel1 + channel2 + ChannelBias;\n"
 "    /* Alpha is forced to 1 - It does not matter anymore: */\n"
 "    gl_FragColor.a = 1.0;\n"
 "}\n\0";
@@ -557,7 +559,9 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 					
 					// Define default weights for RGB -> Luminance conversion: We default to the standardized NTSC color weights.
 					glUniform3f(glGetUniformLocation(glsl, "ColorToGrayWeights"), 0.3, 0.59, 0.11);
-					
+					// Define background bias color to add: Normally zero for standard anaglyph:
+					glUniform3f(glGetUniformLocation(glsl, "ChannelBias"), 0.0, 0.0, 0.0);
+
 					// Unbind it, its ready!
 					glUseProgram(0);
 
@@ -1073,6 +1077,126 @@ void PsychCreateShadowFBOForTexture(PsychWindowRecordType *textureRecord, Boolea
 		}					
 	}
 	
+	return;
+}
+/* PsychNormalizeTextureOrientation() - On demand texture reswapping.
+ *
+ * PTB supports multiple different ways of orienting and formatting textures,
+ * optimized for different purposes. However, textures that one wants to draw
+ * to as if they were Offscreen windows or textures to be fed into the image
+ * processing pipeline (Screen('TransformTexture')) need to be in a standardized
+ * upright, non-transposed format. This routine checks the orientation of a
+ * texture and - if neccessary - transforms the texture from its current format
+ * to the upright standard format.
+ *
+ */ 
+void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
+{
+	int tmpimagingmode;
+	PsychFBO *fboptr;
+	GLint fboInternalFormat;
+	Boolean needzbuffer;
+
+	// The source texture sourceRecord could be in any of PTB's supported
+	// internal texture orientations. It may be upright as an Offscreen window,
+	// or flipped upside down as some textures from the video grabber or Quicktime,
+	// or transposed, as textures from Matlab/Octave. However, handling all those
+	// cases for image processing would be a debug and maintenance nightmare.
+	// Therefore we check the format of the source texture and require it to be
+	// a normal upright orientation. If this isn't the case, we perform a preprocessing
+	// step to transform the texture into normalized orientation.
+	if (sourceRecord->textureOrientation != 2) {
+		if (PsychPrefStateGet_Verbosity()>5) printf("PTB-DEBUG: In PsychNormalizeTextureOrientation(): Performing GPU renderswap for source gl-texture %i --> ", sourceRecord->textureNumber);
+		
+		// Soft-reset drawing engine:
+		PsychSetDrawingTarget(NULL);
+
+		// Normalization needed. Create a suitable FBO as rendertarget:
+		needzbuffer = FALSE;
+		
+		// First delete FBO of texture if one already exists:
+		fboptr = sourceRecord->fboTable[0];
+		if (fboptr!=NULL) { 			
+			// Detach and delete color buffer texture:
+
+			needzbuffer = (fboptr->ztexid) ? TRUE : FALSE;
+
+			// if (fboptr->coltexid) glDeleteTextures(1, &(fboptr->coltexid));
+			// Detach and delete depth buffer (and probably stencil buffer) texture, if any:
+			if (fboptr->ztexid) glDeleteTextures(1, &(fboptr->ztexid));
+			// Detach and delete stencil renderbuffer, if a separate stencil buffer was needed:
+			if (fboptr->stexid) glDeleteRenderbuffersEXT(1, &(fboptr->stexid));
+			// Delete FBO itself:
+			if (fboptr->fboid) glDeleteFramebuffersEXT(1, &(fboptr->fboid));
+						
+			// Delete PsychFBO struct associated with this FBO:
+			free(fboptr); fboptr = NULL;
+		}
+		
+		// Now recreate with proper format:
+
+		// First need to know internal format of texture...
+		glBindTexture(PsychGetTextureTarget(sourceRecord), sourceRecord->textureNumber);
+		glGetTexLevelParameteriv(PsychGetTextureTarget(sourceRecord), 0, GL_TEXTURE_INTERNAL_FORMAT, &fboInternalFormat);
+		glBindTexture(PsychGetTextureTarget(sourceRecord), 0);
+		
+		// Renderable format? Pure luminance or luminance+alpha formats are not renderable on most hardware.
+		
+		// Upgrade 8 bit luminace to 8 bit RGBA:
+		if (fboInternalFormat == GL_LUMINANCE8 || sourceRecord->depth == 8) fboInternalFormat = GL_RGBA8;
+		
+		// Upgrade non-renderable floating point formats to their RGB or RGBA counterparts of matching precision:
+		if (sourceRecord->nrchannels < 3 && fboInternalFormat != GL_RGBA8) {
+			// Unsupported format for FBO rendertargets. Need to upgrade to something suitable...
+			if (sourceRecord->textureexternalformat == GL_LUMINANCE) {
+				// Upgrade luminance to RGB of matching precision:
+				fboInternalFormat = (sourceRecord->textureinternalformat == GL_LUMINANCE_FLOAT16_APPLE) ? GL_RGB_FLOAT16_APPLE : GL_RGB_FLOAT32_APPLE;
+			}
+			else {
+				// Upgrade luminance+alpha to RGBA of matching precision:
+				fboInternalFormat = (sourceRecord->textureinternalformat == GL_LUMINANCE_ALPHA_FLOAT16_APPLE) ? GL_RGBA_FLOAT16_APPLE : GL_RGBA_FLOAT32_APPLE;
+			}
+		}
+		
+		// Now create proper FBO:
+		PsychCreateFBO(&(sourceRecord->fboTable[0]), (GLenum) fboInternalFormat, needzbuffer, PsychGetWidthFromRect(sourceRecord->rect), PsychGetHeightFromRect(sourceRecord->rect));
+		sourceRecord->drawBufferFBO[0] = 0;
+		sourceRecord->fboCount = 1;
+		
+		tmpimagingmode = sourceRecord->imagingMode;
+		sourceRecord->imagingMode = 1;
+
+		// Set FBO of sourceRecord as rendertarget, including proper setup of render geometry:
+		PsychSetDrawingTarget(sourceRecord);
+
+		// Now blit the old "disoriented" texture into the new FBO: The textureNumber of sourceRecord
+		// references the old texture, the PsychFBO of sourceRecord defines the new texture...
+		if (glIsEnabled(GL_BLEND)) {
+			// Alpha blending enabled. Disable it, blit texture, reenable it:
+			glDisable(GL_BLEND);
+			PsychBlitTextureToDisplay(sourceRecord, sourceRecord, sourceRecord->rect, sourceRecord->rect, 0, 0, 1);
+			glEnable(GL_BLEND);
+		}
+		else {
+			// Alpha blending not enabled. Just blit it:
+			PsychBlitTextureToDisplay(sourceRecord, sourceRecord, sourceRecord->rect, sourceRecord->rect, 0, 0, 1);
+		}
+		
+		sourceRecord->imagingMode = tmpimagingmode;
+		PsychSetDrawingTarget(NULL);
+
+		// At this point the color attachment of the sourceRecords FBO contains the properly oriented texture.
+		// Delete the old texture, attach the FBO texture as new one:
+		glDeleteTextures(1, &(sourceRecord->textureNumber));
+		sourceRecord->textureNumber = sourceRecord->fboTable[0]->coltexid;
+		
+		// Finally sourceRecord has the proper orientation:
+		sourceRecord->textureOrientation = 2;
+		
+		// GPU renderswap finished.
+		if (PsychPrefStateGet_Verbosity()>5) printf("%i.\n", sourceRecord->textureNumber);
+	}
+
 	return;
 }
 

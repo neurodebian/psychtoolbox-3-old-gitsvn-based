@@ -3173,23 +3173,6 @@
 		};
 /* End PBXBuildRule section */
 
-/* Begin PBXBuildStyle section */
-		0F6B34290B6950FC0000A951 /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-			};
-			name = Development;
-		};
-		0F6B342A0B6950FC0000A951 /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-			};
-			name = Deployment;
-		};
-/* End PBXBuildStyle section */
-
 /* Begin PBXContainerItemProxy section */
 		2F57E38608CEB65700A5CF85 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -7746,12 +7729,6 @@
 		29B97313FDCFA39411CA2CEA /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 2F57E2DB08CE718C00A5CF85 /* Build configuration list for PBXProject "PsychToolbox" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				0F6B34290B6950FC0000A951 /* Development */,
-				0F6B342A0B6950FC0000A951 /* Deployment */,
-			);
 			hasScannedForEncodings = 1;
 			knownPlatforms = (
 				macos,
