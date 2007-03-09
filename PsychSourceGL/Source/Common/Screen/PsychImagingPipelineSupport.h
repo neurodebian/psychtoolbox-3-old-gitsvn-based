@@ -92,6 +92,13 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 // Try to create GLSL shader from source strings and return handle to new shader.
 GLuint  PsychCreateGLSLProgram(const char* fragmentsrc, const char* vertexsrc, const char* primitivesrc);
 
+// Builtin functions:
+
+// PsychPipelineBuiltinRenderClutBitsPlusPlus - Encode Bits++ CLUT into framebuffer.
+boolean PsychPipelineBuiltinRenderClutBitsPlusPlus(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc);
+// PsychPipelineBuiltinRenderStereoSyncLine - Rendering of blue-sync lines for stereo shutter glasses in quad-buffered stereo mode:
+boolean PsychPipelineBuiltinRenderStereoSyncLine(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc);
+
 // Blitter functions: Assignable to a function pointer of type PsychBlitterFunc:
 // =============================================================================
 

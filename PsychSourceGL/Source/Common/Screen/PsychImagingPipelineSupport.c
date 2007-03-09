@@ -606,7 +606,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 					glUseProgram(0);
 					
 					// Add shader to processing chain:
-					sprintf(blittercfg, "Builtin:IdentityBlit:Offset:%i:%i", 840, 0);
+					sprintf(blittercfg, "Builtin:IdentityBlit:Offset:%i:%i", (int) PsychGetWidthFromRect(windowRecord->rect)/2, 0);
 					PsychPipelineAddShaderToHook(windowRecord, "StereoCompositingBlit", "StereoCompositingShaderDualViewRight", TRUE, glsl, blittercfg, 0);
 				}
 				else {
@@ -615,6 +615,11 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 
 				// Enable stereo compositor:
 				PsychPipelineEnableHook(windowRecord, "StereoCompositingBlit");		
+			break;
+			
+			case kPsychOpenGLStereo:
+				// Nothing to do for now: Setup of blue-line syncing is done in SCREENOpenWindow.c, because it also
+				// applies to non-imaging mode...
 			break;
 			
 			default:
@@ -1797,6 +1802,27 @@ boolean PsychPipelineExecuteHookSlot(PsychWindowRecordType *windowRecord, int ho
 				}
 				dispatched=TRUE;
 			}
+			if (strcmp(hookfunc->idString, "Builtin:RenderClutBits++")==0) {
+				// Compute the T-Lock encoded CLUT for Cambridge Research Bits++ system in Bits++ mode. The CLUT
+				// is set via the standard Screen('LoadNormalizedGammaTable', ..., loadOnNextFlip) call by setting
+				// loadOnNextFlip to a value of 2.
+				if (!PsychPipelineBuiltinRenderClutBitsPlusPlus(windowRecord, hookfunc)) {
+					// Operation failed!
+					return(FALSE);
+				}
+				dispatched=TRUE;
+			}
+			
+			if (strcmp(hookfunc->idString, "Builtin:RenderStereoSyncLine")==0) {
+				// Draw a blue-line-sync sync line at the bottom of the current framebuffer. This is needed
+				// to drive stereo shutter glasses with blueline-sync in quad-buffered frame-sequential stereo
+				// mode.
+				if (!PsychPipelineBuiltinRenderStereoSyncLine(windowRecord, hookfunc)) {
+					// Operation failed!
+					return(FALSE);
+				}
+				dispatched=TRUE;
+			}
 		break;
 			
 		default:
@@ -1902,6 +1928,8 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 	boolean rc = TRUE;
 	PsychBlitterFunc blitterfnc = NULL;
 	GLenum glerr;
+	char*  pstrpos = NULL;
+	int texunit, texid;
 	
 	// Select proper blitter function:
 	
@@ -1930,7 +1958,57 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 	}
 	
 	// TODO: Common setup code for texturing, filtering, alpha blending, z-test and such...
+	
+	// Setup code for 1D textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURE1D")) {
+		if (2==sscanf(pstrpos, "TEXTURE1D(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glEnable(GL_TEXTURE_1D);
+			glBindTexture(GL_TEXTURE_1D, texid);
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Binding gltexid %i to GL_TEXTURE_1D target of texunit %i\n", texid, texunit);
+		}
+		pstrpos++;
+	}
 
+	// Setup code for 2D textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURE2D")) {
+		if (2==sscanf(pstrpos, "TEXTURE2D(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glEnable(GL_TEXTURE_2D);
+			glBindTexture(GL_TEXTURE_2D, texid);
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Binding gltexid %i to GL_TEXTURE_2D target of texunit %i\n", texid, texunit);
+		}
+		pstrpos++;
+	}
+
+	// Setup code for 2D rectangle textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURERECT2D")) {
+		if (2==sscanf(pstrpos, "TEXTURERECT2D(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glEnable(GL_TEXTURE_RECTANGLE_EXT);
+			glBindTexture(GL_TEXTURE_RECTANGLE_EXT, texid);
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Binding gltexid %i to GL_TEXTURE_RECTANGLE_EXT target of texunit %i\n", texid, texunit);
+		}
+		pstrpos++;
+	}
+
+	// Setup code for 3D textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURE3D")) {
+		if (2==sscanf(pstrpos, "TEXTURE3D(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glEnable(GL_TEXTURE_3D);
+			glBindTexture(GL_TEXTURE_3D, texid);
+			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Binding gltexid %i to GL_TEXTURE_3D target of texunit %i\n", texid, texunit);
+		}
+		pstrpos++;
+	}
+
+	glActiveTextureARB(GL_TEXTURE0_ARB);
+	
 	// Need a shader for this blit op?
 	if (hookfunc->shaderid) {
 		// Setup shader, if any:
@@ -1968,6 +2046,52 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 	}
 	
 	// TODO: Common teardown code for texturing, filtering and such...
+
+	// Teardown code for 1D textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURE1D")) {
+		if (2==sscanf(pstrpos, "(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glBindTexture(GL_TEXTURE_1D, 0);
+			glDisable(GL_TEXTURE_1D);
+		}
+		pstrpos++;
+	}
+
+	// Teardown code for 2D textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURE2D")) {
+		if (2==sscanf(pstrpos, "(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glBindTexture(GL_TEXTURE_2D, 0);
+			glDisable(GL_TEXTURE_2D);
+		}
+		pstrpos++;
+	}
+
+	// Teardown code for 2D rectangle textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURERECT2D")) {
+		if (2==sscanf(pstrpos, "(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glBindTexture(GL_TEXTURE_2D, 0);
+			glDisable(GL_TEXTURE_2D);
+		}
+		pstrpos++;
+	}
+
+	// Teardown code for 3D textures:
+	pstrpos = hookfunc->pString1;
+	while (pstrpos=strstr(pstrpos, "TEXTURE3D")) {
+		if (2==sscanf(pstrpos, "(%i)=%i", &texunit, &texid)) {
+			glActiveTextureARB(GL_TEXTURE0_ARB + texunit);
+			glBindTexture(GL_TEXTURE_3D, 0);
+			glDisable(GL_TEXTURE_3D);
+		}
+		pstrpos++;
+	}
+
+	glActiveTextureARB(GL_TEXTURE0_ARB);
 
 	// Reset shader assignment, if any:
 	if ((hookfunc->shaderid) && glUseProgram) glUseProgram(0);
@@ -2044,3 +2168,167 @@ boolean PsychBlitterIdentity(PsychWindowRecordType *windowRecord, PsychHookFunct
 	// Done.
 	return(TRUE);
 }
+
+/* PsychPipelineBuiltinRenderClutBitsPlusPlus - Encode Bits++ CLUT into framebuffer.
+ * 
+ * This builtin routine takes the current gamma table for this windowRecord, encodes it into a Bits++
+ * compatible T-Lock CLUT and renders it into the framebuffer.
+ */
+boolean PsychPipelineBuiltinRenderClutBitsPlusPlus(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc)
+{
+	const int bitshift = 16; // Bits++ expects 16 bit numbers, but ignores 2 least significant bits --> Effective 14 bit.
+	int i, j, x, y;
+	unsigned int r, g, b;
+	double t1, t2;
+	
+	if (windowRecord->loadGammaTableOnNextFlip != 0 || windowRecord->inRedTable == NULL) {
+		if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Bits++ CLUT encoding failed. No suitable CLUT set in Screen('LoadNormalizedGammaTable'). Skipped!\n");
+		return(FALSE);
+	}
+	
+	if (windowRecord->inTableSize < 256) {
+		if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Bits++ CLUT encoding failed. CLUT has less than the required 256 entries. Skipped!\n");
+		return(FALSE);
+	}
+	
+	if (PsychPrefStateGet_Verbosity() > 4) {  
+		glFinish();
+		PsychGetAdjustedPrecisionTimerSeconds(&t1);
+	}
+
+	// Render CLUT as sequence of single points:
+	// We render it twice in two lines, the 2nd line shifted horizontally by one pixel. This way at least one of
+	// the lines will always start at an even pixel location as mandated by Bits++ - More failsafe.
+	for (j=1; j<=2 ; j++) {
+		x=j;
+		y=j;
+		
+		glPointSize(1);
+		glBegin(GL_POINTS);
+		
+		// First the T-Lock unlock key:
+		glColor3ub(36, 106, 133);
+		glVertex2i(x++, y);
+		glColor3ub(63, 136, 163);
+		glVertex2i(x++, y);
+		glColor3ub(8, 19, 138);
+		glVertex2i(x++, y);
+		glColor3ub(211, 25, 46);
+		glVertex2i(x++, y);
+		glColor3ub(3, 115, 164);
+		glVertex2i(x++, y);
+		glColor3ub(112, 68, 9);
+		glVertex2i(x++, y);
+		glColor3ub(56, 41, 49);
+		glVertex2i(x++, y);
+		glColor3ub(34, 159, 208);
+		glVertex2i(x++, y);
+		glColor3ub(0, 0, 0);
+		glVertex2i(x++, y);
+		glColor3ub(0, 0, 0);
+		glVertex2i(x++, y);
+		glColor3ub(0, 0, 0);
+		glVertex2i(x++, y);
+		glColor3ub(0, 0, 0);
+		glVertex2i(x++, y);
+		
+		// Now the encoded CLUT: We encode 16 bit values in a high and a low pixel,
+		// Bits++ throws away the two least significant bits - get 14 bit output resolution.
+		for (i=0; i<256; i++) {
+			// Convert 0.0 - 1.0 float value into 0 - 2^14 -1 integer range of Bits++
+			r = (unsigned int)(windowRecord->inRedTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
+			g = (unsigned int)(windowRecord->inGreenTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
+			b = (unsigned int)(windowRecord->inBlueTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
+			
+			// Pixel with high-byte of 16 bit value:
+			glColor3ub((GLubyte) ((r >> 8) & 0xff), (GLubyte) ((g >> 8) & 0xff), (GLubyte) ((b >> 8) & 0xff));
+			glVertex2i(x++, y);
+			
+			// Pixel with low-byte of 16 bit value:
+			glColor3ub((GLubyte) (r & 0xff), (GLubyte) (g  & 0xff), (GLubyte) (b  & 0xff));
+			glVertex2i(x++, y);
+		}
+		
+		glEnd();
+	}		
+	
+	if (PsychPrefStateGet_Verbosity() > 4) {  
+		glFinish();
+		PsychGetAdjustedPrecisionTimerSeconds(&t2);
+		printf("PTB-DEBUG: Execution time of built-in Bits++ CLUT encoder was %lf ms.\n", (t2 - t1) * 1000.0f);
+	}
+
+	// Done.
+	return(TRUE);
+}
+
+/* PsychPipelineBuiltinRenderStereoSyncLine() -- Render sync trigger lines for quad-buffered stereo contexts.
+ *
+ * A builtin function to be called for drawing of blue-line-sync marker lines in quad-buffered stereo mode.
+ */
+boolean PsychPipelineBuiltinRenderStereoSyncLine(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc)
+{
+	GLenum draw_buffer;
+	char* strp;
+	float blackpoint, r, g, b;
+	float fraction = 0.25;
+	float w = PsychGetWidthFromRect(windowRecord->rect);
+	float h = PsychGetHeightFromRect(windowRecord->rect);
+	r=g=b=1.0;
+	
+	// Options provided?
+	
+	// Check for override vertical position for sync line. Default is last scanline of display.
+	if (strp=strstr(hookfunc->pString1, "yPosition=")) {
+		// Parse and assign offset:
+		if (sscanf(strp, "yPosition=%i", &h)!=1) {
+			PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: yPosition parameter for horizontal stereo blue-sync line position is invalid! Parse error...\n");
+		}
+	}
+
+	// Check for override horizontal fraction for sync line. Default is 25% for left eye, 75% for right eye.
+	if (strp=strstr(hookfunc->pString1, "hFraction=")) {
+		// Parse and assign offset:
+		if ((sscanf(strp, "hFraction=%f", &fraction)!=1) || (fraction < 0.0) || (fraction > 1.0)) {
+			PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: hFraction parameter for horizontal stereo blue-sync line length is invalid!\n");
+		}
+	}
+	
+	// Check for override color of sync-line. Default is white.
+	if (strp=strstr(hookfunc->pString1, "Color=")) {
+		// Parse and assign offset:
+		if (sscanf(strp, "Color=%f %f %f", &r, &g, &b)!=3) {
+			PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: Color spec for stereo sync-line is invalid!\n");
+		}
+	}
+
+	// Query current target buffer:
+	glGetIntegerv(GL_DRAW_BUFFER, &draw_buffer);
+	
+	if (draw_buffer == GL_BACK_LEFT || draw_buffer == GL_FRONT_LEFT) {
+		// Left stereo buffer:
+		blackpoint = fraction;
+	}
+	else if (draw_buffer == GL_BACK_RIGHT || draw_buffer == GL_FRONT_RIGHT) {
+		// Right stereo buffer:
+		blackpoint = 1 - fraction;
+	}
+	else {
+		// No stereo buffer! No stereo mode. This routine is a no-op...
+		if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Stereo sync line renderer called on non-stereo framebuffer!?!\n");  
+		return(TRUE);
+	}
+	
+	glLineWidth(1);
+	glBegin(GL_LINES);
+	glColor3f(r, g, b);
+	glVertex2i(0, h);
+	glVertex2i(w*blackpoint, h);
+	glColor3f(0, 0, 0);
+	glVertex2i(w*blackpoint, h);
+	glVertex2i(w, h);
+	glEnd();
+
+	return(TRUE);
+}
+

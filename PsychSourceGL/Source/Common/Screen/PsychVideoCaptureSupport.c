@@ -217,6 +217,9 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
     Fixed framerate;
     *capturehandle = -1;
     error=noErr;
+#if PSYCH_SYSTEM != PSYCH_WINDOWS
+	CodecNameSpecListPtr	codeclist = NULL;
+#endif
 
     // We startup the Quicktime subsystem only on first invocation.
     if (firsttime) {
@@ -389,7 +392,7 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
         if (error == noErr) {
             // set usage for new video channel to avoid playthrough
             // note we don't set seqGrabPlayDuringRecord
-            error = SGSetChannelUsage(*sgchanptr, seqGrabRecord | seqGrabLowLatencyCapture);
+            error = SGSetChannelUsage(*sgchanptr, seqGrabRecord | seqGrabLowLatencyCapture | seqGrabAlwaysUseTimeBase);
         }
         
         //if (error==noErr) error = SGGetChannelBounds(*sgchanptr, &movierect);
@@ -453,7 +456,7 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
 		error = SGNewChannel(seqGrab, SoundMediaType, sgchanaudioptr);
 		SGSetChannelRefCon(vidcapRecordBANK[slotid].sgchanAudio, slotid);
 		// More setup code needed?
-		if (error == noErr) error = SGSetChannelUsage(*sgchanaudioptr,  seqGrabRecord | seqGrabLowLatencyCapture);
+		if (error == noErr) error = SGSetChannelUsage(*sgchanaudioptr,  seqGrabRecord | seqGrabLowLatencyCapture | seqGrabAlwaysUseTimeBase);
 	}
 	
 	// Recording to disc requested?
@@ -464,13 +467,48 @@ bool PsychOpenVideoCaptureDevice(PsychWindowRecordType *win, int deviceIndex, in
 	else {
 		// Yes. Set it up:
 		FSSpec recfile;
+		CodecType codectypeid;
+		char* codecstr = strstr(targetmoviefilename, ":CodecType="); 
+		if (codecstr) {
+			sscanf(codecstr, ":CodecType= %i", &codectypeid);
+			*codecstr = 0;
+		}
+		else {
+			codectypeid = 0;
+		}
+		
+		if (PsychPrefStateGet_Verbosity() > 3) {
+			// Query and print list of all supported codecs on this setup:
+			#if PSYCH_SYSTEM == PSYCH_OSX
+			if ((GetCodecNameList(&codeclist, 1) == noErr) && (codeclist != NULL)) {
+				printf("PTB-INFO: The following codecs are supported on your system for video recording:\n");
+				for (i=0; i<codeclist->count; i++) {
+					printf(":CodecType=%i  - '%s'  \n", (int) codeclist->list[i].cType, codeclist->list[i].typeName);
+				}
+				printf("--------------------------------------------------------------------------------\n\n");
+				DisposeCodecNameList(codeclist); codeclist = NULL;
+			}
+			#else
+				printf("PTB-INFO: Printout of codec list not yet implemented on M$-Windows due to some Microsoft compiler brain-damage.\n");
+			#endif
+		}
+		
 		NativePathNameToFSSpec(targetmoviefilename, &recfile, 0);
 		// If recordingflags & 1, then we request capture to memory with writeout at end of capture operation. Otherwise
 		// we request immediate capture to disk. We always append to an existing movie file, instead of overwriting it.
 		error = SGSetDataOutput(seqGrab, &recfile, ((recordingflags & 1) ? seqGrabToMemory : seqGrabToDisk));
 		
 		// This call would select a specific video compressor, if we had any except the default one ;)
-		// SGSetVideoCompressor(vidcapRecordBANK[slotid].sgchanVideo, 0, kCinepakCodecType, codecHighQuality, codecHighQuality, 10);
+		if (error==noErr && codectypeid!=0) {
+			// MK: Does not work well up to now: error = SGSetVideoCompressor(vidcapRecordBANK[slotid].sgchanVideo, 32, kH264kCodecType, codecHighQuality, codecHighQuality, 24);
+			// MK: Example of a symbolic spec:	error = SGSetVideoCompressorType(vidcapRecordBANK[slotid].sgchanVideo, kH264CodecType);
+			error = SGSetVideoCompressorType(vidcapRecordBANK[slotid].sgchanVideo, codectypeid);
+			if (error != noErr && PsychPrefStateGet_Verbosity() > 1) {
+				printf("PTB-WARNING: Video recording engine could not enable requested codec of type id %i: QT Error code %i.\n", (int) codectypeid, (int) error);
+				printf("PTB-HINT:    Rerun the script with a 'Verbosity' preference setting of greater than or equal to 4 to print out a list of supported codecs.\n");		
+			}
+			error=noErr;
+		}
 	}
 	
     if (error !=noErr) {
@@ -770,7 +808,8 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes,
     int dropped = 0;
     OSErr error = noErr;
     Fixed framerate;
-
+	long usage;
+	
     if (capturehandle < 0 || capturehandle >= PSYCH_MAX_CAPTUREDEVICES) {
         PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided!");
     }
@@ -784,6 +823,24 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes,
         // Start capture:
         if (vidcapRecordBANK[capturehandle].grabber_active) PsychErrorExitMsg(PsychError_user, "You tried to start video capture, but capture is already started!");
 
+	// Low latency capture disabled?
+	if (dropframes == 0) {
+		// Yes. Need to clear the lowlat flag from our channel config:
+		SGRelease(vidcapRecordBANK[capturehandle].seqGrab);
+		
+		SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+		usage&=~seqGrabLowLatencyCapture;
+		SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+		
+		if (vidcapRecordBANK[capturehandle].sgchanAudio) {
+			SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
+			usage&=~seqGrabLowLatencyCapture;
+			SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
+		}
+		
+		SGPrepare(vidcapRecordBANK[capturehandle].seqGrab, false, true);
+	}
+	
 	// Wait until start deadline reached:
 	if (*startattime != 0) PsychWaitUntilSeconds(*startattime);
 
@@ -801,7 +858,7 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes,
         SGSetFrameRate(vidcapRecordBANK[capturehandle].sgchanVideo, framerate);
         SGGetFrameRate(vidcapRecordBANK[capturehandle].sgchanVideo, &framerate);
         vidcapRecordBANK[capturehandle].fps = (double) FixedToFloat(framerate);
-        if (PsychPrefStateGet_Verbosity()>3) printf("FRAMERATE: %f\n", vidcapRecordBANK[capturehandle].fps);
+        if (PsychPrefStateGet_Verbosity()>3) printf("PTB-INFO: Capture framerate is reported as: %lf\n", vidcapRecordBANK[capturehandle].fps);
     }
     else {
         // Stop capture:
@@ -835,42 +892,152 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes,
  */
 double PsychVideoCaptureSetParameter(int capturehandle, const char* pname, double value)
 {
-  PsychRectType roirect;
+	PsychRectType roirect;
+	QTAtomContainer         atomContainer;
+    QTAtom                  featureAtom;
+    VDIIDCFeatureSettings   settings;
+    VideoDigitizerComponent vd;
+    ComponentDescription    desc;
+    ComponentResult         result = noErr;
+	
+	// Valid handle provided?
+	if (capturehandle < 0 || capturehandle >= PSYCH_MAX_CAPTUREDEVICES) {
+		PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided!");
+	}
+	
+	// Fetch references to objects we need:
+    if (vidcapRecordBANK[capturehandle].seqGrab == NULL) {
+        PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided. No capture device associated with this handle !!!");
+    }
 
-  if (capturehandle < 0 || capturehandle >= PSYCH_MAX_CAPTUREDEVICES) {
-      PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided!");
-  }
+	
+	// Return current framerate:
+	if (strcmp(pname, "GetFramerate")==0) {
+		PsychCopyOutDoubleArg(1, FALSE, vidcapRecordBANK[capturehandle].fps);
+		return(0);
+	}
+	
+	// Return current ROI of camera, as requested (and potentially modified during
+	// PsychOpenCaptureDevice(). This is a read-only parameter, as the ROI can
+	// only be set during Screen('OpenVideoCapture').
+	if (strcmp(pname, "GetROI")==0) {
+		PsychMakeRect(roirect, vidcapRecordBANK[capturehandle].roirect.left, vidcapRecordBANK[capturehandle].roirect.top,
+					  vidcapRecordBANK[capturehandle].roirect.right, vidcapRecordBANK[capturehandle].roirect.bottom); 
+		PsychCopyOutRectArg(1, FALSE, roirect);
+		return(0);
+	}
+	
+	// Return vendor name string:
+	if (strcmp(pname, "GetVendorname")==0) {
+		PsychCopyOutCharArg(1, FALSE, "Unknown Vendor.");
+		return(0);
+	}
+	
+	// Return model name string:
+	if (strcmp(pname, "GetModelname")==0) {
+		PsychCopyOutCharArg(1, FALSE, "Unknown Model.");
+		return(0);
+	}
+	
+    if (vidcapRecordBANK[capturehandle].sgchanVideo == NULL) {
+        PsychErrorExitMsg(PsychError_user, "Sorry, provided capture device doesn't have a video digitizer attached!");
+    }
+	
+    // Get the video digitizer and make sure it's legit
+    vd = SGGetVideoDigitizerComponent(vidcapRecordBANK[capturehandle].sgchanVideo);
+    if (vd == NULL) {
+        PsychErrorExitMsg(PsychError_user, "Sorry, unable to query video digitizer component!");
+    }
 
-  // Return current framerate:
-  if (strcmp(pname, "GetFramerate")==0) {
-    PsychCopyOutDoubleArg(1, FALSE, vidcapRecordBANK[capturehandle].fps);
-    return(0);
-  }
+	// Check if it is IIDC compliant. We only support IIDC compliant devices (usually Firewire):
+    GetComponentInfo((Component)vd, &desc, NULL, NULL, NULL);
+    if (vdSubtypeIIDC != desc.componentSubType) {
+		if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Tried to query or set video capture parameters on a non-supported (non IIDC) video device. Skipped.\n");
+		goto bail;
+	}
+			printf("XXX\n");
+/*	unsigned short             brightness = 65535;
+	result = VDSetSaturation(vd, &brightness);
+	if (result==noErr) {
+		printf("Newval %i\n", (int) brightness);
+	}
+	else {
+		printf("failed. %i\n", (int) brightness);
+	}
+*/	
+	
+    // *** now do the real work ***
+	// vdIIDCFeatureGain
+    // return the gain feature in an atom container
+    result = VDIIDCGetFeaturesForSpecifier(vd, vdIIDCFeatureSaturation, &atomContainer);
+    if (noErr == result) {
+		printf("AAA\n");
+        // Find the feature atom:
+        featureAtom = QTFindChildByIndex(atomContainer, kParentAtomIsContainer,
+                                         vdIIDCAtomTypeFeature, 1, NULL);
+        if (0 == featureAtom) { result = cannotFindAtomErr; goto bail; }
+		printf("BBB\n");
+		
+        // find the gain settings from the feature atom and copy the data
+        // into our settings
+        result = QTCopyAtomDataToPtr(atomContainer,
+                                     QTFindChildByID(atomContainer, featureAtom,
+													 vdIIDCAtomTypeFeatureSettings,
+													 vdIIDCAtomIDFeatureSettings, NULL),
+                                     true, sizeof(settings), &settings, NULL);
+        if (noErr == result) {
+		printf("CCC\n");
 
-  // Return current ROI of camera, as requested (and potentially modified during
-  // PsychOpenCaptureDevice(). This is a read-only parameter, as the ROI can
-  // only be set during Screen('OpenVideoCapture').
-  if (strcmp(pname, "GetROI")==0) {
-    PsychMakeRect(roirect, vidcapRecordBANK[capturehandle].roirect.left, vidcapRecordBANK[capturehandle].roirect.top,
-                  vidcapRecordBANK[capturehandle].roirect.right, vidcapRecordBANK[capturehandle].roirect.bottom); 
-    PsychCopyOutRectArg(1, FALSE, roirect);
-    return(0);
-  }
+            /* When indicating capabilities, the flag being set indicates that the
+			feature can be put into the given state.
+			When indicating/setting state, the flag represents the current/desired
+			state. Note that certain combinations of flags are valid for capabilities
+			(i.e. vdIIDCFeatureFlagOn | vdIIDCFeatureFlagOff) but are mutually
+			exclusive for state.
+			*/
+            // is the setting supported?
+            if (settings.capabilities.flags & (vdIIDCFeatureFlagOn |
+                                               vdIIDCFeatureFlagManual |
+                                               vdIIDCFeatureFlagRawControl)) {
+                // set state flags
+                settings.state.flags = (vdIIDCFeatureFlagOn |
+                                        vdIIDCFeatureFlagManual |
+                                        vdIIDCFeatureFlagRawControl);
+						printf("DDD\n");
 
-  // Return vendor name string:
-  if (strcmp(pname, "GetVendorname")==0) {
-    PsychCopyOutCharArg(1, FALSE, "Unknown Vendor.");
-    return(0);
-  }
+                // set value - will either be 500 or the max value supported by
+                // the camera represented in a float between 0 and 1.0
+                settings.state.value = (1.0 / settings.capabilities.rawMaximum) *
+					((settings.capabilities.rawMaximum > 500) ? 500 :
+					 settings.capabilities.rawMaximum);
+				
+                // store the result back in the container
+                result = QTSetAtomData(atomContainer,
+                                       QTFindChildByID(atomContainer, featureAtom,
+													   vdIIDCAtomTypeFeatureSettings,
+													   vdIIDCAtomIDFeatureSettings, NULL),
+                                       sizeof(settings), &settings);
+                if (noErr == result) {
+						printf("EEE\n");
 
-  // Return model name string:
-  if (strcmp(pname, "GetModelname")==0) {
-    PsychCopyOutCharArg(1, FALSE, "Unknown Model.");
-    return(0);
-  }
+                    // set it on the device
+                    result = VDIIDCSetFeatures(vd, atomContainer);
+                }
+            } else {
+                // can't do it!
+                result = featureUnsupported;
+            }
+        }
+    }
+	
+// We jump here if something's going wrong with the sequence grabber code:
+bail:
 
-  // Just return the "not supported" value DBL_MAX:
-  return(DBL_MAX);
+	// Unsupported parameter:
+	if (result!=noErr && PsychPrefStateGet_Verbosity() > 1) printf("PTB-INFO: Video capture parameter %s not supported on video capture device %i. Skipped.\n", pname, capturehandle);
+
+	// Just return the "not supported" value DBL_MAX:
+	return(DBL_MAX);
 }
 
 /*

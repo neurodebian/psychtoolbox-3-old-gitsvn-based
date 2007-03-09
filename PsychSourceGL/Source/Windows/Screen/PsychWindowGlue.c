@@ -174,12 +174,13 @@ LONG FAR PASCAL WndProc(HWND hWnd, unsigned uMsg, unsigned wParam, LONG lParam)
       // Scan the list of windows to find onscreen window with handle hWnd:
       PsychCreateVolatileWindowRecordPointerList(&numWindows, &windowRecordArray);
       for(i = 0; i < numWindows; i++) {
-	if (PsychIsOnscreenWindow(windowRecordArray[i]) &&
-	    windowRecordArray[i]->targetSpecific.windowHandle == hWnd) {
-	  // This is it! Initiate bufferswap twice:
-	  PsychOSFlipWindowBuffers(windowRecordArray[i]);
-	  PsychOSFlipWindowBuffers(windowRecordArray[i]);
-	}
+			if (PsychIsOnscreenWindow(windowRecordArray[i]) &&
+	    		 windowRecordArray[i]->targetSpecific.windowHandle == hWnd &&
+				 windowRecordArray[i]->stereomode == 0) {
+	  			// This is it! Initiate bufferswap twice:
+	  			PsychOSFlipWindowBuffers(windowRecordArray[i]);
+	  			PsychOSFlipWindowBuffers(windowRecordArray[i]);
+			}
       }
       PsychDestroyVolatileWindowRecordPointerList(windowRecordArray);
       // Done.
@@ -583,13 +584,18 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     }
     
 	// Special debug override for faulty drivers with non-working extension:
-	if ((conserveVRAM & kPsychOverrideWglChoosePixelformat)) wglChoosePixelFormatARB = NULL;
+	if (conserveVRAM & kPsychOverrideWglChoosePixelformat) wglChoosePixelFormatARB = NULL;
 
 	// Step 2: Ok, we have an OpenGL rendering context with all known extensions bound:
-	// Do we have support for wglChoosePixelFormatARB?
-	if (wglChoosePixelFormatARB == NULL) {
-	  // Failed. We will have to live without it :(
-	  printf("PTB-WARNING: Could not bind wglChoosePixelFormat - Extension. Some features will be unavailable, e.g., Anti-Aliasing and high precision framebuffers.\n");
+	// Do we have (or want) support for wglChoosePixelFormatARB?
+   // We skip use of it if we can do without it, i.e., when we don't need unusual framebuffer
+   // configs (like non 8bpc fixed) and we don't need multisampling. This is a work-around
+   // for hardware that has trouble (=driver bugs) with wglChoosePixelformat() in some modes, e.g., the NVidia
+	// Quadro gfx card, which fails to enable quad-buffered stereo when using wglChoosePixelformat(),
+	// but does so perfectly well when using the old-style ChoosePixelFormat(). 
+	if ((wglChoosePixelFormatARB == NULL) || ((bpc==8) && (windowRecord->multiSample <= 0))) {
+	  // Failed (==NULL) or disabled via override.
+	  if ((wglChoosePixelFormatARB == NULL) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: Could not bind wglChoosePixelFormat - Extension. Some features will be unavailable, e.g., Anti-Aliasing and high precision framebuffers.\n");
 	}
 	else {
 	  // Supported. We destroy the rendering context and window, then recreate it with
@@ -721,8 +727,11 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 	 // Throw away any error-state this could have created on old hardware...
 	 glGetError();
 
-    // External 3D graphics support enabled?
-	 if (PsychPrefStateGet_3DGfx()) {
+    // External 3D graphics support enabled? Or OpenGL quad-buffered stereo enabled?
+	 // For the former, we need this code for OpenGL state isolation. For the latter we
+    // need this code as workaround for Windows brain-damage. For some reason it helps
+    // to properly shutdown stereo contexts on Windows...
+	 if (PsychPrefStateGet_3DGfx() || stereomode == kPsychOpenGLStereo) {
 		// Yes. We need to create an extra OpenGL rendering context for the external
 		// OpenGL code to provide optimal state-isolation. The context shares all
 		// heavyweight ressources likes textures, FBOs, VBOs, PBOs, display lists and
@@ -884,9 +893,6 @@ void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
   // Release device context:
   ReleaseDC(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle);
   windowRecord->targetSpecific.deviceContext=NULL;
-
-  // Delete pixelformat:
-  // FIXME Don't know yet how to do this. We leak memory here!
 
   // Release the capture, whatever that means...
   ReleaseCapture();
