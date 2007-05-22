@@ -260,7 +260,7 @@ void PsychPrepareRenderBatch(PsychWindowRecordType *windowRecord, int coords_pos
 			*size[0] = 1;
 			nrsize=1;
 		} else {
-			PsychAllocInDoubleMatArg(3, TRUE, &m, &n, &p, size);
+			PsychAllocInDoubleMatArg(sizes_pos, TRUE, &m, &n, &p, size);
 			if(p!=1) PsychErrorExitMsg(PsychError_user, "Size must be a scalar or a vector with one column or row");
 			nrsize=m*n;
 			if (nrsize!=nrpoints && nrsize!=1 && *sizes_count!=1) PsychErrorExitMsg(PsychError_user, "Size vector must contain one size value per item.");
@@ -283,7 +283,7 @@ void PsychPrepareRenderBatch(PsychWindowRecordType *windowRecord, int coords_pos
 		isuint8colors  = PsychAllocInUnsignedByteMatArg(colors_pos, kPsychArgAnything, &mc, &nc, &pc, bytecolors);
 		
 		// Do we have a color vector, aka one element per vertex?
-		if((isdoublecolors || isuint8colors) && pc==1 && nc==nrpoints && nrpoints>1) {
+		if((isdoublecolors || isuint8colors) && pc==1 && mc!=1 && nc==nrpoints && nrpoints>1) {
 			// Looks like we might have a color vector... ... Double-check it:
 			if (mc!=3 && mc!=4) PsychErrorExitMsg(PsychError_user, "Color vector must be a 3 or 4 row vector");
 			// Yes. colors is a valid pointer to it.

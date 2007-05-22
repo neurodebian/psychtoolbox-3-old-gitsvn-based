@@ -32,6 +32,7 @@ function [nx, ny, textbounds] = DrawFormattedText(win, tstring, sx, sy, color, w
 % 10/17/06  Written (MK).
 % 11/01/06  Add support for correct handling of 3D rendering mode (MK).
 % 11/22/06  More 3D handling: Save/restore backface cull state (MK).
+% 05/14/07  Return a more meaningful end cursor position (printf - semantics) (MK)
 
 % We need GL for drawing in 3D rendering mode:
 global GL;
@@ -61,20 +62,27 @@ if nargin < 6 || isempty(wrapat)
     wrapat = 0;
 end
 
+% Convert all conventional linefeeds into C-style newlines:
+newlinepos = strfind(tstring, '\n');
+
+% If '\n' is already encoded as a char(10) as in Octave, then
+% there's no need for replacemet.
+if char(10) == '\n'
+   newlinepos = [];
+end
+
+while ~isempty(newlinepos)
+    % Replace first occurence of '\n' by ASCII code 10:
+    tstring = [ tstring(1:min(newlinepos)-1) char(10) tstring(min(newlinepos)+2:end)];
+    % Search next occurence of linefeed (if any) in new expanded string:
+    newlinepos = strfind(tstring, '\n');
+end
+
 % Text wrapping requested?
 if wrapat > 0
     % Call WrapString to create a broken up version of the input string
     % that is wrapped around column 'wrapat'
     tstring = WrapString(tstring, wrapat);
-end
-
-% Convert all conventional linefeeds into C-style newlines:
-newlinepos = strfind(tstring, char(10));
-while ~isempty(newlinepos)
-    % Replace first occurence of ASCII code 10 by a '\n':
-    tstring = [ tstring(1:min(newlinepos)-1) '\n' tstring(min(newlinepos)+1:end)];
-    % Search next occurence of linefeed (if any) in new expanded string:
-    newlinepos = strfind(tstring, char(10));
 end
 
 % Query textsize for implementation of linefeeds:
@@ -91,7 +99,7 @@ if ischar(sy) && strcmpi(sy, 'center')
     % Compute vertical centering:
     
     % Compute height of text box:
-    numlines = length(strfind(tstring, '\n')) + 1;
+    numlines = length(strfind(tstring, char(10))) + 1;
     bbox = SetRect(0,0,1,numlines * theight);
     % Center box in window:
     [rect,dh,dv] = CenterRect(bbox, Screen('Rect', win));
@@ -152,10 +160,10 @@ end
 % Parse string, break it into substrings at line-feeds:
 while length(tstring)>0
     % Find next substring to process:
-    crpositions = strfind(tstring, '\n');
+    crpositions = strfind(tstring, char(10));
     if ~isempty(crpositions)
         curstring = tstring(1:min(crpositions)-1);
-        tstring = tstring(min(crpositions)+2:end);
+        tstring = tstring(min(crpositions)+1:end);
         dolinefeed = 1;
     else
         curstring = tstring;
@@ -212,9 +220,11 @@ maxy = maxy + theight;
 
 % Create final bounding box:
 textbounds = SetRect(minx, miny, maxx, maxy);
-% Create new cursor position:
-nx = minx;
-ny = maxy;
+% Create new cursor position. The cursor is positioned to allow
+% to continue to print text directly after the drawn text.
+% Basically behaves like printf or fprintf formatting.
+nx = xp;
+ny = yp;
 
 % Was this drawing in 3D mode?
 if gl3dmode > 0

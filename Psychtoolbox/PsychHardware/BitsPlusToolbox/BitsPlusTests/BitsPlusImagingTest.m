@@ -34,7 +34,7 @@ Screen('HookFunction', window, 'Enable', 'LeftFinalizerBlitChain');
 % Use BITS++ to set uniform lookup tables of increasing values.
 % Hit key to proceed through. Screen intensity should increase
 % monotonically.
-for colorval = linspace(0.0, 1.0, 2000)
+for colorval = linspace(0.0, 1.0, 20)
 	uniclut = colorval*ones(256,3);
 	fprintf('Setting to value %g\n',colorval);
     % The setting 2 means: Don't load hardware gamma table, but just
@@ -42,15 +42,23 @@ for colorval = linspace(0.0, 1.0, 2000)
     % Screen('Flip') time.
     Screen('LoadNormalizedGammaTable', window, uniclut, 2);
 
+    Screen('FillRect', window, [255 255 0], [0 0 400 400]);
+    
     % Show it. Shows stimulus and updates CLUT by drawing the T-Lock stuff
     % into top left corner of display.
     Screen('Flip', window);
 
-    %KbWait;
-    %while KbCheck; end;
+    KbWait;
+    while KbCheck; end;
 end
 
 KbWait;
+
+% Restore Bits++ Identity CLUT so it can be used as normal display:
+linear_lut =  repmat(linspace(0, 1, 256)', 1, 3);
+Screen('LoadNormalizedGammaTable', window, linear_lut, 2);
+Screen('Flip', window);
+
 
 % Disable Bits++ encoders: This will revert the behaviour of CLUT handling
 % to normal...
@@ -58,7 +66,4 @@ Screen('HookFunction', window, 'Disable', 'LeftFinalizerBlitChain');
 Screen('HookFunction', window, 'Disable', 'RightFinalizerBlitChain');
 
 % Close the window.
-Screen(window,'Close');
-
-% Blank the screen
-BitsPlusBlank(whichScreen);
+Screen('CloseAll');

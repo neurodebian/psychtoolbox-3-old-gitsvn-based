@@ -1607,6 +1607,27 @@
 		832CE7EC094D03D100578C09 /* alutypes.h in Headers */ = {isa = PBXBuildFile; fileRef = 832CE7DA094D03D100578C09 /* alutypes.h */; };
 		832CE7ED094D03D100578C09 /* libOpenAL.ar in Frameworks */ = {isa = PBXBuildFile; fileRef = 832CE7DB094D03D100578C09 /* libOpenAL.ar */; };
 		8330E9430B8DFB92003F0A67 /* MirrorFaceCoreSynopsis.c in Sources */ = {isa = PBXBuildFile; fileRef = 8330E9420B8DFB92003F0A67 /* MirrorFaceCoreSynopsis.c */; };
+		833C1EEE0BB19D0100FB9B4F /* mexversion.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F26E8BD04343B30007A7274 /* mexversion.c */; };
+		833C1EEF0BB19D0100FB9B4F /* MiniBox.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F22A038E2B6B017A7028 /* MiniBox.c */; };
+		833C1EF00BB19D0100FB9B4F /* MODULEVersion.c in Sources */ = {isa = PBXBuildFile; fileRef = F58524CB0421B88601A80165 /* MODULEVersion.c */; };
+		833C1EF10BB19D0100FB9B4F /* ProjectTable.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F22C038E2B6B017A7028 /* ProjectTable.c */; };
+		833C1EF20BB19D0100FB9B4F /* PsychAuthors.c in Sources */ = {isa = PBXBuildFile; fileRef = 2FA80D3706B056A900112E7A /* PsychAuthors.c */; };
+		833C1EF30BB19D0100FB9B4F /* PsychError.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F227038E2B6B017A7028 /* PsychError.c */; };
+		833C1EF40BB19D0100FB9B4F /* PsychHelp.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F229038E2B6B017A7028 /* PsychHelp.c */; };
+		833C1EF50BB19D0100FB9B4F /* PsychInit.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F22D038E2B6B017A7028 /* PsychInit.c */; };
+		833C1EF60BB19D0100FB9B4F /* PsychMemory.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F22B038E2B6B017A7028 /* PsychMemory.c */; };
+		833C1EF70BB19D0100FB9B4F /* PsychRegisterProject.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F228038E2B6B017A7028 /* PsychRegisterProject.c */; };
+		833C1EF80BB19D0100FB9B4F /* PsychStructGlue.c in Sources */ = {isa = PBXBuildFile; fileRef = F544E4E803C2336A01FD10C2 /* PsychStructGlue.c */; };
+		833C1EF90BB19D0100FB9B4F /* PsychTimeGlue.c in Sources */ = {isa = PBXBuildFile; fileRef = F5CF277403DBE1F301D453F7 /* PsychTimeGlue.c */; };
+		833C1EFA0BB19D0100FB9B4F /* PsychVersioning.c in Sources */ = {isa = PBXBuildFile; fileRef = F58524C30421889A01A80165 /* PsychVersioning.c */; };
+		833C1EFC0BB19D0100FB9B4F /* PsychScriptingGlue.cc in Sources */ = {isa = PBXBuildFile; fileRef = 835CD2590A1811CD000FCEFA /* PsychScriptingGlue.cc */; };
+		833C1EFE0BB19D0100FB9B4F /* ApplicationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5FCC4D9038338E1017A7028 /* ApplicationServices.framework */; };
+		833C1EFF0BB19D0100FB9B4F /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69ED03DBFA8E01866A1C /* CoreAudio.framework */; };
+		833C1F000BB19D0100FB9B4F /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69FA03DCAC5101866A1C /* CoreServices.framework */; };
+		833C1F010BB19D0100FB9B4F /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5FCC41A03833708017A7028 /* OpenGL.framework */; };
+		833C1F250BB1A49D00FB9B4F /* PsychPortAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 833C1F210BB1A49D00FB9B4F /* PsychPortAudio.c */; };
+		833C1F260BB1A49D00FB9B4F /* RegisterProject.c in Sources */ = {isa = PBXBuildFile; fileRef = 833C1F230BB1A49D00FB9B4F /* RegisterProject.c */; };
+		833C1FD90BB1B17600FB9B4F /* libportaudio.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 833C1FD80BB1B17600FB9B4F /* libportaudio.a */; };
 		83495CDA09F701B8003973EA /* SCREENLoadCLUT.c in Sources */ = {isa = PBXBuildFile; fileRef = 83495CD909F701B8003973EA /* SCREENLoadCLUT.c */; };
 		83495CDE09F701E9003973EA /* SCREENSetVideoCaptureParameter.c in Sources */ = {isa = PBXBuildFile; fileRef = 83495CDD09F701E9003973EA /* SCREENSetVideoCaptureParameter.c */; };
 		835CD25A0A1811CD000FCEFA /* PsychScriptingGlue.cc in Sources */ = {isa = PBXBuildFile; fileRef = 835CD2590A1811CD000FCEFA /* PsychScriptingGlue.cc */; };
@@ -1641,7 +1662,14 @@
 		8370C6FC0969F28100BD4C8C /* PsychWindowSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 8370C6FB0969F28100BD4C8C /* PsychWindowSupport.h */; };
 		8370C71D096A013600BD4C8C /* PsychTextureSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 8370C71C096A013600BD4C8C /* PsychTextureSupport.h */; };
 		8370C71F096A014E00BD4C8C /* PsychTextureSupport.c in Sources */ = {isa = PBXBuildFile; fileRef = 8370C71E096A014E00BD4C8C /* PsychTextureSupport.c */; };
+		837A6DC20BBB106E003AB0BE /* SCREENNull.c in Sources */ = {isa = PBXBuildFile; fileRef = 837A6DC10BBB106E003AB0BE /* SCREENNull.c */; };
+		837A6DC30BBB106E003AB0BE /* SCREENNull.c in Sources */ = {isa = PBXBuildFile; fileRef = 837A6DC10BBB106E003AB0BE /* SCREENNull.c */; };
 		83836B030943858F007E4DF5 /* SCREENPreloadTextures.c in Sources */ = {isa = PBXBuildFile; fileRef = 83836B020943858F007E4DF5 /* SCREENPreloadTextures.c */; };
+		8395A9B70BBF290900FC482E /* FontInfo.cc in Sources */ = {isa = PBXBuildFile; fileRef = 8395A9B60BBF290900FC482E /* FontInfo.cc */; };
+		8395A9B80BBF290900FC482E /* FontInfo.cc in Sources */ = {isa = PBXBuildFile; fileRef = 8395A9B60BBF290900FC482E /* FontInfo.cc */; };
+		8395A9D60BBF2C9C00FC482E /* PsychPortAudio.cc in Sources */ = {isa = PBXBuildFile; fileRef = 8395A9D40BBF2C9C00FC482E /* PsychPortAudio.cc */; };
+		8395A9DC0BBF370800FC482E /* PsychHID.cc in Sources */ = {isa = PBXBuildFile; fileRef = 8395A9DB0BBF370800FC482E /* PsychHID.cc */; };
+		8395A9DD0BBF370800FC482E /* PsychHID.cc in Sources */ = {isa = PBXBuildFile; fileRef = 8395A9DB0BBF370800FC482E /* PsychHID.cc */; };
 		83C802620B8CB29300097021 /* mexversion.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F26E8BD04343B30007A7274 /* mexversion.c */; };
 		83C802630B8CB29300097021 /* MiniBox.c in Sources */ = {isa = PBXBuildFile; fileRef = F569F22A038E2B6B017A7028 /* MiniBox.c */; };
 		83C802640B8CB29300097021 /* MODULEVersion.c in Sources */ = {isa = PBXBuildFile; fileRef = F58524CB0421B88601A80165 /* MODULEVersion.c */; };
@@ -1660,7 +1688,7 @@
 		83C802730B8CB29300097021 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69ED03DBFA8E01866A1C /* CoreAudio.framework */; };
 		83C802740B8CB29300097021 /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69FA03DCAC5101866A1C /* CoreServices.framework */; };
 		83C802750B8CB29300097021 /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5FCC41A03833708017A7028 /* OpenGL.framework */; };
-		83C802CD0B8CECE500097021 /* MirrorFaceCore.c in Sources */ = {isa = PBXBuildFile; fileRef = 83C802C90B8CECE500097021 /* MirrorFaceCore.c */; };
+		83C802CD0B8CECE500097021 /* MirrorFaceCore.cc in Sources */ = {isa = PBXBuildFile; fileRef = 83C802C90B8CECE500097021 /* MirrorFaceCore.cc */; };
 		83C802CE0B8CECE500097021 /* RegisterProject.c in Sources */ = {isa = PBXBuildFile; fileRef = 83C802CB0B8CECE500097021 /* RegisterProject.c */; };
 		83C94B01092823A80062DB0A /* PsychMovieSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 83C94B00092823A80062DB0A /* PsychMovieSupport.h */; };
 		83C94B03092823C00062DB0A /* PsychMovieSupport.c in Sources */ = {isa = PBXBuildFile; fileRef = 83C94B02092823C00062DB0A /* PsychMovieSupport.c */; };
@@ -1672,7 +1700,22 @@
 		83C94B0F092825020062DB0A /* SCREENCloseMovie.c in Sources */ = {isa = PBXBuildFile; fileRef = 83C94B0E092825020062DB0A /* SCREENCloseMovie.c */; };
 		83C94B11092825770062DB0A /* SCREENglMatrixFunctionWrappers.c in Sources */ = {isa = PBXBuildFile; fileRef = 83C94B10092825770062DB0A /* SCREENglMatrixFunctionWrappers.c */; };
 		83C94B38092826FF0062DB0A /* QuickTime.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83C94B14092826FE0062DB0A /* QuickTime.framework */; };
+		83CBD6370BC01FB0007CB68C /* mexversion.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F26E8BD04343B30007A7274 /* mexversion.c */; };
+		83CBD6490BC01FB0007CB68C /* ApplicationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5FCC4D9038338E1017A7028 /* ApplicationServices.framework */; };
+		83CBD64B0BC01FB0007CB68C /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69FA03DCAC5101866A1C /* CoreServices.framework */; };
+		83CBD64C0BC01FB0007CB68C /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5FCC41A03833708017A7028 /* OpenGL.framework */; };
+		83CBD6610BC02109007CB68C /* AGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83CBD6600BC02109007CB68C /* AGL.framework */; };
+		83CBD6650BC02124007CB68C /* GLUT.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83CBD6640BC02124007CB68C /* GLUT.framework */; };
+		83CBD67E0BC02323007CB68C /* castDouble2Float.cc in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD66F0BC02323007CB68C /* castDouble2Float.cc */; };
+		83CBD67F0BC02323007CB68C /* gl_auto_init.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD6700BC02323007CB68C /* gl_auto_init.c */; };
+		83CBD6800BC02323007CB68C /* gl_auto.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD6710BC02323007CB68C /* gl_auto.c */; };
+		83CBD6810BC02323007CB68C /* gl_manual.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD6720BC02323007CB68C /* gl_manual.c */; };
+		83CBD6820BC02323007CB68C /* glew.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD6730BC02323007CB68C /* glew.c */; settings = {COMPILER_FLAGS = "-x c"; }; };
+		83CBD6840BC02323007CB68C /* moglcore.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD67A0BC02323007CB68C /* moglcore.c */; };
+		83CBD6850BC02323007CB68C /* mogloctaveglue.cc in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD67B0BC02323007CB68C /* mogloctaveglue.cc */; };
+		83CBD6F90BC02F0E007CB68C /* mogl_rebinder.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD6F80BC02F0E007CB68C /* mogl_rebinder.c */; settings = {COMPILER_FLAGS = "-x c"; }; };
 		83D93B2C0A4D03B900B82353 /* SCREENSetOpenGLTextureFromMemPointer.c in Sources */ = {isa = PBXBuildFile; fileRef = 83D93B2B0A4D03B900B82353 /* SCREENSetOpenGLTextureFromMemPointer.c */; };
+		83FD4C470BA5F0D700ECC9A4 /* VLTracker2D.cc in Sources */ = {isa = PBXBuildFile; fileRef = 83FD4C460BA5F0D700ECC9A4 /* VLTracker2D.cc */; };
 		CF1D7E4D07F1E112004F308C /* SCREENLineStipple.c in Sources */ = {isa = PBXBuildFile; fileRef = CF1D7E4C07F1E112004F308C /* SCREENLineStipple.c */; };
 		CF29B1CD080333DC00723921 /* MiniBox.h in Headers */ = {isa = PBXBuildFile; fileRef = F569F237038E2BE2017A7028 /* MiniBox.h */; };
 		CF29B1CE080333DC00723921 /* PsychMemory.h in Headers */ = {isa = PBXBuildFile; fileRef = F569F238038E2BE2017A7028 /* PsychMemory.h */; };
@@ -3522,6 +3565,13 @@
 		832CE7DA094D03D100578C09 /* alutypes.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = alutypes.h; path = ../../../Source/Common/PsychSound/StaticOpenALLib/alutypes.h; sourceTree = SOURCE_ROOT; };
 		832CE7DB094D03D100578C09 /* libOpenAL.ar */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libOpenAL.ar; path = ../../../Source/Common/PsychSound/StaticOpenALLib/libOpenAL.ar; sourceTree = SOURCE_ROOT; };
 		8330E9420B8DFB92003F0A67 /* MirrorFaceCoreSynopsis.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = MirrorFaceCoreSynopsis.c; sourceTree = "<group>"; };
+		833C1F080BB19D0100FB9B4F /* PsychPortAudio.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = PsychPortAudio.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
+		833C1F210BB1A49D00FB9B4F /* PsychPortAudio.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = PsychPortAudio.c; sourceTree = "<group>"; };
+		833C1F220BB1A49D00FB9B4F /* PsychPortAudio.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = PsychPortAudio.h; sourceTree = "<group>"; };
+		833C1F230BB1A49D00FB9B4F /* RegisterProject.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = RegisterProject.c; sourceTree = "<group>"; };
+		833C1F240BB1A49D00FB9B4F /* RegisterProject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = RegisterProject.h; sourceTree = "<group>"; };
+		833C1FD80BB1B17600FB9B4F /* libportaudio.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libportaudio.a; path = ../../../Cohorts/PortAudio/libportaudio.a; sourceTree = SOURCE_ROOT; };
+		833C20BC0BB229F100FB9B4F /* pa_mac_core.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = pa_mac_core.h; path = ../../../Source/Common/PsychPortAudio/pa_mac_core.h; sourceTree = SOURCE_ROOT; };
 		8342DA600B0A466000E0A2F4 /* ptbstartlogo.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = ptbstartlogo.h; path = ../../../Source/Common/Screen/ptbstartlogo.h; sourceTree = SOURCE_ROOT; };
 		83495CD909F701B8003973EA /* SCREENLoadCLUT.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENLoadCLUT.c; path = ../../../Source/Common/Screen/SCREENLoadCLUT.c; sourceTree = SOURCE_ROOT; };
 		83495CDD09F701E9003973EA /* SCREENSetVideoCaptureParameter.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENSetVideoCaptureParameter.c; path = ../../../Source/Common/Screen/SCREENSetVideoCaptureParameter.c; sourceTree = SOURCE_ROOT; };
@@ -3539,9 +3589,13 @@
 		8370C6FB0969F28100BD4C8C /* PsychWindowSupport.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = PsychWindowSupport.h; path = ../../../Source/Common/Screen/PsychWindowSupport.h; sourceTree = SOURCE_ROOT; };
 		8370C71C096A013600BD4C8C /* PsychTextureSupport.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = PsychTextureSupport.h; path = ../../../Source/Common/Screen/PsychTextureSupport.h; sourceTree = SOURCE_ROOT; };
 		8370C71E096A014E00BD4C8C /* PsychTextureSupport.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychTextureSupport.c; path = ../../../Source/Common/Screen/PsychTextureSupport.c; sourceTree = SOURCE_ROOT; };
+		837A6DC10BBB106E003AB0BE /* SCREENNull.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENNull.c; path = ../../../Source/Common/Screen/SCREENNull.c; sourceTree = SOURCE_ROOT; };
 		83836B020943858F007E4DF5 /* SCREENPreloadTextures.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENPreloadTextures.c; path = ../../../Source/Common/Screen/SCREENPreloadTextures.c; sourceTree = SOURCE_ROOT; };
+		8395A9B60BBF290900FC482E /* FontInfo.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = FontInfo.cc; path = ../../../Source/Octave/FontInfo.cc; sourceTree = SOURCE_ROOT; };
+		8395A9D40BBF2C9C00FC482E /* PsychPortAudio.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = PsychPortAudio.cc; path = ../../../Source/Octave/PsychPortAudio.cc; sourceTree = SOURCE_ROOT; };
+		8395A9DB0BBF370800FC482E /* PsychHID.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = PsychHID.cc; path = ../../../Source/Octave/PsychHID.cc; sourceTree = SOURCE_ROOT; };
 		83C8027C0B8CB29300097021 /* MirrorFaceCore.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = MirrorFaceCore.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
-		83C802C90B8CECE500097021 /* MirrorFaceCore.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = MirrorFaceCore.c; path = /Users/kleinerm/projects/MirrorFace/MirrorFaceSource/Source/Common/MirrorFaceCore/MirrorFaceCore.c; sourceTree = "<absolute>"; };
+		83C802C90B8CECE500097021 /* MirrorFaceCore.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = MirrorFaceCore.cc; sourceTree = "<group>"; };
 		83C802CA0B8CECE500097021 /* MirrorFaceCore.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = MirrorFaceCore.h; path = /Users/kleinerm/projects/MirrorFace/MirrorFaceSource/Source/Common/MirrorFaceCore/MirrorFaceCore.h; sourceTree = "<absolute>"; };
 		83C802CB0B8CECE500097021 /* RegisterProject.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = RegisterProject.c; path = /Users/kleinerm/projects/MirrorFace/MirrorFaceSource/Source/Common/MirrorFaceCore/RegisterProject.c; sourceTree = "<absolute>"; };
 		83C802CC0B8CECE500097021 /* RegisterProject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = RegisterProject.h; path = /Users/kleinerm/projects/MirrorFace/MirrorFaceSource/Source/Common/MirrorFaceCore/RegisterProject.h; sourceTree = "<absolute>"; };
@@ -3555,7 +3609,24 @@
 		83C94B0E092825020062DB0A /* SCREENCloseMovie.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENCloseMovie.c; path = ../../../Source/Common/Screen/SCREENCloseMovie.c; sourceTree = SOURCE_ROOT; };
 		83C94B10092825770062DB0A /* SCREENglMatrixFunctionWrappers.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENglMatrixFunctionWrappers.c; path = ../../../Source/Common/Screen/SCREENglMatrixFunctionWrappers.c; sourceTree = SOURCE_ROOT; };
 		83C94B14092826FE0062DB0A /* QuickTime.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickTime.framework; path = /Developer/SDKs/MacOSX10.4u.sdk/System/Library/Frameworks/QuickTime.framework; sourceTree = "<absolute>"; };
+		83CBD6540BC01FB0007CB68C /* PsychPortAudio.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = PsychPortAudio.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
+		83CBD6600BC02109007CB68C /* AGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AGL.framework; path = /System/Library/Frameworks/AGL.framework; sourceTree = "<absolute>"; };
+		83CBD6640BC02124007CB68C /* GLUT.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLUT.framework; path = /System/Library/Frameworks/GLUT.framework; sourceTree = "<absolute>"; };
+		83CBD66F0BC02323007CB68C /* castDouble2Float.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = castDouble2Float.cc; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/castDouble2Float.cc; sourceTree = SOURCE_ROOT; };
+		83CBD6700BC02323007CB68C /* gl_auto_init.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = gl_auto_init.c; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/gl_auto_init.c; sourceTree = SOURCE_ROOT; };
+		83CBD6710BC02323007CB68C /* gl_auto.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = gl_auto.c; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/gl_auto.c; sourceTree = SOURCE_ROOT; };
+		83CBD6720BC02323007CB68C /* gl_manual.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = gl_manual.c; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/gl_manual.c; sourceTree = SOURCE_ROOT; };
+		83CBD6730BC02323007CB68C /* glew.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = glew.c; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/glew.c; sourceTree = SOURCE_ROOT; };
+		83CBD6740BC02323007CB68C /* glew.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = glew.h; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/glew.h; sourceTree = SOURCE_ROOT; };
+		83CBD6760BC02323007CB68C /* headers */ = {isa = PBXFileReference; lastKnownFileType = folder; name = headers; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/headers; sourceTree = SOURCE_ROOT; };
+		83CBD67A0BC02323007CB68C /* moglcore.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = moglcore.c; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/moglcore.c; sourceTree = SOURCE_ROOT; };
+		83CBD67B0BC02323007CB68C /* mogloctaveglue.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = mogloctaveglue.cc; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/mogloctaveglue.cc; sourceTree = SOURCE_ROOT; };
+		83CBD67C0BC02323007CB68C /* mogltypes.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = mogltypes.h; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/mogltypes.h; sourceTree = SOURCE_ROOT; };
+		83CBD67D0BC02323007CB68C /* octavemex.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = octavemex.h; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/octavemex.h; sourceTree = SOURCE_ROOT; };
+		83CBD6F80BC02F0E007CB68C /* mogl_rebinder.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = mogl_rebinder.c; path = ../../../../Psychtoolbox/PsychOpenGL/MOGL/source/mogl_rebinder.c; sourceTree = SOURCE_ROOT; };
 		83D93B2B0A4D03B900B82353 /* SCREENSetOpenGLTextureFromMemPointer.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENSetOpenGLTextureFromMemPointer.c; path = ../../../Source/Common/Screen/SCREENSetOpenGLTextureFromMemPointer.c; sourceTree = SOURCE_ROOT; };
+		83FD4C450BA5F0CB00ECC9A4 /* VLTracker2D.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = VLTracker2D.h; path = /Users/kleinerm/projects/MirrorFace/MirrorFaceSource/Source/Common/MirrorFaceCore/VLTracker2D.h; sourceTree = "<absolute>"; };
+		83FD4C460BA5F0D700ECC9A4 /* VLTracker2D.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = VLTracker2D.cc; sourceTree = "<group>"; };
 		CF1D7E4C07F1E112004F308C /* SCREENLineStipple.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENLineStipple.c; path = ../../../Source/Common/Screen/SCREENLineStipple.c; sourceTree = SOURCE_ROOT; };
 		CF29B1FD080333DC00723921 /* MachAbsoluteTimeClockFrequency.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachAbsoluteTimeClockFrequency.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF4FD40707DC1DE1008FEFD3 /* References.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = References.h; path = ../../../Notes/References.h; sourceTree = SOURCE_ROOT; };
@@ -3643,7 +3714,6 @@
 		F569F252038E2C77017A7028 /* SCREENFillRect.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENFillRect.c; path = ../../../Source/Common/Screen/SCREENFillRect.c; sourceTree = SOURCE_ROOT; };
 		F569F253038E2C77017A7028 /* ScreenExit.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = ScreenExit.c; path = ../../../Source/Common/Screen/ScreenExit.c; sourceTree = SOURCE_ROOT; };
 		F569F254038E2C77017A7028 /* SCREENClose.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENClose.c; path = ../../../Source/Common/Screen/SCREENClose.c; sourceTree = SOURCE_ROOT; };
-		F569F255038E2C77017A7028 /* SCREENNull.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENNull.c; path = ../../../Source/Common/Screen/SCREENNull.c; sourceTree = SOURCE_ROOT; };
 		F569F256038E2C77017A7028 /* ScreenSynopsis.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = ScreenSynopsis.c; path = ../../../Source/Common/Screen/ScreenSynopsis.c; sourceTree = SOURCE_ROOT; };
 		F569F257038E2C77017A7028 /* SCREENPixelSize.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENPixelSize.c; path = ../../../Source/Common/Screen/SCREENPixelSize.c; sourceTree = SOURCE_ROOT; };
 		F569F258038E2C77017A7028 /* SCREENFlip.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENFlip.c; path = ../../../Source/Common/Screen/SCREENFlip.c; sourceTree = SOURCE_ROOT; };
@@ -4323,6 +4393,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		833C1EFD0BB19D0100FB9B4F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				833C1EFE0BB19D0100FB9B4F /* ApplicationServices.framework in Frameworks */,
+				833C1EFF0BB19D0100FB9B4F /* CoreAudio.framework in Frameworks */,
+				833C1F000BB19D0100FB9B4F /* CoreServices.framework in Frameworks */,
+				833C1F010BB19D0100FB9B4F /* OpenGL.framework in Frameworks */,
+				833C1FD90BB1B17600FB9B4F /* libportaudio.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		83C802710B8CB29300097021 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -4331,6 +4413,18 @@
 				83C802730B8CB29300097021 /* CoreAudio.framework in Frameworks */,
 				83C802740B8CB29300097021 /* CoreServices.framework in Frameworks */,
 				83C802750B8CB29300097021 /* OpenGL.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		83CBD6480BC01FB0007CB68C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				83CBD6490BC01FB0007CB68C /* ApplicationServices.framework in Frameworks */,
+				83CBD64B0BC01FB0007CB68C /* CoreServices.framework in Frameworks */,
+				83CBD64C0BC01FB0007CB68C /* OpenGL.framework in Frameworks */,
+				83CBD6610BC02109007CB68C /* AGL.framework in Frameworks */,
+				83CBD6650BC02124007CB68C /* GLUT.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4772,6 +4866,8 @@
 				F14A2B590AD4AC8000BFB68F /* MachPriority.mexmaci */,
 				F14A2B800AD4ACE700BFB68F /* MachAbsoluteTimeClockFrequency.mexmaci */,
 				83C8027C0B8CB29300097021 /* MirrorFaceCore.mexmaci */,
+				833C1F080BB19D0100FB9B4F /* PsychPortAudio.mexmaci */,
+				83CBD6540BC01FB0007CB68C /* PsychPortAudio.mexmaci */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -4779,6 +4875,9 @@
 		29B97314FDCFA39411CA2CEA /* TestPBMex */ = {
 			isa = PBXGroup;
 			children = (
+				83CBD6640BC02124007CB68C /* GLUT.framework */,
+				83CBD6600BC02109007CB68C /* AGL.framework */,
+				833C1FD80BB1B17600FB9B4F /* libportaudio.a */,
 				832CE7B2094CFF5C00578C09 /* libOpenAL.ar */,
 				832CE770094CFB2300578C09 /* libopenal.a */,
 				2F685925072DD4C1003367CA /* Documentation */,
@@ -4857,6 +4956,7 @@
 		2F1A1CBC069C8FF800907C00 /* Mex Targets */ = {
 			isa = PBXGroup;
 			children = (
+				83CBD66D0BC021F1007CB68C /* extern_moglcore */,
 				0E92E8AC095727BC002687D9 /* Eyelink */,
 				2F4A1B3504A3DDAC007A7274 /* CocoaEventBridge */,
 				2F550B2804B7AE8F007A7274 /* DoNothing */,
@@ -4874,6 +4974,7 @@
 				2F95010904E4458D007A7274 /* MachPriorityMex, Set and Get */,
 				CF29B2000803342100723921 /* MachAbsoluteTimeClockFrequency */,
 				83C802C80B8CECE500097021 /* MirrorFaceCore */,
+				833C1F200BB1A49D00FB9B4F /* PsychPortAudio */,
 				2F9ABA17045F3596007A7274 /* PsychHID */,
 				832CE63E094CE99F00578C09 /* PsychSound */,
 				2F58C8D405884625007A711C /* Rush */,
@@ -5225,8 +5326,8 @@
 				83C94B10092825770062DB0A /* SCREENglMatrixFunctionWrappers.c */,
 				2FDA7942055F521C007A711C /* SCREENglPoint.c */,
 				2FDA7944055F6430007A711C /* SCREENgluDisk.c */,
+				837A6DC10BBB106E003AB0BE /* SCREENNull.c */,
 				F5D852D9039ED6E6017A7028 /* SCREENNominalFrameRate.c */,
-				F569F255038E2C77017A7028 /* SCREENNull.c */,
 				83C94B06092824730062DB0A /* SCREENOpenMovie.c */,
 				F5CF277203DA57B901D453F7 /* SCREENOpenOffscreenWindow.c */,
 				0F6B34370B6969D20000A951 /* SCREENOpenProxy.c */,
@@ -5313,6 +5414,7 @@
 				2F4A2DE9069CBAFA0005EA67 /* RegisterProject.c */,
 				2F4A2DEF069CBAFA0005EA67 /* FontInfo.h */,
 				2F4A2DF0069CBAFA0005EA67 /* FontInfo.c */,
+				8395A9B60BBF290900FC482E /* FontInfo.cc */,
 				2FC480AF069E457D00EE6B86 /* ScreenFontGlue.h */,
 				2FC480AE069E457D00EE6B86 /* ScreenFontGlue.c */,
 				2F4A2DEA069CBAFA0005EA67 /* PsychFontGlue.h */,
@@ -5329,6 +5431,8 @@
 			children = (
 				8302E1FE0A1928E900AE269C /* GetSecs.cc */,
 				8302E1FF0A1928E900AE269C /* octavemex.h */,
+				8395A9DB0BBF370800FC482E /* PsychHID.cc */,
+				8395A9D40BBF2C9C00FC482E /* PsychPortAudio.cc */,
 				8302E2000A1928E900AE269C /* Screen.cc */,
 				8302E2010A1928E900AE269C /* WaitSecs.cc */,
 			);
@@ -5374,19 +5478,54 @@
 			path = ../../../Source/Common/PsychSound/StaticOpenALLib;
 			sourceTree = SOURCE_ROOT;
 		};
+		833C1F200BB1A49D00FB9B4F /* PsychPortAudio */ = {
+			isa = PBXGroup;
+			children = (
+				833C1F210BB1A49D00FB9B4F /* PsychPortAudio.c */,
+				833C1F220BB1A49D00FB9B4F /* PsychPortAudio.h */,
+				833C1F230BB1A49D00FB9B4F /* RegisterProject.c */,
+				833C1F240BB1A49D00FB9B4F /* RegisterProject.h */,
+				833C20BC0BB229F100FB9B4F /* pa_mac_core.h */,
+			);
+			comments = "Psychtoolbox sound i/o driver, using the Free software PortAudio V19 API (http://www.portaudio.org) for sound capture and sound playback. This driver is meant to provide low-latency audio playback, recording, feedback with well controlled timing.";
+			name = PsychPortAudio;
+			path = ../../../Source/Common/PsychPortAudio;
+			sourceTree = "<group>";
+		};
 		83C802C80B8CECE500097021 /* MirrorFaceCore */ = {
 			isa = PBXGroup;
 			children = (
-				83C802C90B8CECE500097021 /* MirrorFaceCore.c */,
+				83C802C90B8CECE500097021 /* MirrorFaceCore.cc */,
 				83C802CA0B8CECE500097021 /* MirrorFaceCore.h */,
 				8330E9420B8DFB92003F0A67 /* MirrorFaceCoreSynopsis.c */,
 				83C802CB0B8CECE500097021 /* RegisterProject.c */,
 				83C802CC0B8CECE500097021 /* RegisterProject.h */,
+				83FD4C450BA5F0CB00ECC9A4 /* VLTracker2D.h */,
+				83FD4C460BA5F0D700ECC9A4 /* VLTracker2D.cc */,
 			);
 			comments = "Source code group for MirrorFaceCore. Not included in official PTB distribution.";
 			name = MirrorFaceCore;
 			path = /Users/kleinerm/projects/MirrorFace/MirrorFaceSource/Source/Common/MirrorFaceCore;
 			sourceTree = "<absolute>";
+		};
+		83CBD66D0BC021F1007CB68C /* extern_moglcore */ = {
+			isa = PBXGroup;
+			children = (
+				83CBD66F0BC02323007CB68C /* castDouble2Float.cc */,
+				83CBD6700BC02323007CB68C /* gl_auto_init.c */,
+				83CBD6710BC02323007CB68C /* gl_auto.c */,
+				83CBD6720BC02323007CB68C /* gl_manual.c */,
+				83CBD6730BC02323007CB68C /* glew.c */,
+				83CBD6740BC02323007CB68C /* glew.h */,
+				83CBD6760BC02323007CB68C /* headers */,
+				83CBD67A0BC02323007CB68C /* moglcore.c */,
+				83CBD67B0BC02323007CB68C /* mogloctaveglue.cc */,
+				83CBD6F80BC02F0E007CB68C /* mogl_rebinder.c */,
+				83CBD67C0BC02323007CB68C /* mogltypes.h */,
+				83CBD67D0BC02323007CB68C /* octavemex.h */,
+			);
+			name = extern_moglcore;
+			sourceTree = "<group>";
 		};
 		CF29B2000803342100723921 /* MachAbsoluteTimeClockFrequency */ = {
 			isa = PBXGroup;
@@ -7330,6 +7469,23 @@
 			productReference = 832CE62B094CE8C300578C09 /* PsychSound.mexmac.app */;
 			productType = "com.apple.product-type.application";
 		};
+		833C1EEB0BB19D0100FB9B4F /* PsychPortAudio Intel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 833C1F030BB19D0100FB9B4F /* Build configuration list for PBXNativeTarget "PsychPortAudio Intel" */;
+			buildPhases = (
+				833C1EEC0BB19D0100FB9B4F /* Sources */,
+				833C1EFD0BB19D0100FB9B4F /* Frameworks */,
+				833C1F020BB19D0100FB9B4F /* ShellScript */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "PsychPortAudio Intel";
+			productName = foo;
+			productReference = 833C1F080BB19D0100FB9B4F /* PsychPortAudio.mexmaci */;
+			productType = "com.apple.product-type.objfile";
+		};
 		83C8025F0B8CB29300097021 /* MirrorFaceCore Intel */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 83C802770B8CB29300097021 /* Build configuration list for PBXNativeTarget "MirrorFaceCore Intel" */;
@@ -7346,6 +7502,23 @@
 			name = "MirrorFaceCore Intel";
 			productName = foo;
 			productReference = 83C8027C0B8CB29300097021 /* MirrorFaceCore.mexmaci */;
+			productType = "com.apple.product-type.objfile";
+		};
+		83CBD6350BC01FB0007CB68C /* moglcore Intel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 83CBD64F0BC01FB0007CB68C /* Build configuration list for PBXNativeTarget "moglcore Intel" */;
+			buildPhases = (
+				83CBD6360BC01FB0007CB68C /* Sources */,
+				83CBD6480BC01FB0007CB68C /* Frameworks */,
+				83CBD64E0BC01FB0007CB68C /* ShellScript */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "moglcore Intel";
+			productName = foo;
+			productReference = 83CBD6540BC01FB0007CB68C /* PsychPortAudio.mexmaci */;
 			productType = "com.apple.product-type.objfile";
 		};
 		CF29B1CB080333DC00723921 /* MachAbsoluteTimeClockFrequency_OLD */ = {
@@ -7892,6 +8065,8 @@
 				F14A2B380AD4AC8000BFB68F /* MachPriority Intel */,
 				F14A2B5F0AD4ACE700BFB68F /* MachAbsoluteTimeClockFrequency Intel */,
 				83C8025F0B8CB29300097021 /* MirrorFaceCore Intel */,
+				833C1EEB0BB19D0100FB9B4F /* PsychPortAudio Intel */,
+				83CBD6350BC01FB0007CB68C /* moglcore Intel */,
 			);
 		};
 /* End PBXProject section */
@@ -9206,7 +9381,33 @@
 			shellPath = /bin/sh;
 			shellScript = "touch ../../../Source/Common/Base/PsychVersioning.c";
 		};
+		833C1F020BB19D0100FB9B4F /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "touch ../../../Source/Common/Base/PsychVersioning.c\n\n";
+		};
 		83C802760B8CB29300097021 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "touch ../../../Source/Common/Base/PsychVersioning.c\n\n";
+		};
+		83CBD64E0BC01FB0007CB68C /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -10205,6 +10406,7 @@
 				2FEBA7FB098889D800F4165F /* PsychVersioning.c in Sources */,
 				2FEBA7FC098889D800F4165F /* RegisterProject.c in Sources */,
 				835CD25D0A1811CD000FCEFA /* PsychScriptingGlue.cc in Sources */,
+				8395A9B80BBF290900FC482E /* FontInfo.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -10527,6 +10729,7 @@
 				2FEBA91D0989911200F4165F /* PsychVersioning.c in Sources */,
 				2FEBA91E0989911200F4165F /* RegisterProject.c in Sources */,
 				835CD2670A1811CD000FCEFA /* PsychScriptingGlue.cc in Sources */,
+				8395A9DC0BBF370800FC482E /* PsychHID.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -10703,6 +10906,7 @@
 				0F45C2A50B264AE6004ED5F0 /* PsychImagingPipelineSupport.c in Sources */,
 				0F6B34390B6969D20000A951 /* SCREENOpenProxy.c in Sources */,
 				0F6B343E0B696A0D0000A951 /* SCREENTransformTexture.c in Sources */,
+				837A6DC20BBB106E003AB0BE /* SCREENNull.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -10883,6 +11087,30 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		833C1EEC0BB19D0100FB9B4F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				833C1EEE0BB19D0100FB9B4F /* mexversion.c in Sources */,
+				833C1EEF0BB19D0100FB9B4F /* MiniBox.c in Sources */,
+				833C1EF00BB19D0100FB9B4F /* MODULEVersion.c in Sources */,
+				833C1EF10BB19D0100FB9B4F /* ProjectTable.c in Sources */,
+				833C1EF20BB19D0100FB9B4F /* PsychAuthors.c in Sources */,
+				833C1EF30BB19D0100FB9B4F /* PsychError.c in Sources */,
+				833C1EF40BB19D0100FB9B4F /* PsychHelp.c in Sources */,
+				833C1EF50BB19D0100FB9B4F /* PsychInit.c in Sources */,
+				833C1EF60BB19D0100FB9B4F /* PsychMemory.c in Sources */,
+				833C1EF70BB19D0100FB9B4F /* PsychRegisterProject.c in Sources */,
+				833C1EF80BB19D0100FB9B4F /* PsychStructGlue.c in Sources */,
+				833C1EF90BB19D0100FB9B4F /* PsychTimeGlue.c in Sources */,
+				833C1EFA0BB19D0100FB9B4F /* PsychVersioning.c in Sources */,
+				833C1EFC0BB19D0100FB9B4F /* PsychScriptingGlue.cc in Sources */,
+				833C1F250BB1A49D00FB9B4F /* PsychPortAudio.c in Sources */,
+				833C1F260BB1A49D00FB9B4F /* RegisterProject.c in Sources */,
+				8395A9D60BBF2C9C00FC482E /* PsychPortAudio.cc in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		83C802600B8CB29300097021 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -10901,9 +11129,26 @@
 				83C8026D0B8CB29300097021 /* PsychTimeGlue.c in Sources */,
 				83C8026E0B8CB29300097021 /* PsychVersioning.c in Sources */,
 				83C802700B8CB29300097021 /* PsychScriptingGlue.cc in Sources */,
-				83C802CD0B8CECE500097021 /* MirrorFaceCore.c in Sources */,
+				83C802CD0B8CECE500097021 /* MirrorFaceCore.cc in Sources */,
 				83C802CE0B8CECE500097021 /* RegisterProject.c in Sources */,
 				8330E9430B8DFB92003F0A67 /* MirrorFaceCoreSynopsis.c in Sources */,
+				83FD4C470BA5F0D700ECC9A4 /* VLTracker2D.cc in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		83CBD6360BC01FB0007CB68C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				83CBD6370BC01FB0007CB68C /* mexversion.c in Sources */,
+				83CBD67E0BC02323007CB68C /* castDouble2Float.cc in Sources */,
+				83CBD67F0BC02323007CB68C /* gl_auto_init.c in Sources */,
+				83CBD6800BC02323007CB68C /* gl_auto.c in Sources */,
+				83CBD6810BC02323007CB68C /* gl_manual.c in Sources */,
+				83CBD6820BC02323007CB68C /* glew.c in Sources */,
+				83CBD6840BC02323007CB68C /* moglcore.c in Sources */,
+				83CBD6850BC02323007CB68C /* mogloctaveglue.cc in Sources */,
+				83CBD6F90BC02F0E007CB68C /* mogl_rebinder.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -11065,6 +11310,7 @@
 				0F45C2A40B264AE6004ED5F0 /* PsychImagingPipelineSupport.c in Sources */,
 				0F6B34380B6969D20000A951 /* SCREENOpenProxy.c in Sources */,
 				0F6B343D0B696A0D0000A951 /* SCREENTransformTexture.c in Sources */,
+				837A6DC30BBB106E003AB0BE /* SCREENNull.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -11115,6 +11361,7 @@
 				F14A27EA0AD48C1200BFB68F /* PsychVersioning.c in Sources */,
 				F14A27EB0AD48C1200BFB68F /* RegisterProject.c in Sources */,
 				F14A27EC0AD48C1200BFB68F /* PsychScriptingGlue.cc in Sources */,
+				8395A9DD0BBF370800FC482E /* PsychHID.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -11361,6 +11608,7 @@
 				F14A29B20AD49E4300BFB68F /* PsychVersioning.c in Sources */,
 				F14A29B30AD49E4300BFB68F /* RegisterProject.c in Sources */,
 				F14A29B40AD49E4300BFB68F /* PsychScriptingGlue.cc in Sources */,
+				8395A9B70BBF290900FC482E /* FontInfo.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -14891,7 +15139,7 @@
 					/usr/lib/gcc/darwin/3.3/,
 					"$(LIBRARY_SEARCH_PATHS)",
 				);
-				MATLAB_DIR_NAME = MATLAB73;
+				MATLAB_DIR_NAME = MATLAB74;
 				USER_HEADER_SEARCH_PATHS = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/src $(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include $(USER_HEADER_SEARCH_PATHS)";
 			};
 			name = Development;
@@ -19609,8 +19857,48 @@
 		8302E1EF0A19234900AE269C /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				GCC_INPUT_FILETYPE = sourcecode.c.c;
+				BUNDLE_LOADER = /usr/local/bin/octave;
+				DEPLOYMENT_LOCATION = YES;
+				DSTROOT = "$(PSYCHTOOLBOXROOT)/";
+				EXECUTABLE_EXTENSION = oct;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(FRAMEWORK_SEARCH_PATHS)",
+					"$(SYSTEM_DEVELOPER_DIR)/SDKs/MacOSX10.4u.sdk/System/Library/Frameworks",
+				);
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_MODEL_TUNING = "";
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					PTBOCTAVE,
+					HAVE_OCTAVE_21,
+				);
+				HEADER_SEARCH_PATHS = "/usr/local/include/octave-2.1.73//**";
+				INSTALL_PATH = "/$(PSYCHOCTDESTFOLDER)";
+				KEEP_PRIVATE_EXTERNS = NO;
+				LIBRARY_SEARCH_PATHS = "\"/usr/local/lib/octave-2.1.73\"/**";
+				MACH_O_TYPE = mh_bundle;
+				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				MATLAB_DIR_NAME = MATLAB71;
+				OTHER_CFLAGS = (
+					"-fexceptions",
+					"-no-cpp-precomp",
+				);
+				OTHER_LDFLAGS = (
+					"-loctinterp",
+					"-lreadline",
+					"-lcruft",
+					"-flat_namespace",
+					"-undefined",
+					suppress,
+					"-lstdc++",
+					"-loctave",
+				);
+				PRIVATE_HEADERS_FOLDER_PATH = /usr/local/include;
+				PSYCHOCTDESTFOLDER = PsychBasic/OctaveOSXFiles/;
+				PSYCHTOOLBOXROOT = /Users/kleinerm/projects/OpenGLPsychtoolbox/trunk/Psychtoolbox;
+				PUBLIC_HEADERS_FOLDER_PATH = /usr/local/include;
+				STRIP_INSTALLED_PRODUCT = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -19767,15 +20055,113 @@
 			};
 			name = Default;
 		};
-		83C802780B8CB29300097021 /* Development */ = {
+		833C1F040BB19D0100FB9B4F /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CONFIGURATION_BUILD_DIR = "$(HOME)/projects/MirrorFace/MirrorFace/MFBasic";
 				COPY_PHASE_STRIP = NO;
 				EXECUTABLE_EXTENSION = mexmaci;
 				EXPORTED_SYMBOLS_FILE = "";
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_MODEL_TUNING = "";
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
+				HEADER_SEARCH_PATHS = (
+					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
+					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
+				);
+				INSTALL_PATH = /usr/local/lib;
+				KEEP_PRIVATE_EXTERNS = NO;
+				LIBRARY_SEARCH_PATHS = (
+					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/maci",
+					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+				);
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
+				LINK_WITH_STANDARD_LIBRARIES = YES;
+				MACH_O_TYPE = mh_bundle;
+				MACOSX_DEPLOYMENT_TARGET = "";
+				MATLAB_DIR_NAME = MATLAB73;
+				OTHER_CFLAGS = (
+					"-fexceptions",
+					"-no-cpp-precomp",
+				);
+				OTHER_LDFLAGS = (
+					"-Wl,-flat_namespace",
+					"-undefined",
+					suppress,
+					"-Wl,-exported_symbols_list,/Applications/MATLAB73/extern/lib/maci/mexFunction.map",
+					"-lmx",
+					"-lmex",
+					"-lmat",
+					"-lstdc++",
+				);
+				PREBINDING = NO;
+				PRODUCT_NAME = PsychPortAudio;
+				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				STRIP_STYLE = all;
+				WARNING_CFLAGS = "-Wno-long-double";
+			};
+			name = Development;
+		};
+		833C1F050BB19D0100FB9B4F /* Development-Octavebuild */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
+				PRODUCT_NAME = PsychPortAudio;
+				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				SKIP_INSTALL = NO;
+			};
+			name = "Development-Octavebuild";
+		};
+		833C1F060BB19D0100FB9B4F /* Deployment */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_MODEL_TUNING = G5;
+				INSTALL_PATH = /usr/local/lib;
+				LIBRARY_SEARCH_PATHS = (
+					"$(LIBRARY_SEARCH_PATHS)",
+					/usr/lib/gcc/darwin/2.95.2,
+					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+				);
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
+				PREBINDING = NO;
+				PRODUCT_NAME = foo;
+				ZERO_LINK = NO;
+			};
+			name = Deployment;
+		};
+		833C1F070BB19D0100FB9B4F /* Default */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_MODEL_TUNING = G5;
+				INSTALL_PATH = /usr/local/lib;
+				LIBRARY_SEARCH_PATHS = (
+					"$(LIBRARY_SEARCH_PATHS)",
+					/usr/lib/gcc/darwin/2.95.2,
+					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+				);
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
+				PREBINDING = NO;
+				PRODUCT_NAME = foo;
+			};
+			name = Default;
+		};
+		83C802780B8CB29300097021 /* Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(HOME)/projects/MirrorFace/MirrorFace/MFBasic";
+				COPY_PHASE_STRIP = NO;
+				DEPLOYMENT_LOCATION = YES;
+				DSTROOT = /Users/kleinerm/projects/MirrorFace/MirrorFace/;
+				EXECUTABLE_EXTENSION = mexmaci;
+				EXPORTED_SYMBOLS_FILE = "";
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INPUT_FILETYPE = automatic;
 				GCC_MODEL_TUNING = "";
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
@@ -19787,7 +20173,7 @@
 					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
 					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
 				);
-				INSTALL_PATH = /usr/local/lib;
+				INSTALL_PATH = /MFBasic/;
 				KEEP_PRIVATE_EXTERNS = NO;
 				LIBRARY_SEARCH_PATHS = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/maci";
 				LINK_WITH_STANDARD_LIBRARIES = YES;
@@ -19811,6 +20197,7 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = MirrorFaceCore;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				SKIP_INSTALL = NO;
 				STRIP_STYLE = all;
 				WARNING_CFLAGS = "-Wno-long-double";
 			};
@@ -19819,46 +20206,10 @@
 		83C802790B8CB29300097021 /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/lib/mac/mexFunction.map";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
-				HEADER_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
-				);
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
-				);
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lmx",
-					"-lmex",
-					"-lmat",
-					"-lstdc++",
-				);
-				PREBINDING = NO;
-				PRODUCT_NAME = DoNothing;
-				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
+				DSTROOT = /Users/kleinerm/projects/MirrorFace/MirrorFace/;
+				INSTALL_PATH = /MFBasic/;
+				PRODUCT_NAME = MirrorFaceCore;
+				SKIP_INSTALL = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -19889,6 +20240,110 @@
 					"$(LIBRARY_SEARCH_PATHS)",
 					/usr/lib/gcc/darwin/2.95.2,
 				);
+				PREBINDING = NO;
+				PRODUCT_NAME = foo;
+			};
+			name = Default;
+		};
+		83CBD6500BC01FB0007CB68C /* Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				EXECUTABLE_EXTENSION = mexmaci;
+				EXPORTED_SYMBOLS_FILE = "";
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_MODEL_TUNING = "";
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
+				HEADER_SEARCH_PATHS = (
+					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
+					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
+				);
+				INSTALL_PATH = /usr/local/lib;
+				KEEP_PRIVATE_EXTERNS = NO;
+				LIBRARY_SEARCH_PATHS = (
+					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/maci",
+					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+				);
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
+				LINK_WITH_STANDARD_LIBRARIES = YES;
+				MACH_O_TYPE = mh_bundle;
+				MACOSX_DEPLOYMENT_TARGET = "";
+				MATLAB_DIR_NAME = MATLAB73;
+				OTHER_CFLAGS = (
+					"-fexceptions",
+					"-no-cpp-precomp",
+				);
+				OTHER_LDFLAGS = (
+					"-Wl,-flat_namespace",
+					"-undefined",
+					suppress,
+					"-Wl,-exported_symbols_list,/Applications/MATLAB73/extern/lib/maci/mexFunction.map",
+					"-lmx",
+					"-lmex",
+					"-lmat",
+					"-lstdc++",
+				);
+				PREBINDING = NO;
+				PRODUCT_NAME = PsychPortAudio;
+				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				STRIP_STYLE = all;
+				WARNING_CFLAGS = "-Wno-long-double";
+			};
+			name = Development;
+		};
+		83CBD6510BC01FB0007CB68C /* Development-Octavebuild */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_INPUT_FILETYPE = sourcecode.cpp.cpp;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					PTBOCTAVE,
+					HAVE_OCTAVE_21,
+					MACOSX,
+				);
+				GCC_WARN_ABOUT_MISSING_NEWLINE = NO;
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "";
+				LINK_WITH_STANDARD_LIBRARIES = YES;
+				PRODUCT_NAME = moglcore;
+				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				SKIP_INSTALL = NO;
+			};
+			name = "Development-Octavebuild";
+		};
+		83CBD6520BC01FB0007CB68C /* Deployment */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_MODEL_TUNING = G5;
+				INSTALL_PATH = /usr/local/lib;
+				LIBRARY_SEARCH_PATHS = (
+					"$(LIBRARY_SEARCH_PATHS)",
+					/usr/lib/gcc/darwin/2.95.2,
+					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+				);
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
+				PREBINDING = NO;
+				PRODUCT_NAME = foo;
+				ZERO_LINK = NO;
+			};
+			name = Deployment;
+		};
+		83CBD6530BC01FB0007CB68C /* Default */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_MODEL_TUNING = G5;
+				INSTALL_PATH = /usr/local/lib;
+				LIBRARY_SEARCH_PATHS = (
+					"$(LIBRARY_SEARCH_PATHS)",
+					/usr/lib/gcc/darwin/2.95.2,
+					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+				);
+				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/PortAudio\"";
 				PREBINDING = NO;
 				PRODUCT_NAME = foo;
 			};
@@ -19942,46 +20397,8 @@
 		F07432170AD465B400602397 /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/lib/mac/mexFunction.map";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
-				HEADER_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
-				);
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
-				);
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lmx",
-					"-lmex",
-					"-lmat",
-					"-lstdc++",
-				);
-				PREBINDING = NO;
 				PRODUCT_NAME = MachSetPriorityMex;
 				PSYCHTOOLBOX_SUBFOLDER = PsychPriority;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
 			};
 			name = "Development-Octavebuild";
 		};
@@ -20035,14 +20452,14 @@
 					MATLAB_MEX_FILE,
 					USE_MWSIZE,
 				);
-				HEADER_SEARCH_PATHS = /Applications/MATLAB73/extern/include;
+				HEADER_SEARCH_PATHS = /Applications/MATLAB74/extern/include;
 				INSTALL_PATH = /usr/local/lib;
 				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = /Applications/MATLAB73/bin/maci;
+				LIBRARY_SEARCH_PATHS = /Applications/MATLAB74/bin/maci;
 				LINK_WITH_STANDARD_LIBRARIES = YES;
 				MACH_O_TYPE = mh_bundle;
 				MACOSX_DEPLOYMENT_TARGET = "";
-				MATLAB_DIR_NAME = MATLAB73;
+				MATLAB_DIR_NAME = MATLAB74;
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20051,7 +20468,7 @@
 					"-Wl,-flat_namespace",
 					"-undefined",
 					suppress,
-					"-Wl,-exported_symbols_list,/Applications/MATLAB73/extern/lib/maci/mexFunction.map",
+					"-Wl,-exported_symbols_list,/Applications/MATLAB74/extern/lib/maci/mexFunction.map",
 					"-lmx",
 					"-lmex",
 					"-lmat",
@@ -20061,6 +20478,7 @@
 				PRODUCT_NAME = Screen;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
 				STRIP_STYLE = all;
+				USER_HEADER_SEARCH_PATHS = "$(inherited)";
 				WARNING_CFLAGS = "-Wno-long-double";
 			};
 			name = Development;
@@ -20068,50 +20486,10 @@
 		F089BD060AD42DF500663D86 /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = /usr/local/bin/octave;
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "";
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(FRAMEWORK_SEARCH_PATHS)",
-					"$(SYSTEM_DEVELOPER_DIR)/SDKs/MacOSX10.4u.sdk/System/Library/Frameworks",
-				);
-				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					PTBOCTAVE,
-					HAVE_OCTAVE_21,
-				);
-				HEADER_SEARCH_PATHS = /Applications/MATLAB72/extern/include;
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = /Applications/MATLAB72/bin/mac;
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				MATLAB_DIR_NAME = MATLAB72;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-loctinterp",
-					"-lreadline",
-					"-lcruft",
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lstdc++",
-					"-loctave",
-				);
-				PREBINDING = NO;
 				PRODUCT_NAME = Screen;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
+				SKIP_INSTALL = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -20336,48 +20714,20 @@
 		F14A27FA0AD48C1200BFB68F /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/lib/mac/mexFunction.map";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
-				HEADER_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					PTBOCTAVE,
+					HAVE_OCTAVE_21,
+					PTBMODULE_PsychHID,
 				);
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
 				LIBRARY_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					"$(SRCROOT)",
 					"$(LIBRARY_SEARCH_PATHS_QUOTED_1)",
+					"/usr/local/lib/octave-2.1.73//**",
+					"$(SRCROOT)",
 				);
 				LIBRARY_SEARCH_PATHS_QUOTED_1 = "\"$(SRCROOT)/../../../Cohorts/HID Utilities Source/build\"";
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lmx",
-					"-lmex",
-					"-lmat",
-					"-lstdc++",
-				);
-				PREBINDING = NO;
 				PRODUCT_NAME = PsychHID;
 				PSYCHTOOLBOX_SUBFOLDER = PsychHardware;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
+				SKIP_INSTALL = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -20840,46 +21190,8 @@
 		F14A28B30AD4943E00BFB68F /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/lib/mac/mexFunction.map";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
-				HEADER_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
-				);
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
-				);
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lmx",
-					"-lmex",
-					"-lmat",
-					"-lstdc++",
-				);
-				PREBINDING = NO;
 				PRODUCT_NAME = WaitSecs;
-				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
+				SKIP_INSTALL = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -21586,46 +21898,9 @@
 		F14A29C20AD49E4300BFB68F /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/lib/mac/mexFunction.map";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
-				HEADER_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
-				);
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
-				);
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lmx",
-					"-lmex",
-					"-lmat",
-					"-lstdc++",
-				);
-				PREBINDING = NO;
 				PRODUCT_NAME = FontInfo;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
+				SKIP_INSTALL = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -22200,46 +22475,9 @@
 		F14A2A9C0AD4A1E200BFB68F /* Development-Octavebuild */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				EXECUTABLE_EXTENSION = mexmac;
-				EXPORTED_SYMBOLS_FILE = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/lib/mac/mexFunction.map";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_MODEL_TUNING = G4;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = MATLAB_MEX_FILE;
-				HEADER_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include",
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/simulink/include",
-				);
-				INSTALL_PATH = /usr/local/lib;
-				KEEP_PRIVATE_EXTERNS = NO;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
-				);
-				LINK_WITH_STANDARD_LIBRARIES = YES;
-				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = (
-					"-fexceptions",
-					"-no-cpp-precomp",
-				);
-				OTHER_LDFLAGS = (
-					"-flat_namespace",
-					"-undefined",
-					suppress,
-					"-lmx",
-					"-lmex",
-					"-lmat",
-					"-lstdc++",
-				);
-				PREBINDING = NO;
 				PRODUCT_NAME = GetSecs;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
-				STRIP_STYLE = all;
-				WARNING_CFLAGS = "-Wno-long-double";
+				SKIP_INSTALL = NO;
 			};
 			name = "Development-Octavebuild";
 		};
@@ -23610,6 +23848,17 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
+		833C1F030BB19D0100FB9B4F /* Build configuration list for PBXNativeTarget "PsychPortAudio Intel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				833C1F040BB19D0100FB9B4F /* Development */,
+				833C1F050BB19D0100FB9B4F /* Development-Octavebuild */,
+				833C1F060BB19D0100FB9B4F /* Deployment */,
+				833C1F070BB19D0100FB9B4F /* Default */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Default;
+		};
 		83C802770B8CB29300097021 /* Build configuration list for PBXNativeTarget "MirrorFaceCore Intel" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -23617,6 +23866,17 @@
 				83C802790B8CB29300097021 /* Development-Octavebuild */,
 				83C8027A0B8CB29300097021 /* Deployment */,
 				83C8027B0B8CB29300097021 /* Default */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Default;
+		};
+		83CBD64F0BC01FB0007CB68C /* Build configuration list for PBXNativeTarget "moglcore Intel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				83CBD6500BC01FB0007CB68C /* Development */,
+				83CBD6510BC01FB0007CB68C /* Development-Octavebuild */,
+				83CBD6520BC01FB0007CB68C /* Deployment */,
+				83CBD6530BC01FB0007CB68C /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;

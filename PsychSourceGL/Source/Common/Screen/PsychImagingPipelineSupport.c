@@ -171,7 +171,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 	Boolean needzbuffer, needoutputconversion, needimageprocessing, needseparatestreams, needfastbackingstore, targetisfinalFB;
 	GLuint glsl;
 	float rg, gg, bg;	// Gains for color channels and color masking for anaglyph shader setup.
-	char blittercfg[100];
+	char blittercfg[1000];
 
 	// Processing ends here after minimal "all off" setup, if pipeline is disabled:
 	if (imagingmode<=0) {
@@ -221,8 +221,11 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 	// Do we need fast backing store?
 	needfastbackingstore = (imagingmode & kPsychNeedFastBackingStore) ? TRUE : FALSE;
 	
-	// Consolidate settings:
-	if (needoutputconversion || needimageprocessing || windowRecord->stereomode > 0) needfastbackingstore = TRUE;
+	// Consolidate settings: Most settings imply kPsychNeedFastBackingStore.
+	if (needoutputconversion || needimageprocessing || windowRecord->stereomode > 0 || fboInternalFormat!=GL_RGBA8) {
+		imagingmode|=kPsychNeedFastBackingStore;
+		needfastbackingstore = TRUE;
+	}
 	
 	// Check if this system does support OpenGL framebuffer objects and rectangle textures:
 	if (!glewIsSupported("GL_EXT_framebuffer_object") || (!glewIsSupported("GL_EXT_texture_rectangle") && !glewIsSupported("GL_ARB_texture_rectangle") && !glewIsSupported("GL_NV_texture_rectangle"))) {
@@ -558,7 +561,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 					glUniform3f(glGetUniformLocation(glsl, "Gains2"), rg, gg, bg);
 					
 					// Define default weights for RGB -> Luminance conversion: We default to the standardized NTSC color weights.
-					glUniform3f(glGetUniformLocation(glsl, "ColorToGrayWeights"), 0.3, 0.59, 0.11);
+					glUniform3f(glGetUniformLocation(glsl, "ColorToGrayWeights"), 0.299, 0.587, 0.114);
 					// Define background bias color to add: Normally zero for standard anaglyph:
 					glUniform3f(glGetUniformLocation(glsl, "ChannelBias"), 0.0, 0.0, 0.0);
 
@@ -579,6 +582,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 			break;
 			
 			case kPsychFreeFusionStereo:
+			case kPsychFreeCrossFusionStereo:
 				if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: Creating internal dualview stereo compositing shader...\n");
 				
 				glsl = PsychCreateGLSLProgram(passthroughshadersrc, NULL, NULL);
@@ -586,7 +590,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 					// Bind it:
 					glUseProgram(glsl);
 					// Set channel to texture units assignments:
-					glUniform1i(glGetUniformLocation(glsl, "Image1"), 0);
+					glUniform1i(glGetUniformLocation(glsl, "Image1"), (windowRecord->stereomode == kPsychFreeFusionStereo) ? 0 : 1);
 					glUseProgram(0);
 					
 					// Add shader to processing chain:
@@ -602,7 +606,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 					// Bind it:
 					glUseProgram(glsl);
 					// Set channel to texture units assignments:
-					glUniform1i(glGetUniformLocation(glsl, "Image1"), 1);
+					glUniform1i(glGetUniformLocation(glsl, "Image1"),  (windowRecord->stereomode == kPsychFreeFusionStereo) ? 1 : 0);
 					glUseProgram(0);
 					
 					// Add shader to processing chain:
@@ -617,6 +621,46 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 				PsychPipelineEnableHook(windowRecord, "StereoCompositingBlit");		
 			break;
 			
+			case kPsychCompressedTLBRStereo:
+			case kPsychCompressedTRBLStereo:
+				if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: Creating internal vertical split stereo compositing shader...\n");
+				
+				glsl = PsychCreateGLSLProgram(passthroughshadersrc, NULL, NULL);
+				if (glsl) {
+					// Bind it:
+					glUseProgram(glsl);
+					// Set channel to texture units assignments:
+					glUniform1i(glGetUniformLocation(glsl, "Image1"), (windowRecord->stereomode == kPsychCompressedTLBRStereo) ? 0 : 1);
+					glUseProgram(0);
+					
+					// Add shader to processing chain:
+					sprintf(blittercfg, "Builtin:IdentityBlit:Offset:%i:%i:Scaling:%f:%f", 0, 0, 1.0, 0.5);
+					PsychPipelineAddShaderToHook(windowRecord, "StereoCompositingBlit", "StereoCompositingShaderCompressedTop", TRUE, glsl, blittercfg, 0);
+				}
+				else {
+					PsychErrorExitMsg(PsychError_user, "PTB-ERROR: Failed to create left channel dualview stereo processing shader -- Dualview stereo won't work!\n");
+				}
+				
+				glsl = PsychCreateGLSLProgram(passthroughshadersrc, NULL, NULL);
+				if (glsl) {
+					// Bind it:
+					glUseProgram(glsl);
+					// Set channel to texture units assignments:
+					glUniform1i(glGetUniformLocation(glsl, "Image1"),  (windowRecord->stereomode == kPsychCompressedTLBRStereo) ? 1 : 0);
+					glUseProgram(0);
+					
+					// Add shader to processing chain:
+					sprintf(blittercfg, "Builtin:IdentityBlit:Offset:%i:%i:Scaling:%f:%f", 0, (int) PsychGetHeightFromRect(windowRecord->rect)/2, 1.0, 0.5);
+					PsychPipelineAddShaderToHook(windowRecord, "StereoCompositingBlit", "StereoCompositingShaderCompressedBottom", TRUE, glsl, blittercfg, 0);
+				}
+				else {
+					PsychErrorExitMsg(PsychError_user, "PTB-ERROR: Failed to create right channel dualview stereo processing shader -- Dualview stereo won't work!\n");
+				}
+
+				// Enable stereo compositor:
+				PsychPipelineEnableHook(windowRecord, "StereoCompositingBlit");		
+			break;
+
 			case kPsychOpenGLStereo:
 				// Nothing to do for now: Setup of blue-line syncing is done in SCREENOpenWindow.c, because it also
 				// applies to non-imaging mode...
@@ -850,19 +894,23 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 	if (fborc!=GL_FRAMEBUFFER_COMPLETE_EXT) {
 		// Framebuffer incomplete!
 		while(glGetError());
-		printf("PTB-ERROR: Failed to setup internal framebuffer objects color buffer attachment for imaging pipeline!\n");
-		if (fborc==GL_FRAMEBUFFER_UNSUPPORTED_EXT) {
-			printf("PTB-ERROR: Your graphics hardware does not support the selected or requested texture- or offscreen window format for drawing into it.\n");
+		printf("PTB-ERROR[Imaging pipeline]: Failed to setup color buffer attachment of internal FBO when trying to prepare drawing into a texture or window.\n");
+		if (fborc==GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_EXT) {
+			printf("PTB-ERROR: Your graphics hardware does not support the provided or requested texture- or offscreen window format for drawing into it.\n");
 			printf("PTB-ERROR: Most graphics cards do not support drawing into textures or offscreen windows which are not true-color, i.e. 1 layer pure\n");
-			printf("PTB-ERROR: luminance or 2 layer luminance+alpha textures or offscreen windows may not work, but 3-layer RGB or 4-layer RGBA textures\n");
-			printf("PTB-ERROR: or offscreen windows will work. Another reason could be that the specific colordepth is not supported on your hardware:\n");
-			printf("PTB-ERROR: 8 bits per color component are supported on nearly all hardware, 16 bpc or 32 bpc floating point format only on recent\n");
-			printf("PTB-ERROR: hardware. 16 bpc fixed precision is not supported on many systems either, or only under restricted conditions.\n");
+			printf("PTB-ERROR: luminance or 2 layer luminance+alpha textures or offscreen windows won't work. Choose a 3-layer RGB or 4-layer RGBA texture\n");
+			printf("PTB-ERROR: or offscreen window and retry.\n");
+		}
+		else if (fborc==GL_FRAMEBUFFER_UNSUPPORTED_EXT) {
+			printf("PTB-ERROR: Your graphics hardware does not support the provided or requested texture- or offscreen window format for drawing into it.\n");
+			printf("PTB-ERROR: Could be that the specific color depth of the texture or offscreen window is not supported for drawing on your hardware:\n");
+			printf("PTB-ERROR: 8 bits per color component are supported on nearly all hardware, 16 bpc or 32 bpc floating point formats only on recent\n");
+			printf("PTB-ERROR: hardware. 16 bpc fixed precision is not supported on any NVidia hardware, and on many systems only under restricted conditions.\n");
+			printf("PTB-ERROR: Retry with the lowest acceptable (for your study) size and depth of the onscreen window or offscreen window.\n");
 		}
 		else {
-			printf("PTB-ERROR: Exact reason for failure is unknown, glCheckFramebufferStatus() returns code %i\n", fborc);
+			printf("PTB-ERROR: Exact reason for failure is unknown, most likely a Psychtoolbox bug, GL-driver bug or unintented use. glCheckFramebufferStatus() returns code %i\n", fborc);
 		}
-		printf("PTB-ERROR: You may want to retry with the lowest acceptable (for your study) size and depth of the onscreen window or offscreen window.\n");
 		return(FALSE);
 	}
 	
@@ -872,8 +920,8 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: Trying to attach depth+stencil attachments to FBO...\n"); 
 		if (!glewIsSupported("GL_ARB_depth_texture")) {
 			printf("PTB-ERROR: Failed to setup internal framebuffer object for imaging pipeline! Your graphics hardware does not support\n");
-			printf("PTB-ERROR: the required GL_ARB_depth_texture extension. You'll need at least a NVidia GeforceFX 5200 or ATI Radeon 9600\n");
-			printf("PTB-ERROR: for this to work.\n");
+			printf("PTB-ERROR: the required GL_ARB_depth_texture extension. You'll need at least a NVidia GeforceFX 5200, ATI Radeon 9600\n");
+			printf("PTB-ERROR: or Intel GMA-950 with recent graphics-drivers for this to work.\n");
 			return(FALSE);
 		}
 		
@@ -941,8 +989,8 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 					printf("PTB-WARNING: the majority of OpenGL (MOGL) 3D drawing code either, but OpenGL code that needs a stencil buffer will misbehave or fail in random ways!\n");
 					printf("PTB-WARNING: If you need to use such code, you'll either have to disable the internal imaging pipeline, or carefully work-around this limitation by\n");
 					printf("PTB-WARNING: proper modifications and testing of the affected code. Good luck... Alternatively, upgrade your graphics hardware. According to specs,\n");
-					printf("PTB-WARNING: all gfx-cards starting with GeForceFX 5000 on Windows and Linux and all cards on Intel-Macs except the Intel GMA cards should work, whereas\n");
-					printf("PTB-WARNING: none of the PowerPC hardware is supported as of OS-X 10.4.8.\n"); 
+					printf("PTB-WARNING: all gfx-cards starting with GeForceFX 5200 on Windows and Linux and all cards on Intel-Macs except the Intel GMA cards should work, whereas\n");
+					printf("PTB-WARNING: none of the PowerPC hardware is supported as of OS-X 10.4.9.\n"); 
 				}
 				
 				glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, 0);
@@ -1084,6 +1132,7 @@ void PsychCreateShadowFBOForTexture(PsychWindowRecordType *textureRecord, Boolea
 	
 	return;
 }
+
 /* PsychNormalizeTextureOrientation() - On demand texture reswapping.
  *
  * PTB supports multiple different ways of orienting and formatting textures,
@@ -1092,7 +1141,9 @@ void PsychCreateShadowFBOForTexture(PsychWindowRecordType *textureRecord, Boolea
  * processing pipeline (Screen('TransformTexture')) need to be in a standardized
  * upright, non-transposed format. This routine checks the orientation of a
  * texture and - if neccessary - transforms the texture from its current format
- * to the upright standard format.
+ * to the upright standard format. As a side effect, it also converts such textures
+ * from Luminance or Luminance+Alpha formats into RGB or RGBA formats. This is
+ * important, because only RGB(A) textures are suitable as FBO color buffer attachments.
  *
  */ 
 void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
@@ -1101,7 +1152,8 @@ void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
 	PsychFBO *fboptr;
 	GLint fboInternalFormat;
 	Boolean needzbuffer;
-
+	int width, height;
+	
 	// The source texture sourceRecord could be in any of PTB's supported
 	// internal texture orientations. It may be upright as an Offscreen window,
 	// or flipped upside down as some textures from the video grabber or Quicktime,
@@ -1109,8 +1161,11 @@ void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
 	// cases for image processing would be a debug and maintenance nightmare.
 	// Therefore we check the format of the source texture and require it to be
 	// a normal upright orientation. If this isn't the case, we perform a preprocessing
-	// step to transform the texture into normalized orientation.
-	if (sourceRecord->textureOrientation != 2) {
+	// step to transform the texture into normalized orientation. We also perform a
+	// preprocessing step on any CoreVideo texture from Quicktime. Although such a
+	// texture may be properly oriented, it is of a non-renderable YUV color format, so
+	// we need to recreate it in a RGB renderable format.
+	if (sourceRecord->textureOrientation != 2 || sourceRecord->targetSpecific.QuickTimeGLTexture != NULL) {
 		if (PsychPrefStateGet_Verbosity()>5) printf("PTB-DEBUG: In PsychNormalizeTextureOrientation(): Performing GPU renderswap for source gl-texture %i --> ", sourceRecord->textureNumber);
 		
 		// Soft-reset drawing engine:
@@ -1143,28 +1198,51 @@ void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
 		// First need to know internal format of texture...
 		glBindTexture(PsychGetTextureTarget(sourceRecord), sourceRecord->textureNumber);
 		glGetTexLevelParameteriv(PsychGetTextureTarget(sourceRecord), 0, GL_TEXTURE_INTERNAL_FORMAT, &fboInternalFormat);
+
+		// Need to query real size of underlying texture, not the logical size from sourceRecord->rect, otherwise we'd screw
+		// up for padded textures (from Quicktime movie/vidcap) where the real texture is a bit bigger than its logical size.
+		if (sourceRecord->textureOrientation > 1) {
+			// Non-transposed textures, width and height are correct:
+			glGetTexLevelParameteriv(PsychGetTextureTarget(sourceRecord), 0, GL_TEXTURE_WIDTH, &width);
+			glGetTexLevelParameteriv(PsychGetTextureTarget(sourceRecord), 0, GL_TEXTURE_HEIGHT, &height);
+		}
+		else {
+			// Transposed textures: Need to swap meaning of width and height:
+			glGetTexLevelParameteriv(PsychGetTextureTarget(sourceRecord), 0, GL_TEXTURE_WIDTH, &height);
+			glGetTexLevelParameteriv(PsychGetTextureTarget(sourceRecord), 0, GL_TEXTURE_HEIGHT, &width);
+		}
+		
 		glBindTexture(PsychGetTextureTarget(sourceRecord), 0);
 		
 		// Renderable format? Pure luminance or luminance+alpha formats are not renderable on most hardware.
 		
 		// Upgrade 8 bit luminace to 8 bit RGBA:
-		if (fboInternalFormat == GL_LUMINANCE8 || sourceRecord->depth == 8) fboInternalFormat = GL_RGBA8;
+		if (fboInternalFormat == GL_LUMINANCE8 || fboInternalFormat == GL_LUMINANCE8_ALPHA8|| sourceRecord->depth == 8) fboInternalFormat = GL_RGBA8;
 		
 		// Upgrade non-renderable floating point formats to their RGB or RGBA counterparts of matching precision:
 		if (sourceRecord->nrchannels < 3 && fboInternalFormat != GL_RGBA8) {
 			// Unsupported format for FBO rendertargets. Need to upgrade to something suitable...
 			if (sourceRecord->textureexternalformat == GL_LUMINANCE) {
 				// Upgrade luminance to RGB of matching precision:
+				// printf("UPGRADING TO RGBFloat %i\n", (sourceRecord->textureinternalformat == GL_LUMINANCE_FLOAT16_APPLE) ? 0:1);
 				fboInternalFormat = (sourceRecord->textureinternalformat == GL_LUMINANCE_FLOAT16_APPLE) ? GL_RGB_FLOAT16_APPLE : GL_RGB_FLOAT32_APPLE;
 			}
 			else {
 				// Upgrade luminance+alpha to RGBA of matching precision:
+				// printf("UPGRADING TO RGBAFloat %i\n", (sourceRecord->textureinternalformat == GL_LUMINANCE_ALPHA_FLOAT16_APPLE) ? 0:1);
 				fboInternalFormat = (sourceRecord->textureinternalformat == GL_LUMINANCE_ALPHA_FLOAT16_APPLE) ? GL_RGBA_FLOAT16_APPLE : GL_RGBA_FLOAT32_APPLE;
 			}
 		}
 		
+		// Special case: Quicktime movie or video texture, created by CoreVideo in Apple specific YUV format.
+		// This is a non-framebuffer renderable color format. Need to upgrade it to something safe:
+		if (fboInternalFormat == GL_YCBCR_422_APPLE) fboInternalFormat = GL_RGBA8;
+		
 		// Now create proper FBO:
-		PsychCreateFBO(&(sourceRecord->fboTable[0]), (GLenum) fboInternalFormat, needzbuffer, PsychGetWidthFromRect(sourceRecord->rect), PsychGetHeightFromRect(sourceRecord->rect));
+		if (!PsychCreateFBO(&(sourceRecord->fboTable[0]), (GLenum) fboInternalFormat, needzbuffer, width, height)) {
+			PsychErrorExitMsg(PsychError_internal, "Failed to normalize texture orientation - Creation of framebuffer object failed!");
+		}
+		
 		sourceRecord->drawBufferFBO[0] = 0;
 		sourceRecord->fboCount = 1;
 		
@@ -1172,8 +1250,14 @@ void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
 		sourceRecord->imagingMode = 1;
 
 		// Set FBO of sourceRecord as rendertarget, including proper setup of render geometry:
-		PsychSetDrawingTarget(sourceRecord);
-
+		// We can't use PsychSetDrawingTarget() here, as we might get called by that function, i.e.
+		// infinite recursion or other side effects if we tried to use it.
+		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, sourceRecord->fboTable[0]->fboid);
+		PsychSetupView(sourceRecord);
+		// Reset MODELVIEW matrix, after backing it up...
+		glPushMatrix();
+		glLoadIdentity();
+		
 		// Now blit the old "disoriented" texture into the new FBO: The textureNumber of sourceRecord
 		// references the old texture, the PsychFBO of sourceRecord defines the new texture...
 		if (glIsEnabled(GL_BLEND)) {
@@ -1187,12 +1271,24 @@ void PsychNormalizeTextureOrientation(PsychWindowRecordType *sourceRecord)
 			PsychBlitTextureToDisplay(sourceRecord, sourceRecord, sourceRecord->rect, sourceRecord->rect, 0, 0, 1);
 		}
 		
+		// Restore modelview matrix:
+		glPopMatrix();
+		
 		sourceRecord->imagingMode = tmpimagingmode;
 		PsychSetDrawingTarget(NULL);
 
 		// At this point the color attachment of the sourceRecords FBO contains the properly oriented texture.
 		// Delete the old texture, attach the FBO texture as new one:
-		glDeleteTextures(1, &(sourceRecord->textureNumber));
+		if (sourceRecord->targetSpecific.QuickTimeGLTexture != NULL) {
+			// Special case: CoreVideo texture:
+			PsychFreeMovieTexture(sourceRecord);
+		}
+		else {
+			// Standard case:
+			glDeleteTextures(1, &(sourceRecord->textureNumber));
+		}
+		
+		// Assign new texture:
 		sourceRecord->textureNumber = sourceRecord->fboTable[0]->coltexid;
 		
 		// Finally sourceRecord has the proper orientation:
@@ -1214,8 +1310,8 @@ void PsychShutdownImagingPipeline(PsychWindowRecordType *windowRecord, Boolean o
 	PtrPsychHookFunction hookfunc, hookiter;
 	PsychFBO* fboptr;
 	
-	// Imaging enabled? Do OpenGL specific cleanup:
-	if (windowRecord->imagingMode>0 && openglpart) {
+	// Do OpenGL specific cleanup:
+	if (openglpart) {
 		// Yes. Mode specific cleanup:
 		for (i=0; i<windowRecord->fboCount; i++) {
 			// Delete i'th FBO, if any:
@@ -1794,7 +1890,7 @@ boolean PsychPipelineExecuteHookSlot(PsychWindowRecordType *windowRecord, int ho
 		case kPsychBuiltinFunc:
 			// Dispatch to a builtin function:
 			if (strcmp(hookfunc->idString, "Builtin:FlipFBOs")==0) { dispatched=TRUE; } // No op here. Done in upper layer...
-			if (strcmp(hookfunc->idString, "Builtin:IdentityBlit")==0) {
+			if (strstr(hookfunc->idString, "Builtin:IdentityBlit")) {
 				// Perform the most simple blit operation: A simple one-to-one copy of input FBO to output FBO:
 				if (!PsychPipelineExecuteBlitter(windowRecord, hookfunc, NULL, NULL, TRUE, FALSE, srcfbo1, NULL, dstfbo, NULL)) {
 					// Blitter failed!
@@ -2109,62 +2205,82 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 boolean PsychBlitterIdentity(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc, void* hookUserData, boolean srcIsReadonly, boolean allowFBOSwizzle, PsychFBO** srcfbo1, PsychFBO** srcfbo2, PsychFBO** dstfbo, PsychFBO** bouncefbo)
 {
 	int w, h, x, y;
+	float sx, sy;
 	char* strp;
 	
-	// We only accept one (optional) parameter in the blitterString: An integral (x,y)
+	// Child protection:
+	if (!(srcfbo1 && (*srcfbo1))) {
+		PsychErrorExitMsg(PsychError_internal, "In PsychBlitterIdentity(): srcfbo1 is a NULL - Pointer!!!");
+	}	
+
+	// Query dimensions of viewport:
+	w = (*srcfbo1)->width;
+	h = (*srcfbo1)->height;
+
+	// Check for offset parameter in the blitterString: An integral (x,y)
 	// offset for the destination of the blit. This allows to blit the srcfbo1, without
 	// scaling or filtering it, to a different start location than (0,0):
-	x=0;
-	y=0;
-	
+	x=y=0;
 	if (strp=strstr(hookfunc->pString1, "Offset:")) {
 		// Parse and assign offset:
 		if (sscanf(strp, "Offset:%i:%i", &x, &y)!=2) {
 			PsychErrorExitMsg(PsychError_internal, "In PsychBlitterIdentity(): Offset: blit string parameter is invalid! Parse error...\n");
 		}
 	}
-	
-	// We basically ignore all parameters and just blit the bound texture(s) into the
-	// attached rendertarget, assuming a one-to-one correspondence of texture coordinates to
-	// fragment coordinates, i.e., the geometry if fully specified by size of dstfbo:
-	if (srcfbo1 && (*srcfbo1)) {
-		// Query dimensions of viewport:
-		w = (*srcfbo1)->width;
-		h = (*srcfbo1)->height;
-		
-		// Do the blit, using a rectangular quad:
-		glBegin(GL_QUADS);
 
-		// Note the swapped y-coord for textures wrt. y-coord of vertex position!
-		// Texture coordinate system has origin at bottom-left, y-axis pointing upward,
-		// but PTB has framebuffer coordinate system with origin at top-left, with
-		// y-axis pointing downward! Normally OpenGL would have origin always bottom-left,
-		// but PTB has to use a different system (changed by special gluOrtho2D) transform),
-		// because our 2D coordinate system needs to conform to the standards of the old
-		// Psychtoolboxes and of typical windowing systems. -- A tribute to the past.
-		
-		// Upper left vertex in window
-		glTexCoord2f(0, h);
-		glVertex2f(x, y);		
-
-		// Lower left vertex in window
-		glTexCoord2f(0, 0);
-		glVertex2f(x, h+y);		
-
-		// Lower right  vertex in window
-		glTexCoord2f(w, 0);
-		glVertex2f(w+x, h+y);		
-
-		// Upper right in window
-		glTexCoord2f(w, h);
-		glVertex2f(w+x, y);		
-
-		glEnd();
+	// Check for scaling parameter:
+	sx = sy = 1.0;
+	if (strp=strstr(hookfunc->pString1, "Scaling:")) {
+		// Parse and assign offset:
+		if (sscanf(strp, "Scaling:%f:%f", &sx, &sy)!=2) {
+			PsychErrorExitMsg(PsychError_internal, "In PsychBlitterIdentity(): Scaling: blit string parameter is invalid! Parse error...\n");
+		}
 	}
-	else {
-		PsychErrorExitMsg(PsychError_internal, "In PsychBlitterIdentity(): srcfbo1 is a NULL - Pointer!!!");
+
+	if (x!=0 || y!=0 || sx!=1.0 || sy!=1.0) {
+		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
+		
+		// Apply global (x,y) offset:
+		glTranslatef(x, y, 0);
+		
+		// Apply scaling:
+		glScalef(sx, sy, 1);
 	}
 	
+	// Do the blit, using a rectangular quad:
+	glBegin(GL_QUADS);
+	
+	// Note the swapped y-coord for textures wrt. y-coord of vertex position!
+	// Texture coordinate system has origin at bottom-left, y-axis pointing upward,
+	// but PTB has framebuffer coordinate system with origin at top-left, with
+	// y-axis pointing downward! Normally OpenGL would have origin always bottom-left,
+	// but PTB has to use a different system (changed by special gluOrtho2D) transform),
+	// because our 2D coordinate system needs to conform to the standards of the old
+	// Psychtoolboxes and of typical windowing systems. -- A tribute to the past.
+	
+	// Upper left vertex in window
+	glTexCoord2f(0, h);
+	glVertex2f(0, 0);		
+	
+	// Lower left vertex in window
+	glTexCoord2f(0, 0);
+	glVertex2f(0, h);		
+	
+	// Lower right  vertex in window
+	glTexCoord2f(w, 0);
+	glVertex2f(w, h);		
+	
+	// Upper right in window
+	glTexCoord2f(w, h);
+	glVertex2f(w, 0);		
+	
+	glEnd();
+	
+	if (x!=0 || y!=0 || sx!=1.0 || sy!=1.0) {
+		glPopMatrix();
+	}
+
 	// Done.
 	return(TRUE);
 }
@@ -2199,9 +2315,10 @@ boolean PsychPipelineBuiltinRenderClutBitsPlusPlus(PsychWindowRecordType *window
 	// Render CLUT as sequence of single points:
 	// We render it twice in two lines, the 2nd line shifted horizontally by one pixel. This way at least one of
 	// the lines will always start at an even pixel location as mandated by Bits++ - More failsafe.
-	for (j=1; j<=2 ; j++) {
+	// Actually, we don't: Only render it once. These settings are the correct ones (empirically):
+	for (j=0; j<=0 ; j++) {
 		x=j;
-		y=j;
+		y=1;
 		
 		glPointSize(1);
 		glBegin(GL_POINTS);

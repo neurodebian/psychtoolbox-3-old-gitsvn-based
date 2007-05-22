@@ -30,7 +30,14 @@
 #include "ScreenTypes.h"
 
 #if PSYCH_SYSTEM == PSYCH_OSX
-#include <Quicktime/Movies.h>
+	#include <Quicktime/Movies.h>
+#endif
+
+#if PSYCH_SYSTEM == PSYCH_WINDOWS
+	#include <Movies.h>
+	#include <CoreVideo.h>
+	#include <GXMath.h>
+	#include <ImageCompression.h>
 #endif
 
 #include "PsychVideoGlue.h"
@@ -88,7 +95,7 @@ void PsychComposeCompressedStereoBuffer(PsychWindowRecordType *windowRecord);
 
 
 //functions implementing Screen subcommands. 
-//PsychError	SCREENNull(void);					
+PsychError	SCREENNull(void);					
 PsychError 	SCREENTestStructures(void);				
 PsychError 	MODULEVersion(void);					
 PsychError 	SCREENComputer(void);					
@@ -180,6 +187,7 @@ PsychError		SCREENColorRange(void);
 PsychError		SCREENHookFunction(void);
 PsychError		SCREENOpenProxy(void);
 PsychError		SCREENTransformTexture(void);
+PsychError		SCREENDrawTextures(void) ;
 
 //experimental
 PsychError SCREENGetMouseHelper(void);
