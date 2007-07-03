@@ -16,7 +16,10 @@
 	PortAudio library, API Version 19 (http://www.portaudio.com), which is not GPL,
 	but has a more liberal and GPL compatible MIT style license.
 	
-	This links statically against libportaudio.a on OS/X. The current universal
+	This seems to link statically against libportaudio.a on OS/X. However, it doesn't!
+	Due to some restrictions of the OS/X linker we can't link statically against portaudio,
+	so we have to have a .dylib version of the library installed in a system library
+	search path, both for compiling and using PsychPortAudio. The current universal
 	binary version of libportaudio.a for OS/X can be found in the...
 	PsychSourceGL/Cohorts/PortAudio/ subfolder, which also contains versions for
 	Linux and Windows.
@@ -44,15 +47,21 @@ static const char *synopsisSYNOPSIS[MAX_SYNOPSIS_STRINGS];
 
 // Our device record:
 typedef struct PsychPADevice {
+	int		 opmode;			// Mode of operation: Playback, capture or full duplex?
 	PaStream *stream;			// Pointer to associated portaudio stream.
 	PaStreamInfo* streaminfo;   // Pointer to stream info structure, provided by PortAudio.
 	PaHostApiTypeId hostAPI;	// Type of host API.
 	double	 startTime;			// Requested playback start time in system time (secs). Returns real start time after start.
 	int		 state;				// Current state of the stream: 0=Stopped, 1=Hot Standby, 2=Playing.
 	int		 repeatCount;		// Number of repetitions: -1 = Loop forever, 1 = Once, n = n repetitions.
-	float*	 buffer;			// Pointer to float memory buffer with sound output data.
-	int		 buffersize;		// Size of buffer in bytes.
+	float*	 outputbuffer;		// Pointer to float memory buffer with sound output data.
+	int		 outputbuffersize;	// Size of output buffer in bytes.
 	unsigned int playposition;	// Current playposition in samples since start of playback (not frames, not bytes!)
+
+	float*	 inputbuffer;		// Pointer to float memory buffer with sound input data (captured sound data).
+	int		 inputbuffersize;	// Size of input buffer in bytes.
+	unsigned int recposition;	// Current record position in samples since start of capture.
+	unsigned int readposition;  // Last read-out sample since start of capture.
 	unsigned int channels;		// Number of output channels.
 	unsigned int xruns;			// Number of over-/underflows of input-/output channel for this stream.
 	unsigned int paCalls;		// Number of callback invocations.
@@ -97,15 +106,16 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
     float *in = (float*) inputBuffer;
     unsigned long i, silenceframes;
 	unsigned long channels;
-	unsigned int  playposition, sbsize;
+	unsigned int  playposition, outsbsize, insbsize, recposition;
 	double now, firstsampleonset, onsetDelta;
 	int repeatCount;
 	PaHostApiTypeId hA;
 
-	// Sound output buffer attached to stream? If no sound buffer
+	// Sound buffer attached to stream? If no sound buffer
 	// is attached, we can't continue and tell the engine to abort
 	// processing of this stream:
-    if (dev == NULL || dev->buffer == NULL) return(paAbort);
+    if ((dev == NULL) || ((dev->opmode & kPortAudioPlayBack) && (dev->outputbuffer == NULL)) ||
+		((dev->opmode & kPortAudioCapture) && (dev->inputbuffer == NULL))) return(paAbort);
 
 	// Count total number of calls:
 	dev->paCalls++;
@@ -127,15 +137,17 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 	
 	// Get our current playback position in samples (not frames or bytes!!):
 	playposition = dev->playposition;
-
-	// Compute size of soundbuffer in samples:
-	sbsize = dev->buffersize / sizeof(float);
+	recposition = dev->recposition;
+	
+	// Compute size of soundbuffers in samples:
+	outsbsize = dev->outputbuffersize / sizeof(float);
+	insbsize = dev->inputbuffersize / sizeof(float);
 
 	// Logical playback state is "stopped"? If so, abort.
 	if (dev->state == 0) {
-		// Prime the buffer with silence to avoid ugly noise.
-		memset(outputBuffer, 0, framesPerBuffer * channels * sizeof(float));
-		return(paAbort);
+		// Prime the outputbuffer with silence to avoid ugly noise.
+		if (outputBuffer) memset(outputBuffer, 0, framesPerBuffer * channels * sizeof(float));
+		return(paComplete);
 	}
 
 	// Are we already playing back and/or capturing real audio data,
@@ -154,8 +166,8 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 	// We convert these timestamps into system time, so we'll know how far the user
 	// provided onset deadline is away. If the deadline is far away, so the samples
 	// for this callback iteration would hit the speaker too early, we simply return
-	// a zero filled buffer --> We output silence. If the deadline is somewhere
-	// in the middle of this buffer, we fill the appropriate amount of bufferspace
+	// a zero filled outputbuffer --> We output silence. If the deadline is somewhere
+	// in the middle of this outputbuffer, we fill the appropriate amount of bufferspace
 	// with zeros, then copy in our first real samples into the remaining buffer.
 	// After that, we switch to real playback, all future calls will provide PA
 	// with real sampledata. Assuming the sound onset estimate provided by PA is
@@ -179,7 +191,14 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 			// initiated, but not device inherent latency. This additional latency
 			// is added via latencyBias, which is initialized in the Open-Function
 			// via a low-level driver query to CoreAudio:
-			firstsampleonset = (double) timeInfo->outputBufferDacTime + dev->latencyBias;
+			if (dev->opmode & kPortAudioPlayBack) {
+				// Playback enabled: Use DAC time as basis for timing:
+				firstsampleonset = (double) timeInfo->outputBufferDacTime + dev->latencyBias;
+			}
+			else {
+				// Recording (only): Use ADC time as basis for timing:
+				firstsampleonset = (double) timeInfo->inputBufferAdcTime + dev->latencyBias;
+			}
 			
 			// Store our measured PortAudio + CoreAudio + Driver + Hardware latency:
 			dev->predictedLatency = firstsampleonset - now;
@@ -189,8 +208,15 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 			// Not yet verified how these other audio APIs behave. Play safe
 			// and perform timebase remapping: This also needs our special fixed
 			// PortAudio version where currentTime actually has a value:
-			firstsampleonset = ((double) (timeInfo->outputBufferDacTime - timeInfo->currentTime));
-
+			if (dev->opmode & kPortAudioPlayBack) {
+				// Playback enabled: Use DAC time as basis for timing:
+				firstsampleonset = ((double) (timeInfo->outputBufferDacTime - timeInfo->currentTime));
+			}
+			else {
+				// Recording (only): Use ADC time as basis for timing:
+				firstsampleonset = ((double) (timeInfo->inputBufferAdcTime - timeInfo->currentTime));
+			}
+			
 			// Store our measured PortAudio + HostAPI + Driver + Hardware latency:
 			dev->predictedLatency = firstsampleonset + dev->latencyBias;
 
@@ -213,8 +239,8 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 		// of the first sample of this callbacks returned buffer:
 		onsetDelta = dev->startTime - firstsampleonset;
 		
-		// Time left until onset?
-		if (onsetDelta > 0) {
+		// Time left until onset and in playback mode?
+		if ((onsetDelta > 0) && (dev->opmode & kPortAudioPlayBack)) {
 			// Some time left: A full buffer duration?
 			if (onsetDelta >= ((double) framesPerBuffer / (double) dev->streaminfo->sampleRate)) {
 				// At least one buffer away. Fill our buffer with zeros, aka silence:
@@ -244,7 +270,8 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 		}
 		else {
 			// Ooops! We are late! Store real estimated onset in the startTime field and
-			// then hurry up!
+			// then hurry up! If we are in "capture only" mode, we disregard the 'when'
+			// deadline and always start immediately.
 			dev->startTime = firstsampleonset;
 
 			// Mark us as running:
@@ -252,31 +279,47 @@ static int paCallback( const void *inputBuffer, void *outputBuffer,
 		}
 	}
     
-	// Copy requested number of samples for each channel into the output buffer: Take the case of
-	// "loop forever" and "loop repeatCount" times into account:
-	for (i=0; (i < framesPerBuffer * channels) && ((repeatCount == -1) || (playposition < (repeatCount * sbsize))); i++) {
-		*out++ = dev->buffer[playposition % sbsize];
-		playposition++;
-	}
-	
-	// Store updated playposition in device structure:
-	dev->playposition = playposition;
-
-	// End of playback reached due to maximum repeatCount reached?
-	if (i < framesPerBuffer * channels) {
-		// Premature stop of buffer filling because repeatCount exceeded.
-		// We need to zero-fill the remainder of the buffer and tell the engine
-		// to finish playback:
-		while(i < framesPerBuffer * channels) {
-			*out++ = 0.0;
-			i++;
+	// This code retrieves and stores captured sound data, if any:
+	if (dev->opmode & kPortAudioCapture) {
+		// This is the simple case (compared to playback processing).
+		// Just copy all available data to our internal buffer:
+		for (i=0; (i < framesPerBuffer * channels); i++) {
+			dev->inputbuffer[recposition % insbsize] = (float) *in++;
+			recposition++;
 		}
 		
-		// Signal that the filled buffers up to this point should be played,
-		// but after that the engine should stop the stream:
-		return(paComplete);
+		// Store updated recording position in device structure:
+		dev->recposition = recposition;
 	}
-
+	
+	// This code emits actual sound data to the engine:
+	if (dev->opmode & kPortAudioPlayBack) {
+		// Copy requested number of samples for each channel into the output buffer: Take the case of
+		// "loop forever" and "loop repeatCount" times into account:
+		for (i=0; (i < framesPerBuffer * channels) && ((repeatCount == -1) || (playposition < (repeatCount * outsbsize))); i++) {
+			*out++ = dev->outputbuffer[playposition % outsbsize];
+			playposition++;
+		}
+		
+		// Store updated playposition in device structure:
+		dev->playposition = playposition;
+		
+		// End of playback reached due to maximum repeatCount reached?
+		if (i < framesPerBuffer * channels) {
+			// Premature stop of buffer filling because repeatCount exceeded.
+			// We need to zero-fill the remainder of the buffer and tell the engine
+			// to finish playback:
+			while(i < framesPerBuffer * channels) {
+				*out++ = 0.0;
+				i++;
+			}
+			
+			// Signal that the filled buffers up to this point should be played,
+			// but after that the engine should stop the stream:
+			return(paComplete);
+		}
+	}
+		
 	// Tell engine to continue stream processing, i.e., call us again...
     return(paContinue);
 }
@@ -291,11 +334,18 @@ void PsychPACloseStream(int id)
 		Pa_CloseStream(stream);
 		audiodevices[id].stream = NULL;
 		
-		// Free associated sound buffer:
-		if(audiodevices[id].buffer) {
-			free(audiodevices[id].buffer);
-			audiodevices[id].buffer = NULL;
-			audiodevices[id].buffersize = 0;
+		// Free associated sound outputbuffer:
+		if(audiodevices[id].outputbuffer) {
+			free(audiodevices[id].outputbuffer);
+			audiodevices[id].outputbuffer = NULL;
+			audiodevices[id].outputbuffersize = 0;
+		}				
+
+		// Free associated sound inputbuffer:
+		if(audiodevices[id].inputbuffer) {
+			free(audiodevices[id].inputbuffer);
+			audiodevices[id].inputbuffer = NULL;
+			audiodevices[id].inputbuffersize = 0;
 		}				
 
 		audiodevicecount--;
@@ -321,8 +371,9 @@ void InitializeSynopsis()
 	synopsis[i++] = "oldbias = PsychPortAudio('LatencyBias', pahandle [,biasSecs]);";
 	synopsis[i++] = "PsychPortAudio('FillBuffer', pahandle, bufferdata);";
 	synopsis[i++] = "startTime = PsychPortAudio('Start', pahandle [, repetitions=1] [, when=0] [, waitForStart=0] );";
-	synopsis[i++] = "startTime = PsychPortAudio('Stop', pahandle);";
-
+	synopsis[i++] = "[startTime endPositionSecs xruns] = PsychPortAudio('Stop', pahandle [,waitForEndOfPlayback=0]);";
+	synopsis[i++] = "[audiodata absrecposition overflow cstarttime] = PsychPortAudio('GetAudioData', pahandle [, amountToAllocateSecs=0]);";
+	
 	synopsis[i++] = NULL;  //this tells PsychDisplayScreenSynopsis where to stop
 	if (i > MAX_SYNOPSIS_STRINGS) {
 		PrintfExit("%s: increase dimension of synopsis[] from %ld to at least %ld and recompile.",__FILE__,(long)MAX_SYNOPSIS_STRINGS,(long)i);
@@ -422,7 +473,7 @@ void PsychPortAudioInitialize(void)
 			PsychErrorExitMsg(PsychError_system, "Failed to initialize PortAudio subsystem.");
 		}
 		else {
-			if(verbosity>2) printf("PTB-INFO: Using PortAudio engine version: %s\n", Pa_GetVersionText());
+			if(verbosity>2) printf("PTB-INFO: Using specially modified PortAudio engine, based on offical version: %s\n", Pa_GetVersionText());
 		}
 		
 		for(i=0; i<MAX_PSYCH_AUDIO_DEVS; i++) {
@@ -446,8 +497,9 @@ PsychError PSYCHPORTAUDIOOpen(void)
 		"logical audio devices supported by PortAudio. Defaults to whatever the systems default sound device is. "
 		"Different device id's may select the same physical device, but controlled by a different low-level sound "
 		"system. E.g., Windows has about five different sound subsystems. 'mode' Mode of operation. Defaults to "
-		"kPortAudioPlayback' i.e., sound playback only. Can be set to 'kPortAudioCapture' for audio "
-		"capture, or 'kPortAudioFullDuplex' for simultaneous capture and playback of sound.\n"
+		"1 == sound playback only. Can be set to 2 == audio capture, or 3 for simultaneous capture and playback of sound. "
+		"Note however that mode 3 (full duplex) does not work reliably on all sound hardware. On some hardware this mode "
+		"may crash Matlab! \n"
 		"'reqlatencyclass' Allows to select how aggressive PsychPortAudio should be about minimizing sound latency "
 		"and getting good deterministic timing, i.e. how to trade off latency vs. system load and playing nicely "
 		"with other sound applications on the system. Level 0 means: Don't care about latency, this mode works always "
@@ -509,7 +561,7 @@ PsychError PSYCHPORTAUDIOOpen(void)
 	PsychCopyInIntegerArg(2, kPsychArgOptional, &mode);
 	if (mode < 1 || mode > 3) PsychErrorExitMsg(PsychError_user, "Invalid mode provided. Valid values are 1 to 3.");
 	
-	if (mode!=1) PsychErrorExitMsg(PsychError_unimplemented, "Sorry, recording and full-duplex mode not yet implemented, only sound playback.");
+	// if (mode==3) PsychErrorExitMsg(PsychError_unimplemented, "Sorry, full-duplex mode not yet implemented.");
 	
 	// Request optional latency class:
 	PsychCopyInIntegerArg(3, kPsychArgOptional, &latencyclass);
@@ -672,14 +724,17 @@ PsychError PSYCHPORTAUDIOOpen(void)
 	}
 	
 	// Setup our final device structure:
+	audiodevices[audiodevicecount].opmode = mode;
 	audiodevices[audiodevicecount].stream = stream;
 	audiodevices[audiodevicecount].streaminfo = Pa_GetStreamInfo(stream);
 	audiodevices[audiodevicecount].hostAPI = Pa_GetHostApiInfo(Pa_GetDeviceInfo(outputParameters.device)->hostApi)->type;
 	audiodevices[audiodevicecount].startTime = 0.0;
 	audiodevices[audiodevicecount].state = 0;
 	audiodevices[audiodevicecount].repeatCount = 1;
-	audiodevices[audiodevicecount].buffer = NULL;
-	audiodevices[audiodevicecount].buffersize = 0;
+	audiodevices[audiodevicecount].outputbuffer = NULL;
+	audiodevices[audiodevicecount].outputbuffersize = 0;
+	audiodevices[audiodevicecount].inputbuffer = NULL;
+	audiodevices[audiodevicecount].inputbuffersize = 0;
 	audiodevices[audiodevicecount].channels = channels;
 	audiodevices[audiodevicecount].latencyBias = 0.0;
 	
@@ -753,7 +808,7 @@ PsychError PSYCHPORTAUDIOClose(void)
 	return(PsychError_none);
 }
 
-/* PsychPortAudio('FillBuffer') - Fill audio buffer of a device with data.
+/* PsychPortAudio('FillBuffer') - Fill audio outputbuffer of a device with data.
  */
 PsychError PSYCHPORTAUDIOFillAudioBuffer(void) 
 {
@@ -786,6 +841,7 @@ PsychError PSYCHPORTAUDIOFillAudioBuffer(void)
 
 	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
 	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided.");
+	if (audiodevices[pahandle].opmode & kPortAudioPlayBack == 0) PsychErrorExitMsg(PsychError_user, "Audio device has not been opened for audio playback, so this call doesn't make sense.");
 
 	PsychAllocInDoubleMatArg(2, kPsychArgRequired, &inchannels, &insamples, &p, &indata);
 	if (inchannels != audiodevices[pahandle].channels) {
@@ -804,22 +860,23 @@ PsychError PSYCHPORTAUDIOFillAudioBuffer(void)
 
 	// Ok, everything sane, fill the buffer:
 	buffersize = sizeof(float) * inchannels * insamples;
-	if (audiodevices[pahandle].buffer && (audiodevices[pahandle].buffersize != buffersize)) {
-		free(audiodevices[pahandle].buffer);
-		audiodevices[pahandle].buffer = NULL;
-		audiodevices[pahandle].buffersize = 0;
+	if (audiodevices[pahandle].outputbuffer && (audiodevices[pahandle].outputbuffersize != buffersize)) {
+		free(audiodevices[pahandle].outputbuffer);
+		audiodevices[pahandle].outputbuffer = NULL;
+		audiodevices[pahandle].outputbuffersize = 0;
 	}
 	
-	if (audiodevices[pahandle].buffer == NULL) {
-		audiodevices[pahandle].buffersize = buffersize;
-		audiodevices[pahandle].buffer = (float*) malloc(buffersize);
-		if (audiodevices[pahandle].buffer==NULL) PsychErrorExitMsg(PsychError_outofMemory, "Out of system memory when trying to allocate audio buffer.");
+	if (audiodevices[pahandle].outputbuffer == NULL) {
+		audiodevices[pahandle].outputbuffersize = buffersize;
+		audiodevices[pahandle].outputbuffer = (float*) malloc(buffersize);
+		if (audiodevices[pahandle].outputbuffer==NULL) PsychErrorExitMsg(PsychError_outofMemory, "Out of system memory when trying to allocate audio buffer.");
 	}
 	
+	// Reset play position:
 	audiodevices[pahandle].playposition = 0;
 	
 	// Copy the data, convert it from double to float:
-	outdata = audiodevices[pahandle].buffer;
+	outdata = audiodevices[pahandle].outputbuffer;
 	while(buffersize) {
 		*(outdata++) = (float) *(indata++);
 		buffersize-=sizeof(float);
@@ -828,6 +885,168 @@ PsychError PSYCHPORTAUDIOFillAudioBuffer(void)
 	// Buffer ready.
 	return(PsychError_none);
 }
+
+/* PsychPortAudio('GetAudioData') - Retrieve captured audio data.
+ */
+PsychError PSYCHPORTAUDIOGetAudioData(void) 
+{
+ 	static char useString[] = "[audiodata absrecposition overflow cstarttime] = PsychPortAudio('GetAudioData', pahandle [, amountToAllocateSecs]);";
+	static char synopsisString[] = 
+		"UNFINISHED INTERFACE - DONT USE UNTIL YOU REALLY KNOW WHAT YOU ARE DOING! "
+		"Retrieve captured audio data from a audio device. 'pahandle' is the handle of the device "
+		"whose data is to be retrieved. 'audiodata' is a Matlab double matrix with audio data in double format. Each "
+		"row of the matrix returns one sound channel, each column one sample for each channel. Only floating point "
+		"values in double precision are returned. Samples will be in range -1.0 to +1.0, 0.0 for silence. This is "
+		"intentionally a very restricted interface. For lowest latency and best timing we want you to accept audio "
+		"data exactly at the optimal format and sample rate, so the driver can safe computation time and latency for "
+		"expensive sample rate conversion, sample format conversion, and bounds checking/clipping.\n"
+		"'absrecposition' is the absolute position (in samples) of the first column in the returned data matrix, "
+		"assuming that sample zero was the very first recorded sample in this session. The count is reset each time "
+		"you start a new capture session via call to PsychPortAudio('Start').\n"
+		"Each call to this function will return a new chunk of recorded sound data. The 'absrecposition' provides "
+		"you with absolute matrix column indices to stitch together the results of all calls into one seamless "
+		"recording if you want. 'overflow' if this flat is zero then everything went fine. If it is one then you "
+		"didn't manage to call this function frequent enough, the capacity of the internal recording buffer was "
+		"exceeded and therefore you lost captured sound data, i.e., there is a gap in your recording. When "
+		"initially allocating the internal buffer, make sure to allocate it big enough so it is able to easily "
+		"store all recorded data inbetween your calls to 'GetAudioData'. Example: You expect to call this routine "
+		"once every second in your trial loop, then allocate a sound buffer of at least 2 seconds for some security "
+		"headroom. If you know that the recording time of each recording has an upper bound then you can allocate "
+		"an internal buffer of sufficient size and fetch the buffer all at once at the end of a recording.\n"
+		"'ctsstarttime' this is an estimate of the system time (in seconds) when the very first sample of this "
+		"recording was captured by the sound input of your hardware. This is only a rough estimate, not to be "
+		"trusted down to the millisecond level, at least not without former careful calibration of your setup!\n";
+
+	static char seeAlsoString[] = "Open GetDeviceSettings ";	 
+  	
+	int inchannels, insamples, p, buffersize;
+	double*	indata = NULL;
+	float*  outdata = NULL;
+	int pahandle   = -1;
+	double allocsize;
+	int overrun = 0;
+	
+	// Setup online help: 
+	PsychPushHelp(useString, synopsisString, seeAlsoString);
+	if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none); };
+	
+	PsychErrorExit(PsychCapNumInputArgs(2));     // The maximum number of inputs
+	PsychErrorExit(PsychRequireNumInputArgs(1)); // The required number of inputs	
+	PsychErrorExit(PsychCapNumOutputArgs(4));	 // The maximum number of outputs
+
+	// Make sure PortAudio is online:
+	PsychPortAudioInitialize();
+
+	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
+	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided.");
+	if (audiodevices[pahandle].opmode & kPortAudioCapture == 0) PsychErrorExitMsg(PsychError_user, "Audio device has not been opened for audio capture, so this call doesn't make sense.");
+
+	buffersize = audiodevices[pahandle].inputbuffersize;
+	
+	// Copy in optional amount of buffer memory to allocate for internal recording ringbuffer:
+	allocsize = 0;
+	PsychCopyInDoubleArg(2, kPsychArgOptional, &allocsize);
+
+	// Internal capture ringbuffer already allocated?
+	if (buffersize == 0) {
+		// Nope. This call needs to allocate it.
+		if (allocsize <= 0) PsychErrorExitMsg(PsychError_user, "You must first call this function with a positive 'amountToAllocateSecs' argument to allocate internal bufferspace first!");
+		
+		// Ready to allocate ringbuffer memory outside this if-clause...
+	}
+	else {
+		// Buffer already allocated. Need to realloc?
+		if (allocsize > 0) {
+			// Calling script wants to reallocate the buffer. Check if this is possible here:
+			
+			// Test 1: Pending samples to read from current ringbuffer?
+			if (audiodevices[pahandle].readposition < audiodevices[pahandle].recposition) PsychErrorExitMsg(PsychError_user, "Tried to resize internal buffer without emptying it beforehand. You must drain the buffer before resizing it!");
+
+			// Test 2: Engine running?
+			if (audiodevices[pahandle].state > 0) PsychErrorExitMsg(PsychError_user, "Tried to resize internal buffer while recording engine is running! You must stop recording before resizing the buffer!");
+			
+			// Ok, reallocation allowed. Delete old buffer:
+			audiodevices[pahandle].inputbuffersize = 0;
+			free(audiodevices[pahandle].inputbuffer);
+			audiodevices[pahandle].inputbuffer = NULL;
+			
+			// At this point we are ready to re-allocate ringbuffer outside this if-clause...
+		}
+	}
+	
+	// Still (re-)allocation wanted?
+	if (allocsize > 0) {
+		// Calculate needed buffersize in samples: Convert allocsize in seconds to size in bytes:
+		audiodevices[pahandle].inputbuffersize = sizeof(float) * ((int) (allocsize * audiodevices[pahandle].streaminfo->sampleRate)) * audiodevices[pahandle].channels;
+		audiodevices[pahandle].inputbuffer = (float*) calloc(1, audiodevices[pahandle].inputbuffersize);
+		if (audiodevices[pahandle].inputbuffer == NULL) PsychErrorExitMsg(PsychError_outofMemory, "Free system memory exhausted when trying to allocate audio recording buffer!");
+
+		// This was an (re-)allocation call, so no data is pending in the buffer.
+		// Therefore we don't return any data, just reset the counters:
+		audiodevices[pahandle].recposition = 0;
+		audiodevices[pahandle].readposition = 0;
+		return(PsychError_none);
+	}
+	
+	// This is not an allocation call, but a real data fetch call:
+	
+	// How much samples are available in ringbuffer to fetch?
+	insamples = audiodevices[pahandle].recposition - audiodevices[pahandle].readposition;
+	
+	// Never ever fetch the samples for the last sampleframe. We do not want to fetch
+	// a possibly not yet updated or incomplete sample frame. Leave this to next call
+	// of this function. Well, unless state is zero == engine stopped. In that case we
+	// know that the playhead won't move anymore and we can safely fetch all remaining
+	// data.
+	if (audiodevices[pahandle].state > 0) {
+		insamples = insamples - (insamples % audiodevices[pahandle].channels);
+		insamples-= audiodevices[pahandle].channels;
+	}
+	
+	insamples = (insamples < 0) ? 0 : insamples;
+	buffersize = insamples * sizeof(float);
+
+	// Buffer "overflow" detected?
+	if (buffersize > audiodevices[pahandle].inputbuffersize) {
+		// Ok, the buffer did overrun and captured data was lost. Limit returned data
+		// to buffersize and set the overrun flag, optionally output a warning:
+		buffersize = audiodevices[pahandle].inputbuffersize;
+		insamples = buffersize / sizeof(float);
+		
+		// Set overrun flag:
+		overrun = 1;
+		
+		if (verbosity > 1) printf("PsychPortAudio-WARNING: Overflow of audio capture buffer detected. Some sound data will be lost!\n");
+	}
+	
+	// Allocate output double matrix with matching number of channels and samples:
+	PsychAllocOutDoubleMatArg(1, FALSE, audiodevices[pahandle].channels, insamples / audiodevices[pahandle].channels, 1, &indata);
+
+	// Copy out absolute sample read position of first sample in buffer:
+	PsychCopyOutDoubleArg(2, FALSE, (double) (audiodevices[pahandle].readposition / audiodevices[pahandle].channels));
+
+	// Copy the data, convert it from float to double: Take ringbuffer wraparound into account:
+	while(buffersize > 0) {
+		// Fetch next sample and copy it to matrix:
+		*(indata++) = (double) audiodevices[pahandle].inputbuffer[(audiodevices[pahandle].readposition % (audiodevices[pahandle].inputbuffersize / sizeof(float)))];
+
+		// Update sample read counter:
+		audiodevices[pahandle].readposition++;
+		
+		// Decrement copy counter:
+		buffersize-=sizeof(float);
+	}
+
+	// Copy out overrun flag:
+	PsychCopyOutDoubleArg(3, FALSE, (double) overrun);
+
+	// Return capture timestamp in system time of first captured sample in this session:
+	PsychCopyOutDoubleArg(4, FALSE, audiodevices[pahandle].startTime);
+	
+	// Buffer ready.
+	return(PsychError_none);
+}
+
 
 /* PsychPortAudio('Start') - Start an audio device via PortAudio.
  */
@@ -843,8 +1062,9 @@ PsychError PSYCHPORTAUDIOStartAudioDevice(void)
 		"do its best to start the device at the requested time, but the accuracy of start depends on the "
 		"operating system, audio hardware and system load. If 'waitForStart' is set to non-zero value, ie "
 		"if PTB should wait for sound onset, then the optional return argument 'startTime' will contain an "
-		"estimate of when the first audio sample hit the speakers, i.e., the real start time. ";
-	static char seeAlsoString[] = "Open GetDeviceSettings ";	 
+		"estimate of when the first audio sample hit the speakers, i.e., the real start time.\n";
+		
+	static char seeAlsoString[] = "Open";	 
   	
 	PaError err;
 	int pahandle= -1;
@@ -865,7 +1085,8 @@ PsychError PSYCHPORTAUDIOStartAudioDevice(void)
 
 	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
 	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided.");
-	if (audiodevices[pahandle].buffer == NULL) PsychErrorExitMsg(PsychError_user, "Sound buffer doesn't contain any sound to play?!?");
+	if ((audiodevices[pahandle].opmode & kPortAudioPlayBack) && (audiodevices[pahandle].outputbuffer == NULL)) PsychErrorExitMsg(PsychError_user, "Sound outputbuffer doesn't contain any sound to play?!?");
+	if ((audiodevices[pahandle].opmode & kPortAudioCapture) && (audiodevices[pahandle].inputbuffer == NULL)) PsychErrorExitMsg(PsychError_user, "Sound inputbuffer not prepared/allocated for capture?!?");
 	if (audiodevices[pahandle].state > 0) PsychErrorExitMsg(PsychError_user, "Device already started.");
 
 	PsychCopyInIntegerArg(2, kPsychArgOptional, &repetitions);
@@ -888,6 +1109,15 @@ PsychError PSYCHPORTAUDIOStartAudioDevice(void)
 	audiodevices[pahandle].xruns = 0;	
 	audiodevices[pahandle].paCalls = 0;
 	audiodevices[pahandle].noTime = 0;
+	
+	// Reset recorded samples counter:
+	audiodevices[pahandle].recposition = 0;
+
+	// Reset read samples counter: This will discard possibly not yet fetched data.
+	audiodevices[pahandle].readposition = 0;
+
+	// Reset play position:
+	audiodevices[pahandle].playposition = 0;
 	
 	// Mark state as hot-started:
 	audiodevices[pahandle].state = 1;
@@ -924,25 +1154,31 @@ PsychError PSYCHPORTAUDIOStartAudioDevice(void)
  */
 PsychError PSYCHPORTAUDIOStopAudioDevice(void) 
 {
- 	static char useString[] = "[startTime endPositionSecs xruns]= PsychPortAudio('Stop', pahandle);";
+ 	static char useString[] = "[startTime endPositionSecs xruns] = PsychPortAudio('Stop', pahandle [,waitForEndOfPlayback=0]);";
 	static char synopsisString[] = 
 		"Stop a PortAudio audio device. The 'pahandle' is the handle of the device to stop. "
+		"'waitForEndOfPlayback' - If set to non-zero value, this method will wait until playback "
+		"of the audio stream finishes by itself. This only makes sense if you perform playback with "
+		"a limited number of repetitions. The flag will be ignored when infinite repetition is "
+		"requested (as playback would never stop by itself) or if this is pure recording.\n"
 		"The optional return argument 'startTime' returns an estimate of when the stopped "
-		"stream actually started its playback. Its the same timestamp returned by the start "
-		"command when executed in waiting mode. 'endPositionSecs' is the final playback "
-		"position in seconds. 'xruns' is the number of buffer over- or underruns. This should "
-		"be zero if the playback was glitch-free, however a zero value doesn't imply glitch "
-		"free playback, as the algorithm can miss some types of glitches. ";		
+		"stream actually started its playback and/or recording. Its the same timestamp as the one "
+		"returned by the start command when executed in waiting mode. 'endPositionSecs' is the final "
+		"playback/recording position in seconds. 'xruns' is the number of buffer over- or underruns. "
+		"This should be zero if the operation was glitch-free, however a zero value doesn't imply glitch "
+		"free operation, as the algorithm can miss some types of glitches. ";
+		
 	static char seeAlsoString[] = "Open GetDeviceSettings ";	 
 	
 	PaError err;
 	int pahandle= -1;
-
+	int waitforend = 0;
+	
 	// Setup online help: 
 	PsychPushHelp(useString, synopsisString, seeAlsoString);
 	if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none); };
 	
-	PsychErrorExit(PsychCapNumInputArgs(1));     // The maximum number of inputs
+	PsychErrorExit(PsychCapNumInputArgs(2));     // The maximum number of inputs
 	PsychErrorExit(PsychRequireNumInputArgs(1)); // The required number of inputs	
 	PsychErrorExit(PsychCapNumOutputArgs(3));	 // The maximum number of outputs
 
@@ -952,6 +1188,17 @@ PsychError PSYCHPORTAUDIOStopAudioDevice(void)
 	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
 	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided.");
 
+	// Get optional wait-flag:
+	PsychCopyInIntegerArg(2, kPsychArgOptional, &waitforend);
+	
+	// Wait for automatic stop of playback if requested: This only makes sense if we
+	// are in playback mode and not in infinite playback mode! Would not make sense in
+	// looping mode (infinite repetitions of playback) or pure recording mode:
+	if ((waitforend > 0) && (audiodevices[pahandle].state > 0) && (audiodevices[pahandle].opmode & kPortAudioPlayBack) && (audiodevices[pahandle].repeatCount != -1)) {
+		// Wait until stream finishes by itself:
+		while (Pa_IsStreamActive(audiodevices[pahandle].stream)) PsychWaitIntervalSeconds(0.001);
+	}
+	
 	// Try to stop stream. Skip if already stopped/not yet started:
 	if ((audiodevices[pahandle].state > 0) && ((err=Pa_StopStream(audiodevices[pahandle].stream))!=paNoError)) {
 		printf("PTB-ERROR: Failed to stop audio device %i. PortAudio reports this error: %s \n", pahandle, Pa_GetErrorText(err));
@@ -972,11 +1219,7 @@ PsychError PSYCHPORTAUDIOStopAudioDevice(void)
 	
 	// Mark state as stopped:
 	audiodevices[pahandle].state = 0;
-
-	// Reset play position:
-	audiodevices[pahandle].playposition = 0;
 	
-
 	return(PsychError_none);
 }
 
@@ -986,28 +1229,34 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 {
  	static char useString[] = "status = PsychPortAudio('GetStatus', pahandle);";
 	static char synopsisString[] = 
-		"Returns 'status', a struct with status information about the current state of device 'pahandle'. "
-		"Playing: Can be 1 if playback is active, or 0 if playback is stopped or not yet started. "
-		"StartTime: Is the real start time of the audio stream after start of playback. PositionSecs is "
-		"an estimate of the current stream playback position in seconds, its not totally accurate, because "
+		"Returns 'status', a struct with status information about the current state of device 'pahandle'.\n"
+		"The struct contains the following fields:\n"
+		"Playing: Can be 1 if playback or recording is active, or 0 if playback/recording is stopped or not yet started.\n"
+		"StartTime: Is the real start time of the audio stream after start of playback/recording.\n"
+		"PositionSecs is an estimate of the current stream playback position in seconds, its not totally accurate, because "
 		"it measures how much sound has been submitted to the sound system, not how much sound has left the "
-		"speakers, i.e., it doesn't take driver and hardware latency into account. XRuns: Number of dropouts "
-		"due to buffer overrun or underrun conditions. TotalCalls, TimeFailed and BufferSize are only for "
-		"debugging of PsychPortAudio itself. CPULoad: How much load does the playback engine impose on the "
-		"CPU? Values can range from 0.0 = 0% to 1.0 for 100%. Values close to 1.0 indicate that your system "
-		"can't handle the load and timing glitches or sound glitches are likely. In such a case, try to reduce "
-		"the load on your system. PredictedLatency: Is the latency of your driver+hardware combo. It tells you, "
+		"speakers, i.e., it doesn't take driver and hardware latency into account.\n"
+		"XRuns: Number of dropouts due to buffer overrun or underrun conditions.\n"
+		"TotalCalls, TimeFailed and BufferSize are only for debugging of PsychPortAudio itself.\n"
+		"CPULoad: How much load does the playback engine impose on the CPU? Values can range from 0.0 = 0% "
+		"to 1.0 for 100%. Values close to 1.0 indicate that your system can't handle the load and timing glitches "
+		"or sound glitches are likely. In such a case, try to reduce the load on your system.\n"
+		"PredictedLatency: Is the latency in seconds of your driver+hardware combo. It tells you, "
 		"how far ahead of time a sound device must be started ahead of the requested onset time via "
 		"PsychPortAudio('Start'...) to make sure it actually starts playing in time. High quality systems like "
 		"Linux or MacOS/X may allow values as low as 5 msecs or less on standard hardware. Other operating "
-		"systems may require dozens or hundreds of milliseconds of headstart. LatencyBias is an additional bias "
-		"setting you can impose via PsychPortAudio('LatencyBias', pahandle, bias); in case our drivers estimate "
-		"is a bit off. Allows fine-tuning.";
-		
+		"systems may require dozens or hundreds of milliseconds of headstart.\n"
+		"LatencyBias: Is an additional bias setting you can impose via PsychPortAudio('LatencyBias', pahandle, bias); "
+		"in case our drivers estimate is a bit off. Allows fine-tuning.\n"
+		"SampleRate: Is the sampling rate for playback/recording in samples per second (Hz).\n"
+		"RecordedSecs: Is the total amount of recorded sound data (in seconds) since start of capture.\n"
+		"ReadSecs: Is the total amount of sound data (in seconds) that has been fetched from the internal buffer. "
+		"The difference between RecordedSecs and ReadSecs is the amount of recorded sound data pending for retrieval. ";
+
 	static char seeAlsoString[] = "Open GetDeviceSettings ";	 
 	PsychGenericScriptType 	*status;
-	const char *FieldNames[]={	"Playing", "StartTime", "PositionSecs", "XRuns", "TotalCalls", "TimeFailed", "BufferSize", "CPULoad", "PredictedLatency",
-								"LatencyBias"};
+	const char *FieldNames[]={	"Playing", "StartTime", "PositionSecs", "RecordedSecs", "ReadSecs", "XRuns", "TotalCalls", "TimeFailed", "BufferSize", "CPULoad", "PredictedLatency",
+								"LatencyBias", "SampleRate"};
 	int pahandle = -1;
 	int count = 0;
 	int i;
@@ -1028,11 +1277,13 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
 	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided.");
 
-	PsychAllocOutStructArray(1, kPsychArgOptional, 1, 10, FieldNames, &status);
+	PsychAllocOutStructArray(1, kPsychArgOptional, 1, 13, FieldNames, &status);
 	
 	PsychSetStructArrayDoubleElement("Playing", 0, (audiodevices[pahandle].state == 2) ? 1 : 0, status);
 	PsychSetStructArrayDoubleElement("StartTime", 0, audiodevices[pahandle].startTime, status);
 	PsychSetStructArrayDoubleElement("PositionSecs", 0, ((double)(audiodevices[pahandle].playposition / audiodevices[pahandle].channels)) / (double) audiodevices[pahandle].streaminfo->sampleRate, status);
+	PsychSetStructArrayDoubleElement("RecordedSecs", 0, ((double)(audiodevices[pahandle].recposition / audiodevices[pahandle].channels)) / (double) audiodevices[pahandle].streaminfo->sampleRate, status);
+	PsychSetStructArrayDoubleElement("ReadSecs", 0, ((double)(audiodevices[pahandle].readposition / audiodevices[pahandle].channels)) / (double) audiodevices[pahandle].streaminfo->sampleRate, status);
 	PsychSetStructArrayDoubleElement("XRuns", 0, audiodevices[pahandle].xruns, status);
 	PsychSetStructArrayDoubleElement("TotalCalls", 0, audiodevices[pahandle].paCalls, status);
 	PsychSetStructArrayDoubleElement("TimeFailed", 0, audiodevices[pahandle].noTime, status);
@@ -1040,6 +1291,7 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 	PsychSetStructArrayDoubleElement("CPULoad", 0, Pa_GetStreamCpuLoad(audiodevices[pahandle].stream), status);
 	PsychSetStructArrayDoubleElement("PredictedLatency", 0, audiodevices[pahandle].predictedLatency, status);
 	PsychSetStructArrayDoubleElement("LatencyBias", 0, audiodevices[pahandle].latencyBias, status);
+	PsychSetStructArrayDoubleElement("SampleRate", 0, audiodevices[pahandle].streaminfo->sampleRate, status);
 	return(PsychError_none);
 }
 

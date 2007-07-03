@@ -2,7 +2,7 @@ function InitializePsychSound(reallyneedlowlatency)
 % InitializePsychSound([reallyneedlowlatency=0])
 %
 % This routine loads the PsychPortAudio sound driver for high-precision,
-% low-latency, multi-channel sound playback.
+% low-latency, multi-channel sound playback and recording.
 %
 % Call it at the beginning of your experiment script, optionally providing
 % the 'reallyneedlowlatency' flag set to one to push really hard for low
@@ -25,7 +25,7 @@ function InitializePsychSound(reallyneedlowlatency)
 %
 % If you need really low latency or high precision sound on Windows, there's
 % a second option which, for legal and technical reasons, requires a bit
-% more effort and paper-work. Some (usually more expensive > 100$) sound
+% more effort of you: Some (usually more expensive > 150$) sound
 % cards ship with ASIO enabled sound drivers, or at least there's such a
 % driver available from the support area of your sound card vendors website.
 %
@@ -41,7 +41,7 @@ function InitializePsychSound(reallyneedlowlatency)
 % special ASIO enabled version of the "portaudio_x86.dll" driver plugin for
 % Psychtoolbox:
 %
-% 1. Contact Mario Kleiner for instructions on how to get the driver.
+% 1. Contact Mario Kleiner and ask him for a copy of the driver.
 %
 % 2. When you have the driver, copy it into your Psychtoolbox root folder -
 % the top level folder named "Psychtoolbox".
@@ -81,7 +81,7 @@ if IsWin
         fprintf('really accurate sound onset timing and latency < 30 msecs, please read\n');
         fprintf('"help InitializePsychSound" carefully and follow the instructions.\n');
         fprintf('Will use our standard driver instead of enhanced driver...\n');
-        driverloadpath = [PsychtoolboxRoot 'PsychSound\'];
+        driverloadpath = [PsychtoolboxRoot 'PsychSound'];
         asio = 0;
     end
 
@@ -124,7 +124,30 @@ end
 
 % Maybe some tricks (in the future) for OS/X? None yet.
 if IsOSX
-    fprintf('PsychPortAudio initialized. Will use CoreAudio for output.\n');
+    try
+        % We force loading+linking+init of the driver here, so in case
+        % something goes wrong we can catch this and output useful
+        % troubleshooting tips to the user:
+        d = PsychPortAudio('GetDevices');
+        fprintf('PsychPortAudio initialized. Will use CoreAudio for output.\n');
+    catch
+        fprintf('Failed to load PsychPortAudio driver!\n\n');
+        fprintf('The most likely cause is that the helper library libportaudio.0.0.19.dylib is not\n');
+        fprintf('stored in one of the library directories. This is the case at first use of the new\n');
+        fprintf('sound driver.\n\n');
+        fprintf('A copy of this file can be found in %s \n', [PsychtoolboxRoot 'PsychSound/libportaudio.0.0.19.dylib']);
+        fprintf('You need to copy that file into one of the following directories, then retry:\n');
+        fprintf('If you have administrator permissions, copy it to (at your option): /usr/local/lib\n');
+        fprintf('or /usr/lib  -- you may need to create that directories first.\n\n');
+        fprintf('If you are a normal user, you can also create a subdirectory lib/ in your home folder\n');
+        fprintf('then copy the file there. E.g., your user name is lisa, then copy the file into\n');
+        fprintf('/Users/lisa/lib/ \n\n');
+        fprintf('Please try this steps, then restart your script.\n\n');
+        em = psychlasterror;
+        fprintf('The exact error message of the linker was: %s\n', em.message);
+        fprintf('\n\n');
+        error('Failed to load PsychPortAudio driver.');
+    end
 end
 
 return;

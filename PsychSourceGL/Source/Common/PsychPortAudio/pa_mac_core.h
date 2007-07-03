@@ -1,3 +1,6 @@
+#ifndef PA_MAC_CORE_H
+#define PA_MAC_CORE_H
+
 /*
  * PortAudio Portable Real-Time Audio Library
  * Macintosh Core Audio specific extensions
@@ -111,3 +114,4 @@ const unsigned long paMacCoreMinimizeCPU = 0x0101;
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
+#endif /* PA_MAC_CORE_H */

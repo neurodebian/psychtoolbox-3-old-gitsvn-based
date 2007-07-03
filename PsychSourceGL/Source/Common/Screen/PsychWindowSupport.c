@@ -285,11 +285,6 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     // Now we start to fill in the remaining windowRecord with settings:
     // -----------------------------------------------------------------
 
-    if (PSYCH_SYSTEM == PSYCH_OSX) {
-        // Override for window rectangle: On OS-X we only support fullscreen mode:
-        PsychCopyRect((*windowRecord)->rect, screenSettings->rect);
-    }
-
     // Normalize final windowRect: It is shifted so that its top-left corner is
     // always the origin (0,0). This way we lose the information about the absolute
     // position of the window on the screen, but this can be still queried from the
@@ -1272,7 +1267,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             // it makes sense (MK). We avoid this redundant flush, if a pipeline flush has
             // been already done by other routines, e.g, SCREENDrawingFinished.
             if (!windowRecord->PipelineFlushDone) glFlush();
-            
+
             // We'll sleep - and hope that the OS will wake us up in time, if the remaining waiting
             // time is more than 0 milliseconds. This way, we don't burn up valuable CPU cycles by
             // busy waiting and don't get punished by the overload detection of the OS:
@@ -1427,7 +1422,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 				// we've already verified correct working of the queries during startup.
 				if ((*beamPosAtFlip < 0) || (*beamPosAtFlip > vbl_endline)) {
 					// Ok, this is completely foo-bared.
-					printf("PTB-ERROR: Beamposition query after flip returned the *impossible* value %i (Valid would be between zero and %i)!!!\n", *beamPosAtFlip, vbl_endline);
+					printf("PTB-ERROR: Beamposition query after flip returned the *impossible* value %i (Valid would be between zero and %i)!!!\n", *beamPosAtFlip, (int) vbl_endline);
 					printf("PTB-ERROR: This is a severe malfunction, indicating a bug in your graphics driver. Will disable beamposition queries from now on.\n");
 					printf("PTB-ERROR: Timestamps returned by Flip will be correct, but less robust and accurate than they would be with working beamposition queries.\n");
 					printf("PTB-ERROR: It's strongly recommended to update your graphics driver and optionally file a bug report to your vendor if that doesn't help.\n");
