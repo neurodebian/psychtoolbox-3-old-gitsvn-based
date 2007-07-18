@@ -959,12 +959,19 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 		PsychTestForGLErrors();
 
 		// Do we have support for combined 24 bit depth and 8 bit stencil buffer textures?
-		if (glewIsSupported("GL_EXT_packed_depth_stencil")) {
+		if (glewIsSupported("GL_EXT_packed_depth_stencil") || (glewIsSupported("GL_NV_packed_depth_stencil") && glewIsSupported("GL_SGIX_depth_texture"))) {
 			// Yes! Create combined depth and stencil texture:
 			if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: packed_depth_stencil supported. Attaching combined 24 bit depth + 8 bit stencil texture...\n"); 
 
 			// Create proper texture: Just allocate proper format, don't assign data.
-			glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH24_STENCIL8_EXT, width, height, 0, GL_DEPTH_STENCIL_EXT, GL_UNSIGNED_INT_24_8_EXT, NULL);
+            if (glewIsSupported("GL_EXT_packed_depth_stencil")) {
+                glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH24_STENCIL8_EXT, width, height, 0, GL_DEPTH_STENCIL_EXT, GL_UNSIGNED_INT_24_8_EXT, NULL);
+            }
+            else {
+                // Ancient drivers with only NV extension support...
+                glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH_COMPONENT24_SGIX, width, height, 0, GL_DEPTH_STENCIL_EXT, GL_UNSIGNED_INT_24_8_EXT, NULL);
+            }
+            
 			PsychTestForGLErrors();
 
 			// Texture ready, unbind it.
@@ -972,8 +979,21 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 			
 			// Attach the texture as depth buffer...
 			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_TEXTURE_RECTANGLE_EXT, (*fbo)->ztexid, 0);
+			PsychTestForGLErrors();
 			// ... and as stencil buffer ...
 			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_TEXTURE_RECTANGLE_EXT, (*fbo)->ztexid, 0);
+			if (glGetError()) {
+                // Attaching stencil buffer doesnt work :( We try to live without it...
+                while(glGetError());
+				if (PsychPrefStateGet_Verbosity()>1) {
+					printf("PTB-WARNING: OpenGL stencil buffers not supported in imagingmode by your hardware. This won't affect Screen 2D drawing functions and won't affect\n");
+					printf("PTB-WARNING: the majority of OpenGL (MOGL) 3D drawing code either, but OpenGL code that needs a stencil buffer will misbehave or fail in random ways!\n");
+					printf("PTB-WARNING: If you need to use such code, you'll either have to disable the internal imaging pipeline, or carefully work-around this limitation by\n");
+					printf("PTB-WARNING: proper modifications and testing of the affected code. Good luck... Alternatively, upgrade your graphics hardware or drivers. According to specs,\n");
+					printf("PTB-WARNING: all gfx-cards starting with GeForceFX 5200 on Windows and Linux and all cards on Intel-Macs except the Intel GMA cards should work, whereas\n");
+					printf("PTB-WARNING: none of the PowerPC hardware is supported as of OS-X 10.4.9.\n"); 
+				}
+            }
 		}
 		else {
 			// Packed depth+stencil textures unsupported :( 
@@ -1005,7 +1025,7 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 					printf("PTB-WARNING: OpenGL stencil buffers not supported in imagingmode by your hardware. This won't affect Screen 2D drawing functions and won't affect\n");
 					printf("PTB-WARNING: the majority of OpenGL (MOGL) 3D drawing code either, but OpenGL code that needs a stencil buffer will misbehave or fail in random ways!\n");
 					printf("PTB-WARNING: If you need to use such code, you'll either have to disable the internal imaging pipeline, or carefully work-around this limitation by\n");
-					printf("PTB-WARNING: proper modifications and testing of the affected code. Good luck... Alternatively, upgrade your graphics hardware. According to specs,\n");
+					printf("PTB-WARNING: proper modifications and testing of the affected code. Good luck... Alternatively, upgrade your graphics hardware or drivers. According to specs,\n");
 					printf("PTB-WARNING: all gfx-cards starting with GeForceFX 5200 on Windows and Linux and all cards on Intel-Macs except the Intel GMA cards should work, whereas\n");
 					printf("PTB-WARNING: none of the PowerPC hardware is supported as of OS-X 10.4.9.\n"); 
 				}
@@ -1077,7 +1097,7 @@ Boolean PsychCreateFBO(PsychFBO** fbo, GLenum fboInternalFormat, Boolean needzbu
 				printf("floating point format ");
 			}
 			else {
-				printf("fixed point foramt ");
+				printf("fixed point format ");
 			}
 		}
 		else {
@@ -1840,7 +1860,7 @@ boolean PsychPipelineExecuteHook(PsychWindowRecordType *windowRecord, int hookId
 					break;
 					
 				case kPsychBuiltinFunc:
-					printf("Builtin-Function : Name= %s\n", hookfunc->idString);
+					printf("Builtin-Function : Name= %s : Params= %s\n", hookfunc->idString, hookfunc->pString1);
 					break;
 			}
 		}
@@ -2109,10 +2129,14 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 	
 	// Select proper blitter function:
 	
+	// Initialize with master blitter function (if any). If none set,
+	// this will init to NULL:
+	blitterfnc = hookBlitterFunction;
+	
 	// Any special override blitter defined in parameter string?
 	if (strstr(hookfunc->pString1, "Blitter:")) {
 		// Yes. Which one?
-		hookBlitterFunction = NULL;
+		blitterfnc = NULL;
 		
 		// Standard blitter? This one does a one-to-one copy without special geometric transformations.
 		if (strstr(hookfunc->pString1, "Blitter:IdentityBlit")) blitterfnc = &PsychBlitterIdentity; // Assign our standard one-to-one blitter.
@@ -2127,13 +2151,9 @@ boolean PsychPipelineExecuteBlitter(PsychWindowRecordType *windowRecord, PsychHo
 		}
 	}
 	
-	// Master blitter function set?
-	if (hookBlitterFunction == NULL) {
+	if (blitterfnc == NULL) {
 		// No blitter set up to now. Assign the default blitter:
 		blitterfnc = &PsychBlitterIdentity; // Assign our standard one-to-one blitter.
-	} else {
-		// Override blitter defined: Assign it.
-		blitterfnc = (PsychBlitterFunc) hookBlitterFunction;
 	}
 	
 	// TODO: Common setup code for texturing, filtering, alpha blending, z-test and such...
