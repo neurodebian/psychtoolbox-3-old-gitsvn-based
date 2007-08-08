@@ -64,7 +64,11 @@ void mogl_usageerr();
 // more picky about function pointer assignments and will abort for hacks like in
 // mogl_rebind...  -> Move this function into separate file, compile that file as
 // C file, make the compiler happy.
-#ifndef TARGET_OS_WIN32
+
+// Need different cases for C++ compilation vs. C compilation: On OS/X we do C
+// compiles for Matlab builds, but C++ compiles for Octave builds. On Windows
+// (i think) we do pure C builds.
+#ifdef PTBOCTAVE
 extern "C" void mogl_rebindARBExtensionsToCore(void);
 #else
 extern void mogl_rebindARBExtensionsToCore(void);
