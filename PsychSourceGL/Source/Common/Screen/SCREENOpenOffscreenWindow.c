@@ -110,7 +110,7 @@ PsychError SCREENOpenOffscreenWindow(void)
 		PsychNormalizeRect(exampleWindowRecord->rect, rect);
 		
 		// Adapt rect for some stereo modes:
-		if (PsychIsOnscreenWindow(exampleWindowRecord) && (exampleWindowRecord->stereomode==kPsychFreeFusionStereo || exampleWindowRecord->stereomode==kPsychFreeCrossFusionStereo)) {
+		if (PsychIsOnscreenWindow(exampleWindowRecord) && (exampleWindowRecord->specialflags & kPsychHalfWidthWindow)) {
 			// Special case: Example window is a dualview stereo onscreen window: Its effective size is only half the real window width,
 			// so we cut the width of the examplerect in half to not be wasteful:
 			rect[kPsychRight] = rect[kPsychRight] / 2;
@@ -345,7 +345,7 @@ PsychError SCREENOpenOffscreenWindow(void)
     // Texture orientation is type 2 aka upright, non-transposed aka Offscreen window:
     windowRecord->textureOrientation = 2;
     
-	if (windowRecord->imagingMode & kPsychNeedFastBackingStore) {
+	if ((windowRecord->imagingMode & kPsychNeedFastBackingStore) || (windowRecord->imagingMode & kPsychNeedFastOffscreenWindows)) {
 		// Last step for FBO backed Offscreen window: Clear it to its background color:
 		PsychSetGLContext(windowRecord);
 		PsychSetDrawingTarget(windowRecord);
