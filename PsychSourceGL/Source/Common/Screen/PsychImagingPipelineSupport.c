@@ -233,6 +233,16 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 	// Need 32 bpc floating point precision?
 	if (imagingmode & kPsychNeed32BPCFloat) fboInternalFormat = GL_RGBA_FLOAT32_APPLE;
 
+	// Want dynamic adaption of buffer precision?
+	if (imagingmode & kPsychUse32BPCFloatAsap) {
+		// Yes. Here should be detection code to check if the gfx-hardware is capable
+		// of unrestricted hardware-accelerated 32 bpc float framebuffer blending. If
+		// capable hardware -> use 32bpc float for drawBufferFBOs, if not -> use 16 bpc.
+		
+		// FIXME TODO: For now we just use 16 bpc for the stage 0 FBO's.
+		fboInternalFormat = GL_RGBA_FLOAT16_APPLE;
+	}
+
 	// Do we need additional depth buffer attachments?
 	needzbuffer = (PsychPrefStateGet_3DGfx()>0) ? TRUE : FALSE;
 	
@@ -345,6 +355,9 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 		windowRecord->nrchannels = 4;
 
 	}
+	
+	// Upgrade to 32 bpc float FBO's needed, starting with the 2nd stage of the pipe?
+	if (imagingmode & kPsychUse32BPCFloatAsap) fboInternalFormat = GL_RGBA_FLOAT32_APPLE;
 	
 	// Do we need 2nd stage FBOs? We need them as targets for the processed data if support for misc image processing ops is requested.
 	if (needimageprocessing) {
@@ -1928,7 +1941,7 @@ boolean PsychPipelineExecuteHook(PsychWindowRecordType *windowRecord, int hookId
 		// Prepare gfx-processing:
 
 		// Backup scissoring state:
-		scissor_enabled = glIsEnabled(GL_SCISSOR_BIT);
+		scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
 		
 		// If this is a multi-pass chain we'll need a bounce buffer FBO:
 		if ((pendingFBOpingpongs > 0 && bouncefbo == NULL) || (pendingFBOpingpongs > 1 && ((*dstfbo)->fboid == 0))) {
@@ -2488,6 +2501,8 @@ boolean PsychBlitterIdentity(PsychWindowRecordType *windowRecord, PsychHookFunct
 		glScalef(sx, sy, 1);
 	}
 	
+	if (PsychPrefStateGet_Verbosity()>4) printf("PTB-DEBUG: PsychBlitterIdentity: Blitting x=%i y=%i sx=%f sy=%f w=%i h=%i\n", x, y, sx, sy, w, h);
+	
 	// Do the blit, using a rectangular quad:
 	glBegin(GL_QUADS);
 	
@@ -2737,32 +2752,38 @@ boolean PsychPipelineBuiltinRenderStereoSyncLine(PsychWindowRecordType *windowRe
 	float h = PsychGetHeightFromRect(windowRecord->rect);
 	r=g=b=1.0;
 	
+	// We default to display height minus 1 for position of sync-line, instead of the lower most row
+	// of the display: This is to account for a few display drivers that are off-by-one, so they would
+	// actually clip the line outside display area if provided with correct coordinates (e.g., NVidia Geforce8600M on OS/X 10.4.10 and 10.5)!
+	h = h - 1;
+	
 	// Options provided?
-	
-	// Check for override vertical position for sync line. Default is last scanline of display.
-	if (strp=strstr(hookfunc->pString1, "yPosition=")) {
-		// Parse and assign offset:
-		if (sscanf(strp, "yPosition=%i", &h)!=1) {
-			PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: yPosition parameter for horizontal stereo blue-sync line position is invalid! Parse error...\n");
+	if (strlen(hookfunc->pString1)>0) {
+		// Check for override vertical position for sync line. Default is last scanline of display.
+		if (strp=strstr(hookfunc->pString1, "yPosition=")) {
+			// Parse and assign offset:
+			if (sscanf(strp, "yPosition=%f", &h)!=1) {
+				PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: yPosition parameter for horizontal stereo blue-sync line position is invalid! Parse error...\n");
+			}
 		}
-	}
 
-	// Check for override horizontal fraction for sync line. Default is 25% for left eye, 75% for right eye.
-	if (strp=strstr(hookfunc->pString1, "hFraction=")) {
-		// Parse and assign offset:
-		if ((sscanf(strp, "hFraction=%f", &fraction)!=1) || (fraction < 0.0) || (fraction > 1.0)) {
-			PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: hFraction parameter for horizontal stereo blue-sync line length is invalid!\n");
+		// Check for override horizontal fraction for sync line. Default is 25% for left eye, 75% for right eye.
+		if (strp=strstr(hookfunc->pString1, "hFraction=")) {
+			// Parse and assign offset:
+			if ((sscanf(strp, "hFraction=%f", &fraction)!=1) || (fraction < 0.0) || (fraction > 1.0)) {
+				PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: hFraction parameter for horizontal stereo blue-sync line length is invalid!\n");
+			}
+		}
+		
+		// Check for override color of sync-line. Default is white.
+		if (strp=strstr(hookfunc->pString1, "Color=")) {
+			// Parse and assign offset:
+			if (sscanf(strp, "Color=%f %f %f", &r, &g, &b)!=3) {
+				PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: Color spec for stereo sync-line is invalid!\n");
+			}
 		}
 	}
 	
-	// Check for override color of sync-line. Default is white.
-	if (strp=strstr(hookfunc->pString1, "Color=")) {
-		// Parse and assign offset:
-		if (sscanf(strp, "Color=%f %f %f", &r, &g, &b)!=3) {
-			PsychErrorExitMsg(PsychError_user, "builtin:RenderStereoSyncLine: Color spec for stereo sync-line is invalid!\n");
-		}
-	}
-
 	// Query current target buffer:
 	glGetIntegerv(GL_DRAW_BUFFER, &draw_buffer);
 	
@@ -2780,16 +2801,26 @@ boolean PsychPipelineBuiltinRenderStereoSyncLine(PsychWindowRecordType *windowRe
 		return(TRUE);
 	}
 	
+	// There must not be any image content below the sync-lines! Clear out everything to black:
+	glColor3f(0, 0, 0);
+	glBegin(GL_QUADS);
+	glVertex2f(0, h-2);
+	glVertex2f(w, h-2);
+	glVertex2f(w, PsychGetHeightFromRect(windowRecord->rect)+1);
+	glVertex2f(0, PsychGetHeightFromRect(windowRecord->rect)+1);
+	glEnd();
+
+	// Draw the sync-lines:
 	glLineWidth(1);
 	glBegin(GL_LINES);
 	glColor3f(r, g, b);
-	glVertex2i(0, h);
-	glVertex2i(w*blackpoint, h);
+	glVertex2f(0, h);
+	glVertex2f(w*blackpoint, h);
 	glColor3f(0, 0, 0);
-	glVertex2i(w*blackpoint, h);
-	glVertex2i(w, h);
+	glVertex2f(w*blackpoint, h);
+	glVertex2f(w, h);
 	glEnd();
-
+	
 	return(TRUE);
 }
 

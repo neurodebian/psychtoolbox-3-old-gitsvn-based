@@ -206,6 +206,22 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     //call PsychPurgeInvalidWindows which will clean up the window record. 
     PsychCreateWindowRecord(windowRecord);  		//this also fills the window index field.
 
+	// Show our "splash-screen wannabe" startup message at opening of first onscreen window:
+	if ((*windowRecord)->windowIndex == PSYCH_FIRST_WINDOW) {
+		if(PsychPrefStateGet_Verbosity()>2) {
+			printf("\n\nPTB-INFO: This is the OpenGL-Psychtoolbox for %s, version %i.%i.%i. (Build date: %s)\n", PSYCHTOOLBOX_OS_NAME, PsychGetMajorVersionNumber(), PsychGetMinorVersionNumber(), PsychGetPointVersionNumber(), PsychGetBuildDate());
+			printf("PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.\n"); 
+			printf("PTB-INFO: Psychtoolbox is licensed to you under terms of the GNU General Public License (GPL). See file 'License.txt' in the\n");
+			printf("PTB-INFO: Psychtoolbox root folder for a copy of the GPL license.\n\n");
+			
+		}
+		
+		if (PsychPrefStateGet_EmulateOldPTB() && PsychPrefStateGet_Verbosity()>1) {
+			printf("PTB-INFO: Psychtoolbox is running in compatibility mode to old MacOS-9 PTB. This is an experimental feature with\n");
+			printf("PTB-INFO: limited support and possibly significant bugs hidden in it! Use with great caution and avoid if you can!\n");
+			printf("PTB-INFO: Currently implemented: Screen('OpenOffscreenWindow'), Screen('CopyWindow') and Screen('WaitBlanking')\n");
+		}
+	}
     // Assign the passed windowrect 'rect' to the new window:
     PsychCopyRect((*windowRecord)->rect, rect);
     
@@ -251,6 +267,29 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         FreeWindowRecordFromPntr(*windowRecord);
         return(FALSE);
     }
+
+	// Query if OpenGL stereo is supported:
+	glGetBooleanv(GL_STEREO, &isFloatBuffer);
+	if (!isFloatBuffer && stereomode==kPsychOpenGLStereo) {
+		// OpenGL native stereo was requested, but is obviously not supported :-(
+		// Let's abort here with some error message.
+        printf("\nPTB-ERROR: Asked for OpenGL native stereo (frame-sequential mode) but this doesn't seem to be supported by your graphics hardware or driver.\n");
+		if (PSYCH_SYSTEM == PSYCH_OSX) {
+			printf("PTB-ERROR: Frame-sequential stereo should be supported on all recent ATI and NVidia cards on OS/X, except for the Intel onboard chips,\n");
+			printf("PTB-ERROR: at least in fullscreen mode with OS/X 10.5, and also mostly on OS/X 10.4. If it doesn't work, check for OS updates etc.\n\n");
+		}
+		else {
+			printf("PTB-ERROR: Frame-sequential stereo on Windows or Linux is usually only supported with the professional line of graphics cards\n");
+			printf("PTB-ERROR: from NVidia and ATI/AMD, e.g., NVidia Quadro series or ATI FireGL series. Probably also with professional 3DLabs hardware.\n");
+			printf("PTB-ERROR: If you happen to have such a card, check your driver settings and/or update your graphics driver. This mode may also not\n");
+			printf("PTB-ERROR: work on flat panels, due to their too low refresh rate.\n\n");
+		}
+		printf("PTB-ERROR: You may also check if your display resolution is too demanding, so your hardware runs out of VRAM memory.\n\n");
+
+		PsychOSCloseWindow(*windowRecord);
+        FreeWindowRecordFromPntr(*windowRecord);
+        return(FALSE);		
+	}
 
 	if ((sharedContextWindow == NULL) && ((*windowRecord)->slaveWindow)) {
 		// Undo slave window assignment from context sharing:
@@ -382,23 +421,11 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     // Enable this windowRecords framebuffer as current drawingtarget. This will also setup
     // the projection and modelview matrices, viewports and such to proper values:
     PsychSetDrawingTarget(*windowRecord);
-    
-	if(PsychPrefStateGet_Verbosity()>2) {
-		  printf("\n\nPTB-INFO: This is the OpenGL-Psychtoolbox version %i.%i.%i. ", PsychGetMajorVersionNumber(), PsychGetMinorVersionNumber(), PsychGetPointVersionNumber());
-		  printf("Type 'PsychtoolboxVersion' for more detailed version information.\n"); 
-		  printf("PTB-INFO: Psychtoolbox is licensed to you under terms of the GNU General Public License (GPL). See file 'License.txt' in the\n");
-		  printf("PTB-INFO: Psychtoolbox root folder for a copy of the GPL license.\n\n");
-		
+
+	if(PsychPrefStateGet_Verbosity()>2) {		
 		  printf("\n\nOpenGL-Extensions are: %s\n\n", glGetString(GL_EXTENSIONS));
 	}
-	
-	if (PsychPrefStateGet_EmulateOldPTB() && PsychPrefStateGet_Verbosity()>1) {
-			printf("PTB-INFO: Psychtoolbox is running in compatibility mode to old MacOS-9 PTB. This is an experimental feature with\n");
-			printf("PTB-INFO: limited support and possibly significant bugs hidden in it! Use with great caution and avoid if you can!\n");
-			printf("PTB-INFO: Currently implemented: Screen('OpenOffscreenWindow'), Screen('CopyWindow') and Screen('WaitBlanking')\n");
-	}
 
-    
 #if PSYCH_SYSTEM == PSYCH_OSX
     CGLRendererInfoObj				rendererInfo;
     CGOpenGLDisplayMask 			displayMask;
@@ -549,7 +576,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
       // We try 3 times a 5 seconds max., in case something goes wrong...
       while(ifi_estimate==0 && retry_count<3) {
         numSamples=50;      // Require at least 50 *valid* samples...
-        stddev=0.00010;     // Require a std-deviation less than 100 microseconds..
+        stddev=0.00020;     // Require a std-deviation less than 200 microseconds..
         maxsecs=(skip_synctests) ? 1 : 5;  // If skipping of sync-test is requested, we limit the calibration to 1 sec.
         retry_count++;
         ifi_estimate = PsychGetMonitorRefreshInterval(*windowRecord, &numSamples, &maxsecs, &stddev, ifi_nominal);
@@ -718,12 +745,17 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 
     if(PsychPrefStateGet_Verbosity()>1) {
 		if (strstr(glGetString(GL_RENDERER), "GDI")) {
-			printf("PTB-WARNING: Seems that Microsofts OpenGL software renderer is active! This will likely cause miserable\n");
-			printf("PTB-WARNING: performance and severe timing and synchronization problems. A reason could be that you run at\n");
-			printf("PTB-WARNING: a too high display resolution, or the system is running out of ressources for some other reason.\n");
+			printf("\n\n\n\nPTB-WARNING: Seems that Microsofts OpenGL software renderer is active! This will likely cause miserable\n");
+			printf("PTB-WARNING: performance, lack of functionality and severe timing and synchronization problems.\n");
+			printf("PTB-WARNING: Most likely you do not have native OpenGL vendor supplied drivers (ICD's) for your graphics hardware\n");
+			printf("PTB-WARNING: installed on your system.Many Windows machines (and especially Windows Vista) come without these preinstalled.\n");
+			printf("PTB-WARNING: Go to the webpage of your computer vendor or directly to the webpage of NVidia/AMD/ATI/3DLabs/Intel\n");
+			printf("PTB-WARNING: and make sure that you've download and install their latest driver for your graphics card.\n");
+			printf("PTB-WARNING: Other causes, after you've ruled out the above:\n");
+			printf("PTB-WARNING: Maybe you run at a too high display resolution, or the system is running out of ressources for some other reason.\n");
 			printf("PTB-WARNING: Another reason could be that you disabled hardware acceleration in the display settings panel: Make sure that\n");
 			printf("PTB-WARNING: in Display settings panel -> Settings -> Advanced -> Troubleshoot -> The hardware acceleration slider is\n");
-			printf("PTB-WARNING: set to 'Full' (rightmost position).\n");
+			printf("PTB-WARNING: set to 'Full' (rightmost position).\n\n\n\n");
 		}
 	}
 	
@@ -737,6 +769,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
           }
           else {
               if (PsychPrefStateGet_VBLTimestampingMode()>=0) printf("PTB-Info: Will use beamposition query for accurate Flip time stamping.\n");
+              if (PsychPrefStateGet_VBLTimestampingMode()< 0) printf("PTB-Info: Beamposition queries are supported, but disabled. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\\n");
           }
       }
       else {
@@ -923,20 +956,6 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 		}
     }
 
-    // The start of a gfx-card "Blacklist"...
-    if ((strstr(glGetString(GL_VENDOR), "ATI")!=NULL) && multidisplay && PSYCH_SYSTEM == PSYCH_OSX) {
-        // ATI card detected -> Give hint to be extra cautious about beampos...
-		if(PsychPrefStateGet_Verbosity()>2){	
-			printf("\n\nPTB-HINT: Your graphics card is KNOWN TO HAVE TROUBLE with beamposition queries on some dual display setups\n");
-			printf("PTB-HINT: due to an ATI driver bug in all versions of MacOS-X 10.3.x and in versions of MacOS-X before 10.4.3!\n");
-			printf("PTB-HINT: Please *double-check* this by setting different monitor refresh rates for the different displays.\n");
-			printf("PTB-HINT: If you then get a warning about SYNCHRONIZATION TROUBLE, it might help to *physically*\n");
-			printf("PTB-HINT: reconnect your displays: Swap, which display is plugged into which socket at the back-side\n");
-			printf("PTB-HINT: of your computer! If that doesn't help, you'll have to switch to a single display configuration\n");
-			printf("PTB-HINT: for getting highest possible timing accuracy.\n");
-		}
-    }
-
     // Assign our best estimate of the scanline which marks end of vertical blanking interval:
     (*windowRecord)->VBL_Endline = VBL_Endline;
 	// Store estimated video refresh cycle from beamposition method as well:
@@ -1069,10 +1088,17 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 				PsychErrorExitMsg(PsychError_internal, "FATAL ERROR: Unrecognized window type. Memory corruption?!?");
     }
     
-    if (PsychIsOnscreenWindow(windowRecord) && (windowRecord->nr_missed_deadlines>0)) {
+	// Output count of missed deadlines. Don't bother for 1 missed deadline -- that's an expected artifact of the measurement...
+    if (PsychIsOnscreenWindow(windowRecord) && (windowRecord->nr_missed_deadlines>1)) {
 		if(PsychPrefStateGet_Verbosity()>1) {
-			printf("\n\nWARNING: PTB's Screen('Flip') command missed the requested stimulus presentation deadline\n");
-			printf("WARNING: a total of %i times during this session!\n\n", windowRecord->nr_missed_deadlines);
+			printf("\n\nINFO: PTB's Screen('Flip') command seems to have missed the requested stimulus presentation deadline\n");
+			printf("INFO: a total of %i times during this session.\n\n", windowRecord->nr_missed_deadlines);
+			printf("INFO: This number is fairly accurate (and indicative of real timing problems in your own code or your system)\n");
+			printf("INFO: if you provided requested stimulus onset times with the 'when' argument of Screen('Flip', window [, when]);\n");
+			printf("INFO: If you called Screen('Flip', window); without the 'when' argument, this count is more of a ''mild'' indicator\n");
+			printf("INFO: of timing behaviour than a hard reliable measurement. Large numbers may indicate problems and should at least\n");
+			printf("INFO: deserve your closer attention. Cfe. 'help SyncTrouble', the FAQ section at www.psychtoolbox.org and the\n");
+			printf("INFO: examples in the PDF presentation in PsychDocumentation/Psychtoolbox3-Slides.pdf for more info and timing tips.\n\n");
 		}
     }
     
@@ -1174,6 +1200,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     double postflip_vbltimestamp = -1;
 	unsigned int vbltimestampquery_retrycount = 0;
 	double time_at_swaprequest=0;			// Timestamp taken immediately before requesting buffer swap. Used for consistency checks.
+	int line_at_swaprequest = -1;			// Scanline of display at time of swaprequest.
 	boolean flipcondition_satisfied;
 	
     int vbltimestampmode = PsychPrefStateGet_VBLTimestampingMode();
@@ -1384,8 +1411,28 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	// Take preswap timestamp:
 	PsychGetAdjustedPrecisionTimerSeconds(&time_at_swaprequest);
 
-    // Trigger the "Front <-> Back buffer swap (flip) on next vertical retrace":
+	// Some check for buggy drivers: If VBL synched flipping is requested, we expect that at least 2 msecs
+	// should pass between consecutive bufferswaps. 2 msecs is chosen because the VBL period of most displays
+	// at most settings does not last longer than 2 msecs (usually way less than 1 msec), and this would still allow
+	// for an update rate of 500 Hz -- more than any current display can do.
+	if ((windowRecord->time_at_last_vbl > 0) && (vbl_synclevel!=2) && (time_at_swaprequest - windowRecord->time_at_last_vbl < 0.002)) {
+		// Less than 2 msecs passed since last bufferswap, although swap in sync with retrace requested.
+		// Some drivers seem to have a bug where a bufferswap happens anywhere in the VBL period, even
+		// if already a swap happened in a VBL --> Multiple swaps per refresh cycle if this routine is
+		// called fast enough, ie. multiple times during one single VBL period. Not good!
+		// We try to enforce correct behaviour by waiting until at least 2 msecs have elapsed before the next
+		// bufferswap:
+		PsychWaitUntilSeconds(windowRecord->time_at_last_vbl + 0.002);
+
+		// Take updated preswap timestamp:
+		PsychGetAdjustedPrecisionTimerSeconds(&time_at_swaprequest);
+	}
+	
+    // Trigger the "Front <-> Back buffer swap (flip) on next vertical retrace" and
+	// take a measurement of the beamposition at time of swap request:
+	line_at_swaprequest = (int) CGDisplayBeamPosition(displayID);
     PsychOSFlipWindowBuffers(windowRecord);
+	line_at_swaprequest = (line_at_swaprequest + (int) CGDisplayBeamPosition(displayID)) * 0.5;
 	
 	// Also swap the slave window, if any:
 	if (windowRecord->slaveWindow) PsychOSFlipWindowBuffers(windowRecord->slaveWindow);
@@ -1481,23 +1528,24 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         // If this fails for some reason, we mark it as invalid by setting it to -1.
         if ((windowRecord->VBL_Endline != -1) && (vbltimestampmode>=0)) {
 
-				// One more sanity check to account for the existence of the most
-				// insane OS on earth: Check for impossible beamposition values although
-				// we've already verified correct working of the queries during startup.
-				if ((*beamPosAtFlip < 0) || (*beamPosAtFlip > vbl_endline)) {
-					// Ok, this is completely foo-bared.
-					printf("PTB-ERROR: Beamposition query after flip returned the *impossible* value %i (Valid would be between zero and %i)!!!\n", *beamPosAtFlip, (int) vbl_endline);
-					printf("PTB-ERROR: This is a severe malfunction, indicating a bug in your graphics driver. Will disable beamposition queries from now on.\n");
-					printf("PTB-ERROR: Timestamps returned by Flip will be correct, but less robust and accurate than they would be with working beamposition queries.\n");
-					printf("PTB-ERROR: It's strongly recommended to update your graphics driver and optionally file a bug report to your vendor if that doesn't help.\n");
-					
-					// Mark vbl endline as invalid, so beampos is not used anymore for future flips.
-					windowRecord->VBL_Endline = -1;
-
-					// Create fake beampos value for this invocation of Flip so we return an ok timestamp:
-					*beamPosAtFlip = vbl_startline;
-				}
-
+			// One more sanity check to account for the existence of the most
+			// insane OS on earth: Check for impossible beamposition values although
+			// we've already verified correct working of the queries during startup.
+			if ((*beamPosAtFlip < 0) || (*beamPosAtFlip > vbl_endline)) {
+				// Ok, this is completely foo-bared.
+				printf("PTB-ERROR: Beamposition query after flip returned the *impossible* value %i (Valid would be between zero and %i)!!!\n", *beamPosAtFlip, (int) vbl_endline);
+				printf("PTB-ERROR: This is a severe malfunction, indicating a bug in your graphics driver. Will disable beamposition queries from now on.\n");
+				printf("PTB-ERROR: Timestamps returned by Flip will be correct, but less robust and accurate than they would be with working beamposition queries.\n");
+				printf("PTB-ERROR: It's strongly recommended to update your graphics driver and optionally file a bug report to your vendor if that doesn't help.\n");
+				printf("PTB-ERROR: Read 'help Beampositionqueries' for further information.\n");
+				
+				// Mark vbl endline as invalid, so beampos is not used anymore for future flips.
+				windowRecord->VBL_Endline = -1;
+				
+				// Create fake beampos value for this invocation of Flip so we return an ok timestamp:
+				*beamPosAtFlip = vbl_startline;
+			}
+			
             if (*beamPosAtFlip >= vbl_startline) {
                 vbl_lines_elapsed = *beamPosAtFlip - vbl_startline;
                 onset_lines_togo = vbl_endline - (*beamPosAtFlip) + 1;
@@ -1548,15 +1596,17 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         
 		// Another consistency check: Computed swap/VBL timestamp should never be earlier than
 		// the system time when bufferswap request was initiated - Can't complete swap before
-		// actually starting it!
-		if (time_at_vbl < time_at_swaprequest) {
+		// actually starting it! We test for this, but allow for a slack of 50 microseconds,
+		// because a small "too early" offset could be just due to small errors in refresh rate
+		// calibration or other sources of harmless timing errors.
+		if ((time_at_vbl < time_at_swaprequest - 0.00005) && ((line_at_swaprequest > 0) && (line_at_swaprequest < vbl_startline))) {
 			// Ohoh! Broken timing. Disable advanced timestamping for future operations, warn user.
 			PsychPrefStateSet_VBLTimestampingMode(-1);
-			printf("\n\nPTB-ERROR: Screen('Flip'); timestamping computed an *impossible value* %lf, which would indicate that\n", time_at_vbl);
-			printf("PTB-ERROR: stimulus onset happened *before* it was actually requested! (Earliest possible %lf).\n", time_at_swaprequest);
+			printf("\n\nPTB-ERROR: Screen('Flip'); timestamping computed an *impossible value* %lf secs, which would indicate that\n", time_at_vbl);
+			printf("PTB-ERROR: stimulus onset happened *before* it was actually requested! (Earliest possible %lf secs).\n", time_at_swaprequest - 0.00005);
 			printf("PTB-ERROR: Something is broken in your systems timestamping. High-precision timestamping disabled,\n");
 			printf("PTB-ERROR: reported timestamps will be less robust and accurate, but hopefully at least not completely wrong.\n");
-			printf("PTB-ERROR: Please try to find and fix the problem if you rely on exact stimulus timing.\n\n");
+			printf("PTB-ERROR: Please try to find and fix the problem if you rely on exact stimulus timing. Read 'help SyncTrouble' !\n\n");
 		}
 		
         // Check for missed / skipped frames: We exclude the very first "Flip" after
@@ -1705,7 +1755,7 @@ void PsychUnsetGLContext(void)
 */
 double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* numSamples, double* maxsecs, double* stddev, double intervalHint)
 {
-    int i;
+    int i, j;
     double told, tnew, tdur, tstart;
     double tstddev=10000.0f;
     double tavg=0;
@@ -1713,7 +1763,9 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
     double n=0;
     double reqstddev=*stddev;   // stddev contains the requested standard deviation.
     int fallthroughcount=0;
-    
+    double* samples = NULL;
+	int maxlogsamples = 0;
+	
     // Child protection: We only work on double-buffered onscreen-windows...
     if (windowRecord->windowType != kPsychDoubleBufferOnscreen) {
         PsychErrorExitMsg(PsychError_InvalidWindowRecord, "Tried to query/measure monitor refresh interval on a window that's not double-buffered and on-screen.");
@@ -1723,6 +1775,12 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
     if (*numSamples>0) {
         // Calibration run of 'numSamples' requested. Let's do it.
         
+		if (PsychPrefStateGet_Verbosity()>4) {
+			// Allocate a sample logbuffer for maxsecs duration at 1000 hz refresh:
+			maxlogsamples =  (int) (ceil(*maxsecs) * 1000);
+			samples = calloc(sizeof(double), maxlogsamples);
+		}
+		
         // Switch to RT scheduling for timing tests:
         PsychRealtimePriority(true);
 
@@ -1736,11 +1794,18 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
         // Enable this windowRecords framebuffer as current drawingtarget:
         PsychSetDrawingTarget(windowRecord);
 
+		// ...and immediately disable it in imagingmode, because it won't be the system backbuffer,
+		// but a FBO -- which would break sync of glFinish() with bufferswaps and vertical retrace.
+		if ((windowRecord->imagingMode > 0) && (windowRecord->imagingMode != kPsychNeedFastOffscreenWindows)) PsychSetDrawingTarget(NULL);
+		
         glDrawBuffer(GL_BACK_LEFT);
         
         PsychGetAdjustedPrecisionTimerSeconds(&tnew);
         tstart = tnew;
 		told = -1;
+		
+		// Schedule a buffer-swap on next VBL:
+		PsychOSFlipWindowBuffers(windowRecord);
 		
         // Take samples during consecutive refresh intervals:
         // We measure until either:
@@ -1808,6 +1873,10 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
 
 					// Update reference timestamp:
 					told = tnew;
+					
+					// Pause for 2 msecs after a valid sample was taken. This to guarantee we're out
+					// of the VBL period of the successfull swap.
+					PsychWaitIntervalSeconds(0.002);
                 }
 				else {
 					// Rejected sample: Better invalidate told as well:
@@ -1815,11 +1884,33 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
 					// MK: Ok, i have no clue why above told = -1 is wrong, but doing it makes OS/X 10.4.10 much
 					// more prone to sync failures, whereas not doing it makes it more reliable. Doesn't make
 					// sense, but we are better off reverting to the old strategy...
+					// Update: I think i know why. Some (buggy!) drivers, e.g., the ATI Radeon X1600 driver on
+					// OS/X 10.4.10, do not limit the number of bufferswaps to 1 per refresh cycle as mandated
+					// by the spec, but they allow as many bufferswaps as you want, as long as all of them happen
+					// inside the VBL period! Basically the swap-trigger seems to be level-triggered instead of
+					// edge-triggered. This leads to a ratio of 2 invalid samples followed by 1 valid sample.
+					// If we'd reset our told at each invalid sample, we would need over 3 times the amount of
+					// samples for a useable calibration --> No go. Now we wait for 2 msecs after each successfull
+					// sample (see above), so the VBL period will be over before we manage to try to swap again.
+					
+					// Reinitialize told to tnew, otherwise errors can accumulate:
+					told = tnew;
+
+					// Pause for 2 msecs after a valid sample was taken. This to guarantee we're out
+					// of the VBL period of the successfull swap.
+					PsychWaitIntervalSeconds(0.002);
 				}
+				
+				// Store current sample in samplebuffer if requested:
+				if (samples && i < maxlogsamples) samples[i] = tdur;
             }
 			else {
 				// (Re-)initialize reference timestamp:
 				told = tnew;
+
+				// Pause for 2 msecs after a first sample was taken. This to guarantee we're out
+				// of the VBL period of the successfull swap.
+				PsychWaitIntervalSeconds(0.002);
 			}
 			
         } // Next measurement loop iteration...
@@ -1844,6 +1935,16 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
         
         *numSamples = n;
         *stddev = tstddev;
+		
+		// Verbose output requested? We dump our whole buffer of samples to the console:
+		if (samples) {
+			printf("\n\nPTB-DEBUG: Output of all acquired samples of calibration run follows:\n");
+			for (j=0; j<i; j++) printf("PTB-DEBUG: Sample %i: %lf\n", j, samples[j]);
+			printf("PTB-DEBUG: End of calibration data for this run...\n\n");
+			free(samples);
+			samples = NULL;
+		}
+		
     } // End of IFI measurement code.
     else {
         // No measurements taken...
@@ -2801,4 +2902,43 @@ void PsychSetUserspaceGLFlag(boolean inuserspace)
 boolean PsychIsUserspaceRendering(void)
 {
 	return(inGLUserspace);
+}
+
+int PsychRessourceCheckAndReminder(boolean displayMessage) {
+	int i,j = 0;
+
+	#if PSYCH_SYSTEM != PSYCH_LINUX
+	// Check for open movies:
+	j = PsychGetMovieCount();
+	if (j > 0) {
+		if (displayMessage && PsychPrefStateGet_Verbosity()>2) {
+			printf("\n\nPTB-INFO: There are still %i movies open. Screen('CloseAll') will auto-close them.\n", j);
+			printf("PTB-INFO: This may be fine for studies where you only use a single movie, but a large number of open\n");
+			printf("PTB-INFO: movies can be an indication that you forgot to dispose no longer needed movie objects\n");
+			printf("PTB-INFO: via a proper call to Screen('CloseMovie', moviePtr); , e.g., at the end of each trial. These\n");
+			printf("PTB-INFO: stale movies linger around and can consume significant memory and cpu ressources, causing\n");
+			printf("PTB-INFO: degraded performance, timing trouble and ultimately out of memory or out of ressource\n");
+			printf("PTB-INFO: conditions or even crashes of Matlab/Octave (in rare cases). Please check your code.\n\n");
+		}
+	}
+	#endif
+
+	// Check for open textures and proxies at close time. Might be indicative of missing
+	// close calls for releasing texture -- ie. leaked memory:
+	i = PsychCountOpenWindows(kPsychTexture) + PsychCountOpenWindows(kPsychProxyWindow);
+	
+	// Textures open. Give a friendly reminder if either at least 10 textures are remaining or
+	// the user asked for verbosity level > 3, ie. very exhaustive info, and at least one texture is remaining.
+	if (displayMessage && ((PsychPrefStateGet_Verbosity()>2 && i> 10) || (PsychPrefStateGet_Verbosity() > 3 && i > 0))) {
+		printf("\n\nPTB-INFO: There are still %i textures, offscreen windows or proxy windows open. Screen('CloseAll') will auto-close them.\n", i);
+		printf("PTB-INFO: This may be fine for studies where you only use a few textures or windows, but a large number of open\n");
+		printf("PTB-INFO: textures or offscreen windows can be an indication that you forgot to dispose no longer needed items\n");
+		printf("PTB-INFO: via a proper call to Screen('Close', [windowOrTextureIndex]); , e.g., at the end of each trial. These\n");
+		printf("PTB-INFO: stale objects linger around and can consume significant memory ressources, causing degraded performance,\n");
+		printf("PTB-INFO: timing trouble (if the system has to resort to disk paging) and ultimately out of memory conditions or\n");
+		printf("PTB-INFO: crashes. Please check your code. (Screen('Close') is a quick way to release all textures and offscreen windows)\n\n");
+	}
+	
+	// Return total sum of open ressource hogs ;-)
+	return(i + j);
 }

@@ -47,6 +47,7 @@ PsychError PsychModuleInit(void)
 	PsychErrorExit(PsychRegister("Open", &PSYCHPORTAUDIOOpen));
 	PsychErrorExit(PsychRegister("Close", &PSYCHPORTAUDIOClose));
 	PsychErrorExit(PsychRegister("Start", &PSYCHPORTAUDIOStartAudioDevice));
+	PsychErrorExit(PsychRegister("RescheduleStart", &PSYCHPORTAUDIORescheduleStart));
 	PsychErrorExit(PsychRegister("Stop", &PSYCHPORTAUDIOStopAudioDevice));
 	PsychErrorExit(PsychRegister("FillBuffer", &PSYCHPORTAUDIOFillAudioBuffer));
 	PsychErrorExit(PsychRegister("GetDevices", &PSYCHPORTAUDIOGetDevices));
@@ -59,6 +60,10 @@ PsychError PsychModuleInit(void)
 
 	// Setup module author:
 	PsychSetModuleAuthorByInitials("mk");
+
+	// Call wait-routine for 0.1 secs: This to initialize the time glue on MS-Windows,
+	// so the first call to a timing function won't delay:
+	PsychWaitIntervalSeconds(0.1);
 
 	// Startup finished.
 	return(PsychError_none);

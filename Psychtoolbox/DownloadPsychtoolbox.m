@@ -180,6 +180,13 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 % 02/17/07 mk  Convert flavor spec to lower case in case it isn't.
 % 03/15/07 mk  Detection code for Windows 64 bit added.
 % 07/18/07 mk  Changed default for flavor from 'stable' to 'beta'.
+% 09/27/07 mk  Add another fallback path: Download via https protocol to
+%              maybe bypass proxy-servers.
+% 10/29/07 mk  Small fix for Kerstin Preuschoffs bugreport: Download of old
+%              versions didn't work anymore, becuase 'flavor' string was
+%              lower-cased.
+% 11/17/07 mk  Prioritized https:// checkout over http:// checkout --> More
+%              likely to bypass proxy servers and succeed.
 
 % Flush all MEX files: This is needed at least on M$-Windows for SVN to
 % work if Screen et al. are still loaded.
@@ -219,8 +226,12 @@ if (nargin<1 | isempty(flavor))
     flavor='beta';
 end
 
-% Make sure that flavor is lower-case:
-flavor = lower(flavor);
+% Make sure that flavor is lower-case, unless its a 'Psychtoolbox-x.y.z'
+% spec string which is longer than 10 characters and mixed case:
+if length(flavor) < 10
+    % One of the short flavor spec strings: lowercase'em:
+    flavor = lower(flavor);
+end
 
 switch (flavor)
     % 'current' is a synonym for 'beta'.
@@ -440,7 +451,23 @@ fprintf('Downloading. It''s nearly 100 MB, which can take many minutes. \nAlas t
 if isOSX
     [err,result]=system(checkoutcommand);
 else
-    [err,result]=dos(checkoutcommand);
+    [err,result]=dos(checkoutcommand, '-echo');
+end
+
+if err
+    % Failed! Let's retry it via https protocol. This may work-around overly
+    % restrictive firewalls or otherwise screwed network proxies:
+    fprintf('Command "CHECKOUT" failed with error code %d: \n',err);
+    fprintf('%s\n\n',result);
+    fprintf('Will retry now by use of alternative https protocol...\n');
+    checkoutcommand=[svnpath 'svn checkout https://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' p];
+    fprintf('The following alternative CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
+    fprintf('%s\n\n',checkoutcommand);
+    if isOSX
+        [err,result]=system(checkoutcommand);
+    else
+        [err,result]=dos(checkoutcommand, '-echo');
+    end    
 end
 
 if err
@@ -455,7 +482,7 @@ if err
     if isOSX
         [err,result]=system(checkoutcommand);
     else
-        [err,result]=dos(checkoutcommand);
+        [err,result]=dos(checkoutcommand, '-echo');
     end    
 end
 

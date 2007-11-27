@@ -64,6 +64,10 @@ static Boolean clientstorage = FALSE;
 // GL_TEXTURE_2D... This switch defines the global mode for the texture mapping engine...
 static GLenum  texturetarget = 0;
 
+// A rough guess of how much memory is currently consumed by textures... Can be grossly wrong,
+// only used if texture creation failed and out-of-memory is a likely suspect.
+static unsigned int texmemguesstimate = 0;
+
 void PsychDetectTextureTarget(PsychWindowRecordType *win)
 {
     // First time invocation?
@@ -219,7 +223,7 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 	static GLint                    gl_lastrequestedinternalFormat = 0;
 	GLint							gl_rbits=0, gl_gbits=0, gl_bbits=0, gl_abits=0, gl_lbits=0;
 	long							screenWidth, screenHeight;
-	int								twidth, theight, pass;
+	int								twidth, theight, pass, texcount;
 	void*							texmemptr;
 	bool							recycle = FALSE;
 	GLenum							glerr;
@@ -447,7 +451,24 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 									printf("PTB-ERROR: Such HDR textures have very high VRAM memory demands.\n");
 								}
 								
-								printf("PTB-ERROR: The most likely cause of failure is that your graphics hardware doesn't have sufficient amounts of\n");
+								// Check if a general out-of-memory condition is the likely culprit, due to wrong texture management
+								// on the users side:
+								texcount = PsychRessourceCheckAndReminder(FALSE);
+								printf("PTB-ERROR: Currently there are already %i textures, offscreen windows, movies or proxies open.\n", texcount);								
+								printf("PTB-ERROR: All these objects consume system memory and could lead to ressource shortage.\n");
+								printf("PTB-ERROR: My current (rough and probably way too low) estimate is that at least %f MB of memory are\n", (float) texmemguesstimate / 1024 / 1024);
+								printf("PTB-ERROR: consumed for textures, offscreen windows and similar objects.\n");
+								if (texcount > 100) {
+									printf("PTB-ERROR: The count is above one hundred objects. Could it be that you forgot to dispose no longer\n");
+									printf("PTB-ERROR: needed objects from previous experiment trials (missing Screen('Close' [, texturePtr]) or Screen('CloseMovie', moviePtr))??");
+								}
+
+								if (texmemguesstimate > 100 * 1024 * 1024) {
+									printf("PTB-ERROR: At least 100 MB memory consumed for textures, probably much more. Could it be that you forgot to dispose no longer\n");
+									printf("PTB-ERROR: needed textures from previous experiment trials (missing Screen('Close' [, texturePtr]))??");
+								}
+								
+								printf("PTB-ERROR: Another cause of failure could be that your graphics hardware doesn't have sufficient amounts of\n");
 								printf("PTB-ERROR: free VRAM memory. Try to reduce the precision and/or size of your texture image to the lowest\n");
 								printf("PTB-ERROR: acceptable setting for your purpose.\n");
 								printf("PTB-ERROR: Read the online help for Screen MakeTexture? or Screen OpenOffscreenWindow? for information\n");
@@ -462,7 +483,7 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 							}
 						}
 						
-						PsychErrorExitMsg(PsychError_user, "Texture creation failed, most likely due to unsupported precision or insufficient VRAM memory.");
+						PsychErrorExitMsg(PsychError_user, "Texture creation failed, most likely due to unsupported precision or insufficient free memory.");
 					}
 					else {
 						// Some other error:
@@ -472,6 +493,11 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 				}
 			}	// End of error checking...
 		}  // End of dual-pass texture creation (check + create).
+		
+		// Accounting... ...this is only a rough guesstimate:
+		win->surfaceSizeBytes = ((glinternalFormat==GL_RGBA8) ? 4 : win->depth / 8) * twidth * theight;
+		texmemguesstimate+= win->surfaceSizeBytes;
+				
 	}  // End of new texture creation.
 	
 	// Stage 2: If its a 2D texture or a recycled texture, fill it with content via glTexSubImage2D:
@@ -616,8 +642,16 @@ void PsychFreeTextureForWindowRecord(PsychWindowRecordType *win)
         // We need to use glFinish() here. FinishObjectApple would be better (more async operations) but it doesn't
         // work for some strange reason :(
         if ((win->textureMemory) && (win->textureNumber > 0)) glFinish(); // FinishObjectAPPLE(GL_TEXTURE_2D, win->textureNumber);
-        // Perform standard OpenGL texture cleanup:
-        glDeleteTextures(1, &win->textureNumber);
+
+        // Perform standard OpenGL texture cleanup if needed:
+		if (&win->textureNumber != 0) {
+			glDeleteTextures(1, &win->textureNumber);
+
+			// Accounting... ...this is only a rough guesstimate:
+			texmemguesstimate-= win->surfaceSizeBytes;
+			if (texmemguesstimate < 0) texmemguesstimate = 0;
+		}
+		
         PsychTestForGLErrors();
     }
 
@@ -633,11 +667,12 @@ void PsychFreeTextureForWindowRecord(PsychWindowRecordType *win)
 void PsychBlitTextureToDisplay(PsychWindowRecordType *source, PsychWindowRecordType *target, double *sourceRect, double *targetRect,
                                double rotationAngle, int filterMode, double globalAlpha)
 {
-        GLdouble       			 sourceWidth, sourceHeight, tWidth, tHeight;
-        GLdouble                         sourceX, sourceY, sourceXEnd, sourceYEnd;
-		double                           transX, transY;
-        GLenum                           texturetarget;
-
+        GLdouble				sourceWidth, sourceHeight, tWidth, tHeight;
+        GLdouble                sourceX, sourceY, sourceXEnd, sourceYEnd;
+		double                  transX, transY;
+        GLenum                  texturetarget;
+		GLuint					shader, attrib;
+		
         // Activate rendering context of target window:
 		PsychSetGLContext(target);
 
@@ -771,18 +806,7 @@ void PsychBlitTextureToDisplay(PsychWindowRecordType *source, PsychWindowRecordT
                 break;
         }
 	}
-	
-	// Support for basic shading during texture blitting: Useful for very simple
-	// single-pass isotropic image processing and for procedural texture mapping:
-	if (source->textureFilterShader < 0) {
-		// User supplied texture shader for either some on-the-fly texture image processing,
-		// or for procedural texture shading/on-the-fly texture synthesis. These can be
-		// assigned in Screen('MakeTexture') for procedural texture shading or via a
-		// optional shader handle to Screen('DrawTexture');
-		if (glUseProgram == NULL) PsychErrorExitMsg(PsychError_user, "Tried to use a bilinear texture shader, but your hardware doesn't support GLSL shaders.");
-		glUseProgram((GLuint) (-1 * source->textureFilterShader));
-	}
-	
+
 	// Setup texture wrap-mode: We usually default to clamping - the best we can do
 	// for the rectangle textures we usually use. Special case is the intentional
 	// use of power-of-two textures with a real power-of-two size. In that case we
@@ -797,84 +821,160 @@ void PsychBlitTextureToDisplay(PsychWindowRecordType *source, PsychWindowRecordT
 	  // Default: Clamp to edge.
 	  glTexParameteri(texturetarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	  glTexParameteri(texturetarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        }
+	}
 
-        // We use GL_MODULATE texture application mode together with the special rectangle color
-        // (1,1,1,globalAlpha) -- This way, the alpha blending value is the product of the alpha-
-        // value of each texel and the globalAlpha value. --> Can apply global alpha value for
-        // global blending without need for a texture alpha-channel...
-        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-		// A globalAlpha of DBL_MAX means: Don't set vertex color here, higher-level code
-		// has done it already. Used in SCREENDrawTexture for a global override color...
-		if (globalAlpha != DBL_MAX) glColor4f(1, 1, 1, globalAlpha);
+	// We use GL_MODULATE texture application mode together with the special rectangle color
+	// (1,1,1,globalAlpha) -- This way, the alpha blending value is the product of the alpha-
+	// value of each texel and the globalAlpha value. --> Can apply global alpha value for
+	// global blending without need for a texture alpha-channel...
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-        // Apply a rotation transform for rotated drawing:
-        glMatrixMode(GL_MODELVIEW);
-        glPushMatrix();
-        transX=(targetRect[kPsychRight] + targetRect[kPsychLeft]) * 0.5; 
-        transY=(targetRect[kPsychTop] + targetRect[kPsychBottom]) * 0.5; 
-        
-        glTranslated(+transX, +transY, 0);
-        glRotated(rotationAngle, 0, 0, 1);
-        glTranslated(-transX, -transY, 0);
-        // Rotation transform ready...
-        
-        // matchups for inverted Y coordinate frame (which is inverted?)
-        // MK: Texture coordinate assignments have been changed.
-        // Explanation: Matlab stores matrices in column-major order, but OpenGL requires
-        // textures in row-major order. The old implementation of AWI performed row-column
-        // swapping in MakeTexture via C-Code on the CPU. This makes copy-loop implementation
-        // complex and creates "Cash trashing" effects on the processor. --> slow MakeTexture performance.
-        // Now we store the textures as provided by Matlab, simplifying MakeTexture's implementation,
-        // and let the Graphics hardware do the job of "swapping" during rendering, by drawing the texture
-        // in some rotated and mirrored order. This is way faster, as the GPU is optimized for such things...
-		glBegin(GL_QUADS);
-        // Coordinate assignments depend on internal texture orientation...
-        // Override for special case: Corevideo texture from Quicktime-subsystem.
-        if ((source->textureOrientation == 1 && renderswap) || source->textureOrientation == 2 || source->targetSpecific.QuickTimeGLTexture ||
-            source->textureOrientation == 3 || source->textureOrientation == 4) {
-	  // NEW CODE: Uses "normal" coordinate assignments, so that the rotation == 0 deg. case
-	  // is the fastest case --> Most common orientation has highest performance.
-	  //lower left
-	  glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceYEnd);
-	  glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychTop]));		//upper left vertex in window
-            
-	  //upper left
-	  glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceY);
-	  glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychBottom]));		//lower left vertex in window
-            
-	  //upper right
-	  glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceY);
-	  glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychBottom]) );		//lower right  vertex in window
-            
-	  //lower right
-	  glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceYEnd);
-	  glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychTop]));		//upper right in window
-        }
-        else {
-	  // OLD CODE: Uses swapped texture coordinates....
-	  //lower left
-	  glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceY);						//lower left vertex in  window
-	  glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychTop]));		//upper left vertex in window
-	  
-	  //upper left
-	  glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceY);					        //upper left vertex in texture
-	  glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychBottom]));		//lower left vertex in window
-	  
-	  //upper right
-	  glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceYEnd);					//upper right vertex in texture
-	  glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychBottom]) );	        //lower right  vertex in window
-	  
-	  //lower right
-	  glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceYEnd);					        //lower right in texture
-	  glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychTop]));		//upper right in window
-        }            
-        
-        glEnd();
-                
-        // Undo rotation transform, if any...
-        glPopMatrix();
+	// A globalAlpha of DBL_MAX means: Don't set vertex color here, higher-level code
+	// has done it already. Used in SCREENDrawTexture for a global override color...
+	if (globalAlpha != DBL_MAX) glColor4f(1, 1, 1, globalAlpha);
+	
+	// Apply a rotation transform for rotated drawing, either to modelview-,
+	// or texture matrix.
+	if ((rotationAngle != 0.0) && !(source->specialflags & kPsychDontDoRotation)) {
+		if (!(source->specialflags & kPsychUseTextureMatrixForRotation)) {
+			// Standard case: Transform quad -> Modelview matrix.
+			glMatrixMode(GL_MODELVIEW);
+			transX=(targetRect[kPsychRight] + targetRect[kPsychLeft]) * 0.5; 
+			transY=(targetRect[kPsychTop] + targetRect[kPsychBottom]) * 0.5; 
+		}
+		else {
+			// Transform texture coordinates -> Texture matrix.
+			glMatrixMode(GL_TEXTURE);
+			transX=(sourceX + sourceXEnd) * 0.5; 
+			transY=(sourceY + sourceYEnd) * 0.5; 
+		}
+		
+		glPushMatrix();
+		glTranslated(+transX, +transY, 0);
+		glRotated(rotationAngle, 0, 0, 1);
+		glTranslated(-transX, -transY, 0);
+		// Rotation transform ready...
+	}
 
+	// Support for basic shading during texture blitting: Useful for very simple
+	// single-pass isotropic image processing and for procedural texture mapping:
+	if (source->textureFilterShader < 0) {
+		// User supplied texture shader for either some on-the-fly texture image processing,
+		// or for procedural texture shading/on-the-fly texture synthesis. These can be
+		// assigned in Screen('MakeTexture') for procedural texture shading or via a
+		// optional shader handle to Screen('DrawTexture');
+		if (glUseProgram == NULL) PsychErrorExitMsg(PsychError_user, "Tried to use a user defined texture shader or procedural texture, but your hardware doesn't support GLSL shaders.");
+		shader = (GLuint) (-1 * source->textureFilterShader);
+		glUseProgram(shader);
+		
+		// Parameter transfer for advanced procedural shading:
+		// We encode all parameters about the blit operation into additional
+		// vertex attributes so a complex shader can derive useful information.
+		
+		// 'srcRect' parameter: The glTexCoord() calls below encode texture coordinates
+		// - and thereby the corners of 'srcRect' - into each vertex, however this
+		// info gets potentially transformed by the texture matrix, also each vertex
+		// only sees one corner of the srcRect: Therefore we encode srcrect = [left top right bottom]
+		// on demand:
+		if ((attrib = glGetAttribLocationARB(shader, "srcRect")) >= 0) glVertexAttrib4fARB(attrib, sourceRect[kPsychLeft], sourceRect[kPsychTop], sourceRect[kPsychRight], sourceRect[kPsychBottom]);
+
+		// 'dstRect' parameter: The glVertex() calls below encode target pixel coordinates
+		// - and thereby the corners of 'dstRect' - into each vertex, however this
+		// info gets potentially transformed by the modelview/proj. matrix, also each vertex
+		// only sees one corner of the dstRect: Therefore we encode dstrect = [left top right bottom]
+		// on demand:
+		if ((attrib = glGetAttribLocationARB(shader, "dstRect")) >= 0) glVertexAttrib4fARB(attrib, targetRect[kPsychLeft], targetRect[kPsychTop], targetRect[kPsychRight], targetRect[kPsychBottom]);
+
+		// 'sizeAngleFilterMode' - if requested - encodes texture width in .x component, height in .y
+		// requested rotationAngle in .z and the 'filterMode' flags in .w:
+		if ((attrib = glGetAttribLocationARB(shader, "sizeAngleFilterMode")) >= 0) glVertexAttrib4fARB(attrib, (GLfloat) sourceWidth, (GLfloat) sourceHeight, (GLfloat) rotationAngle, (GLfloat) filterMode);
+		
+		// 'modulateColor' - if requested - encodes the RGBA 'modulateColor' after normalization
+		// via the colorrange value of Screen('ColorRange').
+		if ((attrib = glGetAttribLocationARB(shader, "modulateColor")) >= 0) {
+			if(globalAlpha == DBL_MAX) {
+				// globalAlpha disabled: Pass the 'modulateColor' vector:
+				glVertexAttrib4dvARB(attrib, target->currentColor);
+			}
+			else {
+				// modulateColor disabled: Pass (1,1,1) as RGB color and globalAlpha as alpha:
+				glVertexAttrib4fARB(attrib, 1.0, 1.0, 1.0, (GLfloat) globalAlpha);
+			}
+		}
+		
+		// 'auxParameters0' is the first for components (rows) of the 'auxParameters' argument
+		// of Screen('DrawTexture(s)') - if such an argument was spec'd:
+		if (target->auxShaderParams) {
+			if ((target->auxShaderParamsCount >=4) && ((attrib = glGetAttribLocationARB(shader, "auxParameters0")) >= 0)) glVertexAttrib4dvARB(attrib, target->auxShaderParams);
+			if ((target->auxShaderParamsCount >=8) && ((attrib = glGetAttribLocationARB(shader, "auxParameters1")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[4]));
+			if ((target->auxShaderParamsCount >=12) && ((attrib = glGetAttribLocationARB(shader, "auxParameters2")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[8]));
+			if ((target->auxShaderParamsCount >=16) && ((attrib = glGetAttribLocationARB(shader, "auxParameters3")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[12]));
+			if ((target->auxShaderParamsCount >=20) && ((attrib = glGetAttribLocationARB(shader, "auxParameters4")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[16]));
+			if ((target->auxShaderParamsCount >=24) && ((attrib = glGetAttribLocationARB(shader, "auxParameters5")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[20]));
+			if ((target->auxShaderParamsCount >=28) && ((attrib = glGetAttribLocationARB(shader, "auxParameters6")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[24]));
+			if ((target->auxShaderParamsCount >=32) && ((attrib = glGetAttribLocationARB(shader, "auxParameters7")) >= 0)) glVertexAttrib4dvARB(attrib, &(target->auxShaderParams[28]));
+		}
+	}
+
+	// matchups for inverted Y coordinate frame (which is inverted?)
+	// MK: Texture coordinate assignments have been changed.
+	// Explanation: Matlab stores matrices in column-major order, but OpenGL requires
+	// textures in row-major order. The old implementation of AWI performed row-column
+	// swapping in MakeTexture via C-Code on the CPU. This makes copy-loop implementation
+	// complex and creates "Cash trashing" effects on the processor. --> slow MakeTexture performance.
+	// Now we store the textures as provided by Matlab, simplifying MakeTexture's implementation,
+	// and let the Graphics hardware do the job of "swapping" during rendering, by drawing the texture
+	// in some rotated and mirrored order. This is way faster, as the GPU is optimized for such things...
+	glBegin(GL_QUADS);
+	// Coordinate assignments depend on internal texture orientation...
+	// Override for special case: Corevideo texture from Quicktime-subsystem.
+	if ((source->textureOrientation == 1 && renderswap) || source->textureOrientation == 2 || source->targetSpecific.QuickTimeGLTexture ||
+		source->textureOrientation == 3 || source->textureOrientation == 4) {
+		// NEW CODE: Uses "normal" coordinate assignments, so that the rotation == 0 deg. case
+		// is the fastest case --> Most common orientation has highest performance.
+		//lower left
+		glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceYEnd);
+		glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychTop]));		//upper left vertex in window
+		
+		//upper left
+		glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceY);
+		glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychBottom]));		//lower left vertex in window
+		
+		//upper right
+		glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceY);
+		glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychBottom]) );		//lower right  vertex in window
+		
+		//lower right
+		glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceYEnd);
+		glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychTop]));		//upper right in window
+	}
+	else {
+		// OLD CODE: Uses swapped texture coordinates....
+		//lower left
+		glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceY);						//lower left vertex in  window
+		glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychTop]));		//upper left vertex in window
+		
+		//upper left
+		glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceY);					        //upper left vertex in texture
+		glVertex2f((GLfloat)(targetRect[kPsychLeft]), (GLfloat)(targetRect[kPsychBottom]));		//lower left vertex in window
+		
+		//upper right
+		glTexCoord2f((GLfloat)sourceXEnd, (GLfloat)sourceYEnd);					//upper right vertex in texture
+		glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychBottom]) );	        //lower right  vertex in window
+		
+		//lower right
+		glTexCoord2f((GLfloat)sourceX, (GLfloat)sourceYEnd);					        //lower right in texture
+		glVertex2f((GLfloat)(targetRect[kPsychRight]), (GLfloat)(targetRect[kPsychTop]));		//upper right in window
+	}            
+	
+	glEnd();
+	
+	// Undo rotation transform, if any...
+	if ((rotationAngle != 0.0) && !(source->specialflags & kPsychDontDoRotation)) {
+		glPopMatrix();
+		glMatrixMode(GL_MODELVIEW);
+	}
+	
 	// Only disable texture mapping if we actually enabled it.
 	if (source->textureNumber > 0) {
 		// Reset filters to nearest: This is important in case this texture

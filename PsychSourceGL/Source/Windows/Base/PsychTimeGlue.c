@@ -11,11 +11,13 @@
 
   	PROJECTS:
 
-  	12/27/05	mk		Screen on M$-Windows
+  	12/27/05	mk		Screen, GetSecs, WaitSecs, KbCheck, KbWait, PsychPortAudio on M$-Windows
 
   	HISTORY:
 
-  	12/27/05	mk		Wrote it. Derived from OS-X version.  
+  	12/27/05	mk		Wrote it. Derived from OS-X version.
+	11/14/07 mk			Added tons of checking and error-handling code for broken Windoze timers.
+						Added special debug helper functions to be used via GetSecs().  
 
   	DESCRIPTION:
 	
@@ -24,9 +26,6 @@
 	Also returns timer ticks and resolution of timers.
 
 	TO DO:
-
-	Replace the busy-waiting spin-loops in WaitUntilSeconds and WaitIntervalSeconds
-	by some proper Win32 call to put process to sleep.
 
 */
 
@@ -41,18 +40,21 @@
 */
 
 
-static double		precisionTimerAdjustmentFactor=1;
-static double		estimatedGetSecsValueAtTickCountZero;
-static Boolean		isKernelTimebaseFrequencyHzInitialized=FALSE;
+static double			precisionTimerAdjustmentFactor=1;
+static double			estimatedGetSecsValueAtTickCountZero;
+static Boolean			isKernelTimebaseFrequencyHzInitialized=FALSE;
 static long double	kernelTimebaseFrequencyHz;
-static Boolean          counterExists=FALSE;
-static Boolean          firstTime=TRUE;
-static double           sleepwait_threshold = 0.003;
+static Boolean       counterExists=FALSE;
+static Boolean       firstTime=TRUE;
+static double        sleepwait_threshold = 0.003;
+static Boolean			Timertrouble = FALSE;
+static Boolean 		schedulingtrouble = FALSE;
+static double			tickInSecsAtLastQuery = -1;
+static double			timeInSecsAtLastQuery = -1;
 
 void PsychWaitUntilSeconds(double whenSecs)
 {
   static unsigned int missed_count=0;
-  static Boolean firstfail = TRUE;
   double now=0.0;
 
   // Get current time:
@@ -68,20 +70,9 @@ void PsychWaitUntilSeconds(double whenSecs)
   // power-consumption (longer battery runtime for Laptops) as
   // the CPU can go idle if nothing else to do...
   while(whenSecs - now > sleepwait_threshold) {
-	 // Try to switch windows timer to 1 msec precision:
-    if ((timeBeginPeriod(1)!=TIMERR_NOERROR) && firstfail) {
-		  // High precision mode failed! Output warning on first failed invocation...
-		  firstfail = FALSE;
-        printf("PTB-WARNING: PsychTimeGlue - Win32 syscall timeBeginPeriod(1) failed! Timing may be inaccurate...\n");
-		  // Increase switching threshold to 10 msecs to take low timer resolution into account:
-		  sleepwait_threshold = 0.010;
-    }    
 
 	 // Sleep until only sleepwait_threshold away from deadline:
     Sleep((int)((whenSecs - now - sleepwait_threshold) * 1000.0f));
-
-	 // Switch windows timer back to default precision (around 10-20 msecs):
-	 timeEndPeriod(1);
 
 	 // Recheck:
     PsychGetPrecisionTimerSeconds(&now);
@@ -144,12 +135,12 @@ void PsychInitTimeGlue(void)
 void PsychGetPrecisionTimerTicks(psych_uint64 *ticks)
 {
   LARGE_INTEGER	                count;
-  if (QueryPerformanceFrequency(&count)) {
+  if (QueryPerformanceFrequency(&count) && !Timertrouble) {
     QueryPerformanceCounter(&count);
     *ticks = (psych_uint64) count.QuadPart;
   }
   else {
-    *ticks = (psych_uint64) GetTickCount();
+    *ticks = (psych_uint64) timeGetTime();
   }
   return;
 }
@@ -159,7 +150,7 @@ void PsychGetPrecisionTimerTicksPerSecond(double *frequency)
   LARGE_INTEGER	                counterFreq;
 
   // High precision timer available?
-  if (QueryPerformanceFrequency(&counterFreq)) {
+  if (QueryPerformanceFrequency(&counterFreq) && !Timertrouble) {
     // Yes. Returns its operating frequency:
     *frequency=(double) counterFreq.QuadPart;
   }
@@ -180,74 +171,260 @@ void PsychGetPrecisionTimerTicksMinimumDelta(psych_uint32 *delta)
 void PsychGetPrecisionTimerSeconds(double *secs)
 
 {
-  // This code is taken from the old Windows Psychtoolbox:
-  // (VideoToolbox/SecondsPC.c)
-  double						ss, ticks;
-  static LARGE_INTEGER	        counterFreq;
-  LARGE_INTEGER			        count;
-  static double					oss=0.0f;
-  static double					oldticks=0.0f;
-  static Boolean				Timertrouble = FALSE;
+  double					ss, ticks, diff;
+  static LARGE_INTEGER		counterFreq;
+  LARGE_INTEGER				count;
+  static double				oss=0.0f;
+  static double				oldticks=0.0f;
+  static double				lastSlowcheckTimeSecs = -1;
+  static double				lastSlowcheckTimeTicks = -1;
+  int						tick1, tick2, hangcount;
+  psych_uint64				curRawticks;
+  static psych_uint64		oldRawticks;
+  static psych_uint64		tickWarpOffset = 0;
   
+	// First time init of timeglue: Set up system for high precision timing,
+	// and enable workarounds for broken systems:
   if (firstTime) {
-    counterExists = QueryPerformanceFrequency(&counterFreq);
-	if (counterExists) {
-		// Initialize old counter values to now:
-		QueryPerformanceCounter(&count);
-		oss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
-		oldticks = (double) GetTickCount() * 0.001;
-	}
-	
-    firstTime = FALSE;
+		// Switch the system into high resolution timing mode, i.e.,
+		// 1 khZ timer interrupts aka 1 msec timer resolution, for both,
+		// the Sleep() command and TimeGetTime() queries. This way, our hybrid
+		// sleep-waiting algorithm for PsychWaitUntilSeconds() can work with
+		// tight busy-wait transition thresholds and doesn't burn too much
+		// CPU time. The timeGetTime() function then gets sufficient granularity -
+		// 1 msecs - to be a good reference for our correctness/consistency
+		// checks on the high precision timer, and it is a sufficient fallback
+		// in case of broken timers.
+		// The drawback is increased general interrupt load due to the 1 kHZ IRQ's...
+    	if ((timeBeginPeriod(1)!=TIMERR_NOERROR) && (schedulingtrouble == FALSE)) {
+		  	// High precision mode failed! Output warning on first failed invocation...
+		  	schedulingtrouble = TRUE;
+        	printf("PTBCRITICAL -ERROR: PsychTimeGlue - Win32 syscall timeBeginPeriod(1) failed!!! Timing will be inaccurate.\n");
+        	printf("PTBCRITICAL -ERROR: Time measurement may be highly unreliable - or even false!!!\n");
+        	printf("PTBCRITICAL -ERROR: FIX YOUR SYSTEM! In its current state its not useable for conduction of studies!!!\n");
+        	printf("PTBCRITICAL -ERROR: Check the FAQ section of the Psychtoolbox Wiki for more information.\n");
+
+		  	// Increase switching threshold to 10 msecs to take low timer resolution into account:
+		  	sleepwait_threshold = 0.010;
+    	}    
+
+	 	// This command timeEndPeriod(1); should be used when flushing the MEX file, but
+		// we don't do it. Once a PsychTimeGlue function was called, we leave Matlab at
+		// high timing precision mode and rely on the OS to revert to standard Windoze
+		// behaviour, once the Matlab application is quit/terminated.
+
+		// Next step for broken systems: Bind our Matlab interpreter/PTB main thread to the
+		// first cpu core in the system. The only known way to make sure we don't get time
+		// readings from different TSCs due to our thread jumping between cpu's. TSC's on
+		// a multi-core system are not guaranteed to be synchronized, so if TSC is our timebase,
+		// this could lead to time inconsistencies - even time going backwards between queries!!!
+		// Drawback: We may not make optimal use of a multi-core system.
+		if (SetThreadAffinityMask(GetCurrentThread(), 1)==0) {
+		  	// Binding failed! Output warning on first failed invocation...
+		  	schedulingtrouble = TRUE;
+        	printf("PTBCRITICAL -ERROR: PsychTimeGlue - Win32 syscall SetThreadAffinityMask() failed!!! Timing could be inaccurate.\n");
+        	printf("PTBCRITICAL -ERROR: Time measurement may be highly unreliable - or even false!!!\n");
+        	printf("PTBCRITICAL -ERROR: FIX YOUR SYSTEM! In its current state its not useable for conduction of studies!!!\n");
+        	printf("PTBCRITICAL -ERROR: Check the FAQ section of the Psychtoolbox Wiki for more information.\n");
+		}
+		
+		// Spin-Wait until timeGetTime() has switched to 1 msec resolution:
+		hangcount = 0;
+		while(hangcount < 100) {
+			tick1 = (int) timeGetTime();
+			while((tick2=(int) timeGetTime()) == tick1);
+			if (tick2 - tick1 == 1) break;
+			hangcount++;
+		}
+
+		if (hangcount >= 100) {
+			// Totally foobared system! Output another warning but try to go on. Checks further below in code
+			// will trigger and provide counter measures - as far as this is possible with such a screwed system :-(
+			printf("PTB-CRITICAL WARNING! Timing code detected problems with the low precision TIMER in your system hardware!\n");
+			printf("PTB-CRITICAL WARNING! It doesn't run at the requested rate of 1 tick per millisecond. Interrupt problems?!?\n");
+			printf("PTB-CRITICAL WARNING! Your system is somewhat screwed up wrt. timing!\n");
+			printf("PTB-CRITICAL WARNING! It is NOT RECOMMENDED to continue using this machine for studies that require high\n");
+			printf("PTB-CRITICAL WARNING! timing precision in stimulus onset or response collection. No guarantees can be made\n");
+			printf("PTB-CRITICAL WARNING! wrt. to timing or correctness of any timestamps or stimulus onsets!\n");
+			printf("PTB-CRITICAL WARNING! Check the FAQ section of the Psychtoolbox Wiki for more information.\n\n");
+		}
+
+		// Ok, now timeGetTime() should have the requested 1 msec increment rate.
+		oldRawticks = -1;
+
+		// Ok, this is a dumb solution, but at least sort of robust. The
+		// proper solution will have to wait for the next 'beta' release cycle.
+		// We don't allow to use any timing function on a Windoze system that
+		// has more than 48 days of uptime. Rationale: At 49.8 days, the 32 bit
+		// tick counter will wrap around and leave our fallback- and reference
+		// timebase in an undefined state. Implementing proper wraparound handling
+		// for inifinite uptimes is not simple, due to PTB's modular nature and
+		// some special flaws of Windoze. Anyway, 48 days uptime is unlikely
+		// anyway, unless the user doesn't perform regular system updates...
+		if (((double) timeGetTime() * 0.001) > (3600 * 24 * 48)) {
+			// Uptime exceeds 48 days. Say user this is a no no:
+			printf("PTB-ERROR: Your system is running since over 48 days without a reboot. Due to some\n");
+			printf("PTB-ERROR: pretty disgusting design flaws in the Windows operating system, timing\n");
+			printf("PTB-ERROR: will become unreliable or wrong at uptimes of more than 49 days.\n");
+			printf("PTB-ERROR: Therefore PTB will not continue executing any time related function unless\n");
+			printf("PTB-ERROR: you reboot your machine now.\n\n");
+			PsychErrorExitMsg(PsychError_user, "Maximum allowable uptime for Windows exceeded. Please reboot your system.");
+		} 
+
+		// Is the high-precision timer supported?
+    	counterExists = QueryPerformanceFrequency(&counterFreq);
+		if (counterExists) {
+			// Initialize old counter values to now:
+			QueryPerformanceCounter(&count);
+			oss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
+		}	
   }
   
+	// Query system time of low resolution counter:
+	curRawticks = timeGetTime();
+
+	/* MK: Nice idea, but won't work that way :-( Need a more complex
+		// solution here. This has to wait for the next release cycle...
+		// Compare against old raw value to detect overflow and wraparound:
+		if ((curRawticks < oldRawticks) && (oldRawticks != -1)) {
+			// Wraparound due to 32 bit overflow after 49.8 days of uptime!
+			// Update our warp-offset to take this into account:
+			tickWarpOffset = tickWarpOffset + (0xffffffff - oldRawticks) + 1;
+		}
+		
+		// Update old raw count so it can be used as reference for next call:
+		oldRawticks = curRawticks;
+		
+		// Compute corrected - always monotonically increasing - uptime from tick count
+		// by applying the warp offset:
+		curRawticks += tickWarpOffset;
+	*/
+		
+	// Convert to ticks in seconds for further processing:
+	ticks = ((double) curRawticks) * 0.001;
+	tickInSecsAtLastQuery = ticks;
+	
+	
   if (counterExists) {
 	// Query Performance counter:
-    QueryPerformanceCounter(&count);
-    ss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
-	
-	// Consistency check:
-	ticks = (double) GetTickCount() * 0.001;
-	if (!Timertrouble) {
-		// No timer problems yet. Perform check: The old and new high res. timer should not
+   QueryPerformanceCounter(&count);
+
+   ss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
+   timeInSecsAtLastQuery = ss;
+
+	// Initialize base time for slow consistency checks at first invocation:
+	if (firstTime) {
+		lastSlowcheckTimeSecs = ss;
+		lastSlowcheckTimeTicks = ticks;
+	}
+
+	// Compute difference (disagreement over elapsed time since last call) between high-precision
+	// timer and low-precision timer:
+	diff = ((ss - oss) - (ticks - oldticks));
+
+	// We don't perform the inter-timer agreement check at first invokation - Thread scheduling etc. needs to settle,
+	// as well as the timeBeginPeriod(1) call above...
+	if (!Timertrouble && !firstTime) {
+		// No timer problems yet. Perform checks:
+
+		// Time running backwards?
+		if (ss < oss) {
+			Timertrouble = TRUE;
+			printf("PTB-CRITICAL WARNING! Timing code detected problems with the high precision TIMER in your system hardware!\n");
+			printf("PTB-CRITICAL WARNING! Apparently time is reported as RUNNING BACKWARDS. (Timewarp Delta: %f secs.)\n", ss - oss);
+			printf("PTB-CRITICAL WARNING! One reason could be a multi-core system with unsynchronized TSC's and buggy platform drivers.\n");
+			printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
+		}
+		
+		// The old and new high res. timer should not
 		// disagree in their increment since last call by more than 250 msecs. If they do,
 		// this means that the high precision timer leaped forward, which indicates a faulty
 		// Southbridge controller in the machines host chipset - Not a good basis for high precision timing.
 		// See Microsoft Knowledge base article Nr. 274323 for further explanation and a list of known bad
 		// chipsets.
-		if (((ss - oss) - (ticks - oldticks)) > 0.25) {
+		if (diff > 0.25) {
 			// Mismatch between performance counter and tick counter detected!
 			// Performance counter is faulty! Report this to user, then continue
 			// by use of the older tick counter as a band-aid.
 			Timertrouble = TRUE;
-			ss = ticks;
-			printf("PTB-CRITICAL WARNING! Timing code detected a FAULTY high precision TIMER in your system hardware!\n");
-			printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy).\n");
-			printf("PTB-CRITICAL WARNING! It is NOT RECOMMENDED to continue using this machine for studies that require high\n");
-			printf("PTB-CRITICAL WARNING! timing precision in stimulus onset or response collection. No guarantees can be made\n");
-			printf("PTB-CRITICAL WARNING! wrt. to timing or correctness of any timestamps or stimulus onsets! You have been warned!\n");
+			printf("PTB-CRITICAL WARNING! Timing code detected a FAULTY high precision TIMER in your system hardware!(Delta %f secs).\n", diff);
+			printf("PTB-CRITICAL WARNING! Seems the timer sometimes randomly jumps forward in time by over 250 msecs!");
+			printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
 			printf("PTB-CRITICAL WARNING! For more information see Microsoft knowledge base article Nr. 274323.\n");
 			printf("PTB-CRITICAL WARNING! http://support.microsoft.com/default.aspx?scid=KB;EN-US;Q274323&\n\n");
 		}
-		else {
-			// Check passed. Update old timestamps, return result.
-			oss = ss;
-			oldticks = ticks;
+
+		// We check for lags of QPC() wrt. to tick count at intervals of greater than 1 second, ie. only if
+		// this query and the last one are at least 1 second spaced apart in time. This is kind of a low-pass
+		// filter to account for the fact that the tick counter itself can sometimes lose a bit of time due
+		// to lost timer interrupts, and then jump forward in time by a couple of milliseconds when some
+		// system service detects the lost interrupts and accounts for them by incrementing time by multiple
+		// ticks at a single IRQ. Here we check over a longer period to make it less likely that such transients
+		// show up. We apply a much more generous lag threshold as well, so we can compensate for transient timer
+		// jumps of up to 50 msecs.
+		if ((ticks - lastSlowcheckTimeTicks) >= 1.0) {
+			// Check for lags: A lag of multiple msec is normal and expected due to the measurement method.
+			diff = ((ss - lastSlowcheckTimeSecs) - (ticks - lastSlowcheckTimeTicks));
+						
+			// Let's check for a lag exceeding 5% of the duration of the check interval, so we have a bit of headroom to the expected lag:
+			if (diff < -0.05 * (ticks - lastSlowcheckTimeTicks)) {
+				// Mismatch between performance counter and tick counter detected!
+				// Performance counter is lagging behind realtime! Report this to user, then continue
+				// by use of the older tick counter as a band-aid.
+				Timertrouble = TRUE;
+				printf("PTB-CRITICAL WARNING! Timing code detected a LAGGING high precision TIMER in your system hardware! (Delta %f secs).\n", diff);
+				printf("PTB-CRITICAL WARNING! Seems that the timer sometimes stops or slows down! This can happen on systems with\n");
+				printf("PTB-CRITICAL WARNING! processor power management (cpu throttling) and defective platform drivers.\n");				
+				printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
+				printf("PTB-CRITICAL WARNING! Please try if disabling all power management features of your system helps...\n");
+			}
+			
+			// Update timestamps of last check:
+			lastSlowcheckTimeSecs = ss;
+			lastSlowcheckTimeTicks = ticks;
+		}
+		
+		if (Timertrouble) {
+			// More info for user at first detection of trouble:
+			printf("PTB-CRITICAL WARNING! It is NOT RECOMMENDED to continue using this machine for studies that require high\n");
+			printf("PTB-CRITICAL WARNING! timing precision in stimulus onset or response collection. No guarantees can be made\n");
+			printf("PTB-CRITICAL WARNING! wrt. to timing or correctness of any timestamps or stimulus onsets!\n");
+			printf("PTB-CRITICAL WARNING! Read 'help GetSecsTest' and run GetSecsTest for further diagnosis and troubleshooting.\n");
+			printf("PTB-CRITICAL WARNING! It may also help to restart the machine to see if the problem is transient.\n");
+			printf("PTB-CRITICAL WARNING! Also check the FAQ section of the Psychtoolbox Wiki for more information.\n\n");			
 		}
 	}
+
+	// All checks done: Prepare old values for new iteration:
+	oss = ss;
+	oldticks = ticks;
+	
+	// Ok, is the timer finally considered safe to use?
+	if (!Timertrouble) {
+		// All checks passed: ss is the valid return value:
+		ss = ss;
+	}
 	else {
-		// Performance counter works unreliably: Fall back to GetTickCount().
-		// This only has 1 msec resolution, but at least it works.
+		// Performance counter works unreliably: Fall back to result of timeGetTime().
+		// This only has 1 msec resolution at best, but at least it works (somewhat...).
 		ss = ticks;
 	}	
-	// End of high precision timestamping.
-  } else {
-	// Low precision fallback path for ancient machines: 1 khz tick counter:
-    ss = (double) GetTickCount();
-    ss = ss * 0.001;
+
+	//  ========= End of high precision timestamping. =========
   }
-  
+  else {
+	//  ========= Low precision fallback path for ancient machines: 1 khz tick counter: =========
+	ss = ticks;
+	timeInSecsAtLastQuery = -1;
+  }
+
+  // Finally assign time value:  
   *secs= ss;  
+
+	// Clear the firstTime flag - this was the first time, maybe.
+   firstTime = FALSE;
+
+	return;
 }
 
 void PsychGetAdjustedPrecisionTimerSeconds(double *secs)
@@ -282,7 +459,7 @@ void PsychEstimateGetSecsValueAtTickCountZero(void)
 {
   double		nowTicks, nowSecs;
   
-  nowTicks=(double) GetTickCount();
+  nowTicks=(double) timeGetTime();
   PsychGetAdjustedPrecisionTimerSeconds(&nowSecs);
   estimatedGetSecsValueAtTickCountZero=nowSecs - nowTicks * (1/1000.0f); 
 }
@@ -292,3 +469,22 @@ double PsychGetEstimatedSecsValueAtTickCountZero(void)
   return(estimatedGetSecsValueAtTickCountZero);
 }
 
+/* Returns value of timeGetTime() based timer (in seconds) last time the
+	high precision timer was queried. This is a reference value for checking
+	correctness of the high precision timer with external code.
+	Windows specific, only used by GetSecs() for Windows...
+*/
+double PsychGetTimeGetTimeValueAtLastTimeQuery(double* precisionRawtime)
+{
+	*precisionRawtime = timeInSecsAtLastQuery;
+	return(tickInSecsAtLastQuery );
+}
+
+/* Windows specific: Only used by GetSecs() - Return encoded timer healthy flags: */
+unsigned int PsychGetTimeBaseHealthiness(void)
+{
+	unsigned int v;
+	v=(Timertrouble) ? 1 : 0;
+	v+=(schedulingtrouble) ? 2 : 0;
+	return(v);
+}
