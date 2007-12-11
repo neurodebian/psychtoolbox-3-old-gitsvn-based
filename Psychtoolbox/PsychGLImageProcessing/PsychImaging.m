@@ -40,6 +40,36 @@ function [rc, winRect] = PsychImaging(cmd, varargin)
 % 'whichTask' contains the name string of one of the supported
 % actions:
 %
+% * 'InterleavedLineStereo' Ask for stereo display in interleaved mode.
+%   The output image is composed from the lefteye and righteye stereo
+%   buffers by interleaving their content: Even lines are filled with
+%   content from the left buffer, odd lines are filled with content from
+%   the right buffer, i.e., Row 0 = Left row 0, Row 1 = Right row 0, Row 2
+%   = Left row 1, Row 3 = Right row1, ....
+%
+%   This mode is useful for driving some types of stereo devices and
+%   goggles, e.g., the iGlasses 3D Video goggles in interleaved stereo
+%   mode.
+%
+%   Usage: PsychImaging('AddTask', 'General', 'InterleavedLineStereo', startright);
+%
+%   If 'startright' is zero, then even lines are taken from left buffer. If
+%   'startright' is one, then even lines are taken from the right buffer.
+%
+%
+% * 'UseFastOffscreenWindows' Ask for support of fast Offscreen windows.
+%   These use a more efficient storage, backed by OpenGL framebuffer
+%   objects (FBO's). Drawing into them isn't faster, but *switching*
+%   between drawing into onscreen- and offscreen windows, or switching
+%   between drawing into different offscreen windows is faster. They also
+%   support a couple of other advanced features and performance
+%   improvements in conjunction with the imaging pipeline.
+%   If you only specify this task, then you'll get the benefit of fast
+%   windows, without the cost of other features of the pipeline you might
+%   not need.
+%
+%   Usage: PsychImaging('AddTask', 'General', 'UseFastOffscreenWindows');
+%
 %
 % * 'FloatingPoint16Bit' Ask for a 16 bit floating point precision
 %   framebuffer. This allows more than 8 bit precision for complex drawing,
@@ -403,17 +433,17 @@ if strcmp(cmd, 'OpenWindow')
     
     % Override numbuffers -- always 2:
     numbuffers = 2;
-    
-    % Compute correct imagingMode - Settings for current configuration and
-    % return it:
-    [imagingMode needStereoMode] = FinalizeConfiguration(reqs);
-    
+        
     if nargin < 7 || isempty(varargin{6})
         stereomode = 0;
     else
         stereomode = varargin{6};
     end
-    
+        
+    % Compute correct imagingMode - Settings for current configuration and
+    % return it:
+    [imagingMode needStereoMode] = FinalizeConfiguration(reqs, stereomode);
+
     % Override stereomode derived from requirements?
     if needStereoMode ~= -1
         if needStereoMode == -2 && stereomode == 0
@@ -573,7 +603,7 @@ return;
 % FinalizeConfiguration consolidates the current set of requirements and
 % derives the needed stereoMode settings and imagingMode setting to pass to
 % Screen('OpenWindow') for pipeline preconfiguration.
-function [imagingMode, stereoMode] = FinalizeConfiguration(reqs)
+function [imagingMode, stereoMode] = FinalizeConfiguration(reqs, userstereomode)
 
 % Set imagingMode to minimum: Pipeline disabled. All latter task
 % requirements will setup imagingMode to fullfill their needs. A few
@@ -587,6 +617,20 @@ imagingMode = 0;
 % Set stereoMode to don't care:
 stereoMode = -1;
 
+% Does usercode request a stereomode?
+if userstereomode > 0
+    % Enable imaging pipeline based stereo,ie., kPsychNeedFastBackingStore:
+    imagingMode = mor(imagingMode, kPsychNeedFastBackingStore);
+end
+
+% Stereomode 4 for interleaved line stereo needed?
+if ~isempty(find(mystrcmp(reqs, 'InterleavedLineStereo')))
+    % Yes: Must use stereomode 6.
+    stereoMode = 6;
+    % We also request an effective window height that is only half the real
+    % height. This affects all drawing and query commands of Screen:
+    imagingMode = mor(imagingMode, kPsychNeedFastBackingStore, kPsychNeedHalfHeightWindow);    
+end
 
 % Stereomode 10 for display replication needed?
 if ~isempty(find(mystrcmp(reqs, 'MirrorDisplayTo2ndOutputHead')))
@@ -692,6 +736,16 @@ end
 if ~isempty(find(mystrcmp(reqs, 'FinalFormatting')))
     imagingMode = mor(imagingMode, kPsychNeedFastBackingStore);
     imagingMode = mor(imagingMode, kPsychNeedOutputConversion);
+end
+
+% Support for fast offscreen windows (aka FBO backed offscreen windows)
+% needed?
+if ~isempty(find(mystrcmp(reqs, 'UseFastOffscreenWindows')))
+    % Need fast offscreen windows. They are included if any non-zero imagingMode
+    % is set, so we only request'em if imagingMode is still zero:
+    if imagingMode == 0
+        imagingMode = kPsychNeedFastOffscreenWindows;
+    end
 end
 
 return;
@@ -908,6 +962,42 @@ if ~isempty(floc)
     end
 end
 % --- End of geometry correction via warped blit ---
+
+% --- Interleaved line stereo wanted? ---
+if ~isempty(find(mystrcmp(reqs, 'InterleavedLineStereo')))
+    % Yes: Load and setup compositing shader.
+    shader = LoadGLSLProgramFromFiles('InterleavedLineStereoShader', 1);
+
+    floc = find(mystrcmp(reqs, 'InterleavedLineStereo'));
+    [rows cols]= ind2sub(size(reqs), floc);
+    % Extract first parameter - This should be the mapping of odd- and even
+    % lines: 0 = even lines == left image, 1 = even lines == right image.
+    startright = reqs{rows, 3};
+
+    if startright~=0 && startright~=1
+        Screen('CloseAll');
+        error('PsychImaging: The "startright" parameter must be zero or one!');
+    end
+    
+    % Init the shader: Assign mapping of left- and right image:
+    glUseProgram(shader);
+    glUniform1i(glGetUniformLocation(shader, 'Image1'), 1-startright);
+    glUniform1i(glGetUniformLocation(shader, 'Image2'), startright);
+
+    % Add a readout offset of window height in vertical direction:
+    [winwidth winheight] = Screen('WindowSize', win);
+    glUniform2f(glGetUniformLocation(shader, 'Offset'), 0, winheight);
+    glUseProgram(0);
+    
+    % Reset compositor chain: It got initialized inside Screen() with an
+    % unsuitable shader for our purpose:
+    Screen('HookFunction', win, 'Reset', 'StereoCompositingBlit');
+
+    % Append our new shader and enable chain:
+    Screen('HookFunction', win, 'AppendShader', 'StereoCompositingBlit', 'StereoCompositingShaderInterleavedLineStereo', shader);
+    Screen('HookFunction', win, 'Enable', 'StereoCompositingBlit');
+end
+% --- End of interleaved line stereo setup code ---
 
 % --- Final output formatter for Pseudo-Gray processing requested? ---
 if ~isempty(find(mystrcmp(reqs, 'EnablePseudoGrayOutput')))
