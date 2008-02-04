@@ -51,6 +51,10 @@
 
 #include "Screen.h"
 
+#if PSYCH_SYSTEM == PSYCH_LINUX
+#include <errno.h>
+#endif
+
 #if PSYCH_SYSTEM != PSYCH_WINDOWS
 #include "ptbstartlogo.h"
 #else
@@ -72,6 +76,16 @@ static boolean inGLUserspace = FALSE;
 // We keep track of the current active rendertarget in order to
 // avoid needless state changes:
 static PsychWindowRecordType* currentRendertarget = NULL;
+
+#if PSYCH_SYSTEM != PSYCH_WINDOWS
+// The handle of the masterthread - The Matlab/Octave/PTB main interpreter thread: This
+// is initialized when opening the first onscreen window. Its used in PsychSetDrawingTarget()
+// to discriminate between the masterthread and the worker threads for async flip operations:
+static pthread_t	masterthread = NULL;
+#endif
+
+// Count of currently async-flipping onscreen windows:
+static unsigned int	asyncFlipOpsActive = 0;
 
 // Dynamic rebinding of ARB extensions to core routines:
 // This is a trick to get GLSL working on current OS-X (10.4.4). MacOS-X supports the OpenGL
@@ -192,7 +206,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     int logo_x, logo_y;
     GLboolean	isFloatBuffer;
     GLint bpc;
-
+	
     // OS-9 emulation? If so, then we only work in double-buffer mode:
     if (PsychPrefStateGet_EmulateOldPTB()) numBuffers = 2;
 
@@ -207,6 +221,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     PsychCreateWindowRecord(windowRecord);  		//this also fills the window index field.
 
 	// Show our "splash-screen wannabe" startup message at opening of first onscreen window:
+	// Also init the thread handle to our main thread here:
 	if ((*windowRecord)->windowIndex == PSYCH_FIRST_WINDOW) {
 		if(PsychPrefStateGet_Verbosity()>2) {
 			printf("\n\nPTB-INFO: This is the OpenGL-Psychtoolbox for %s, version %i.%i.%i. (Build date: %s)\n", PSYCHTOOLBOX_OS_NAME, PsychGetMajorVersionNumber(), PsychGetMinorVersionNumber(), PsychGetPointVersionNumber(), PsychGetBuildDate());
@@ -221,7 +236,13 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 			printf("PTB-INFO: limited support and possibly significant bugs hidden in it! Use with great caution and avoid if you can!\n");
 			printf("PTB-INFO: Currently implemented: Screen('OpenOffscreenWindow'), Screen('CopyWindow') and Screen('WaitBlanking')\n");
 		}
+		
+		#if PSYCH_SYSTEM != PSYCH_WINDOWS
+			masterthread = pthread_self();
+		#endif
+
 	}
+	
     // Assign the passed windowrect 'rect' to the new window:
     PsychCopyRect((*windowRecord)->rect, rect);
     
@@ -268,6 +289,29 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         return(FALSE);
     }
 
+	// Set a flag that we should switch to native 10 bpc framebuffer later on if possible:
+	if ((*windowRecord)->depth == 30) {
+		// Support for kernel driver available?
+#if PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX
+		if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber)) {
+			printf("\nPTB-ERROR: Your script requested a 30bpp, 10bpc framebuffer, but the Psychtoolbox kernel driver is not loaded and ready.\n");
+			printf("PTB-ERROR: The driver must be loaded and functional for your graphics card for this to work.\n");
+			printf("PTB-ERROR: Read 'help PsychtoolboxKernelDriver' for more information.\n\n");
+			PsychOSCloseWindow(*windowRecord);
+			FreeWindowRecordFromPntr(*windowRecord);
+			return(FALSE);			
+		}
+		
+		// Basic support seems to be there, set the request flag.
+		(*windowRecord)->specialflags|= kPsychNative10bpcFBActive;
+#else
+		printf("\nPTB-ERROR: Your script requested a 30bpp, 10bpc framebuffer, but this is not supported on MS-Windows.\n");
+		PsychOSCloseWindow(*windowRecord);
+		FreeWindowRecordFromPntr(*windowRecord);
+		return(FALSE);
+#endif
+	}
+
 	// Query if OpenGL stereo is supported:
 	glGetBooleanv(GL_STEREO, &isFloatBuffer);
 	if (!isFloatBuffer && stereomode==kPsychOpenGLStereo) {
@@ -310,7 +354,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     // Dynamically rebind core extensions: Ugly ugly...
     PsychRebindARBExtensionsToCore();
     
-    if ((*windowRecord)->depth == 30 || (*windowRecord)->depth == 64 || (*windowRecord)->depth == 128) {
+    if ((((*windowRecord)->depth == 30) && !((*windowRecord)->specialflags & kPsychNative10bpcFBActive)) || (*windowRecord)->depth == 64 || (*windowRecord)->depth == 128) {
 
         // Floating point framebuffer active? GL_RGBA_FLOAT_MODE_ARB would be a viable alternative?
         glGetBooleanv(GL_COLOR_FLOAT_APPLE, &isFloatBuffer);
@@ -412,13 +456,10 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     // See code in PsychDrawingTarget()...
     (*windowRecord)->textureOrientation=2;
 
-    // Enable GL-Context of current onscreen window:
-    PsychSetGLContext(*windowRecord);
-
-    // Perform a full reset of the framebuffer-object switching code:
-    PsychSetDrawingTarget(NULL);
+    // Perform a full safe reset of the framebuffer-object switching code:
+    PsychSetDrawingTarget(0x1);
     
-    // Enable this windowRecords framebuffer as current drawingtarget. This will also setup
+    // Enable this windowRecords OpenGL context and framebuffer as current drawingtarget. This will also setup
     // the projection and modelview matrices, viewports and such to proper values:
     PsychSetDrawingTarget(*windowRecord);
 
@@ -582,15 +623,15 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         ifi_estimate = PsychGetMonitorRefreshInterval(*windowRecord, &numSamples, &maxsecs, &stddev, ifi_nominal);
       }
       
-      // Now we try if CGDisplayBeamPosition works and try to estimate monitor refresh from it
+      // Now we try if PsychGetDisplayBeamPosition works and try to estimate monitor refresh from it
       // as well...
       
       // Check if a beamposition of 0 is returned at two points in time on OS-X:
       i = 0;
-      if (((int) CGDisplayBeamPosition(cgDisplayID) == 0) && (PSYCH_SYSTEM == PSYCH_OSX)) {
+      if (((int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber) == 0) && (PSYCH_SYSTEM == PSYCH_OSX)) {
         // Recheck after 2 ms on OS-X:
         PsychWaitIntervalSeconds(0.002);
-        if ((int) CGDisplayBeamPosition(cgDisplayID) == 0) {
+        if ((int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber) == 0) {
 	  // A constant value of zero is reported on OS-X -> Beam position queries unsupported
 	  // on this combo of gfx-driver and hardware :(
 	  i=12345;
@@ -599,21 +640,21 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
       
       // Check if a beamposition of -1 is returned: This would indicate that beamposition queries
       // are not available on this system: This always happens on Linux as that feature is unavailable.
-      if ((-1 != ((int) CGDisplayBeamPosition(cgDisplayID))) && (i!=12345)) {
+      if ((-1 != ((int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber))) && (i!=12345)) {
 	// Switch to RT scheduling for timing tests:
 	PsychRealtimePriority(true);
 	
 	// Code for estimating the final scanline of the vertical blank interval of display (needed by Screen('Flip')):
 	
-	// Check if CGDisplayBeamPosition is working properly:
+	// Check if PsychGetDisplayBeamPosition is working properly:
 	// The first test checks, if it returns changing values at all or if it returns a constant
 	// value at two measurements 2 ms apart...
-	i=(int) CGDisplayBeamPosition(cgDisplayID);
+	i=(int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber);
 	PsychWaitIntervalSeconds(0.002);
-	if ((((int) CGDisplayBeamPosition(cgDisplayID)) == i) || (i < -1)) {
-	  // CGDisplayBeamPosition returns the same value at two different points in time?!?
+	if ((((int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber)) == i) || (i < -1)) {
+	  // PsychGetDisplayBeamPosition returns the same value at two different points in time?!?
 	  // That's impossible on anything else than a high-precision 500 Hz display!
-	  // --> CGDisplayBeamPosition is not working correctly for some reason.
+	  // --> PsychGetDisplayBeamPosition is not working correctly for some reason.
 	  sync_trouble = true;
 	  if(PsychPrefStateGet_Verbosity()>1) {
 			if (i >=-1) printf("\nWARNING: Querying rasterbeam-position doesn't work on your setup! (Returns a constant value %i)\n", i);
@@ -621,14 +662,14 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 	  }
 	}
 	else {
-	  // CGDisplayBeamPosition works: Use it to find VBL-Endline...
+	  // PsychGetDisplayBeamPosition works: Use it to find VBL-Endline...
 	  // Sample over 50 monitor refresh frames:
 	  double told, tnew;
 	  for (i=0; i<50; i++) {
 	    // Take beam position samples from current monitor refresh interval:
 	    maxline = -1;
 	    // We spin-wait until retrace and record our highest measurement:
-	    while ((bp=(int) CGDisplayBeamPosition(cgDisplayID)) >= maxline) maxline=bp;
+	    while ((bp=(int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber)) >= maxline) maxline=bp;
 	    // We also take timestamps for "yet another way" to measure monitor refresh interval...
 	    PsychGetAdjustedPrecisionTimerSeconds(&tnew);
 	    if (i>0) {
@@ -638,7 +679,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 	    told=tnew;
 	    
 		// Another (in)sanity check. Negative values immediately after retrace?
-		if((int) CGDisplayBeamPosition(cgDisplayID) < 0) {
+		if((int) PsychGetDisplayBeamPosition(cgDisplayID, (*windowRecord)->screenNumber) < 0) {
 			// Driver bug! Abort this...
 			VBL_Endline = -1;
 			tnew = -1;
@@ -769,7 +810,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
           }
           else {
               if (PsychPrefStateGet_VBLTimestampingMode()>=0) printf("PTB-Info: Will use beamposition query for accurate Flip time stamping.\n");
-              if (PsychPrefStateGet_VBLTimestampingMode()< 0) printf("PTB-Info: Beamposition queries are supported, but disabled. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\\n");
+              if (PsychPrefStateGet_VBLTimestampingMode()< 0) printf("PTB-Info: Beamposition queries are supported, but disabled. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\n");
           }
       }
       else {
@@ -973,6 +1014,12 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
         glDrawBuffer(GL_FRONT);
     }
 
+	// Check if 10 bpc native framebuffer support is requested:
+	if (((*windowRecord)->specialflags & kPsychNative10bpcFBActive) && PsychOSIsKernelDriverAvailable((*windowRecord)->screenNumber)) {
+		// Try to switch framebuffer to native 10 bpc mode:
+		PsychEnableNative10BitFramebuffer((*windowRecord), TRUE);
+	}
+
     // Done.
     return(TRUE);
 }
@@ -1010,12 +1057,24 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 	}
 	
 	// If our to-be-destroyed windowRecord is currently bound as drawing target,
-	// e.g. as onscreen window or offscreen window, then we need to soft-reset
+	// e.g. as onscreen window or offscreen window, then we need to safe-reset
 	// our drawing engine - Unbind its FBO (if any) and reset current target to
 	// 'none'.
-	if (PsychGetDrawingTarget() == windowRecord) PsychSetDrawingTarget(NULL);
+	if (PsychGetDrawingTarget() == windowRecord) PsychSetDrawingTarget(0x1);
 	
     if(PsychIsOnscreenWindow(windowRecord)){
+				// Call cleanup routine for the flipInfo record (and possible associated threads):
+				// This must be first in order to not get caught in infinite loops if this is
+				// a window close due to error-abort or other abort with async flips active:
+				PsychReleaseFlipInfoStruct(windowRecord);
+
+				// Check if 10 bpc native framebuffer support was supposed to be enabled:
+				if ((windowRecord->specialflags & kPsychNative10bpcFBActive) && PsychOSIsKernelDriverAvailable(windowRecord->screenNumber)) {
+					// Try to switch framebuffer back to standard 8 bpc mode. This will silently
+					// do nothing if framebuffer wasn't in non-8bpc mode:
+					PsychEnableNative10BitFramebuffer(windowRecord, FALSE);
+				}
+
                 // Free possible shadow textures:
                 PsychFreeTextureForWindowRecord(windowRecord);        
                 
@@ -1054,9 +1113,15 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 				PsychOSCloseWindow(windowRecord);
 
                 windowRecord->targetSpecific.contextObject=NULL;
-				
+
 				// Execute hook chain for final non-OpenGL related shutdown:
-				PsychPipelineExecuteHook(windowRecord, kPsychCloseWindowPostGLShutdown, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);				
+				PsychPipelineExecuteHook(windowRecord, kPsychCloseWindowPostGLShutdown, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
+				
+				// If this was the last onscreen window then we reset the currentRendertarget etc. to pre-Screen load time:
+				if (PsychIsLastOnscreenWindow(windowRecord)) {
+					currentRendertarget = NULL;
+					asyncFlipOpsActive = 0;
+				}
     }
     else if(windowRecord->windowType==kPsychTexture) {
                 // Texture or Offscreen window - which is also just a form of texture.
@@ -1144,6 +1209,565 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 void PsychFlushGL(PsychWindowRecordType *windowRecord)
 {
     if(PsychIsOnscreenWindow(windowRecord) && PsychPrefStateGet_EmulateOldPTB()) glFinish();            
+}
+
+/* PsychReleaseFlipInfoStruct() -- Cleanup flipInfo struct
+ *
+ * This routine cleans up the flipInfo struct field of onscreen window records at
+ * onscreen window close time (called from PsychCloseWindow() for onscreen windows).
+ * It also performs all neccessary thread shutdown and release actions if a async
+ * thread is associated with the windowRecord.
+ *
+ */
+void PsychReleaseFlipInfoStruct(PsychWindowRecordType *windowRecord)
+{
+	PsychFlipInfoStruct* flipRequest = windowRecord->flipInfo;
+	int rc;
+	static unsigned int recursionlevel = 0;
+	
+	// Nothing to do for NULL structs:
+	if (NULL == flipRequest) return;
+	
+	// Any async flips in progress?
+	if (flipRequest->asyncstate != 0) {
+		// Hmm, what to do?
+		printf("PTB-WARNING: Asynchronous flip operation for window %p in progress while Screen('Close') or Screen('CloseAll') was called or\n", windowRecord);
+		printf("PTB-WARNING: exiting from a Screen error! Will try to finalize it gracefully. This may hang, crash or go into an infinite loop...\n");
+		fflush(NULL);
+		
+		// A value of 2 would mean its basically done, so nothing to do here.
+		if (flipRequest->asyncstate == 1) {
+			// If no recursion and flipper thread not in error state it might be safe to try a normal shutdown:
+			if (recursionlevel == 0 && flipRequest->flipperState < 4) {
+				// Operation in progress: Try to stop it the normal way...
+				flipRequest->opmode = 2;
+				recursionlevel++;
+				PsychFlipWindowBuffersIndirect(windowRecord);
+				recursionlevel--;
+			}
+			else {
+				// We seem to be in an infinite error loop. Try to force asyncstate to zero
+				// in the hope that we'll break out of the loop that way and hope for the best...
+				printf("PTB-WARNING: Infinite loop detected. Trying to break out in a cruel way. This may hang, crash or go into another infinite loop...\n");
+				fflush(NULL);
+				flipRequest->asyncstate = 0;
+			}
+		}
+	}
+	
+	// Decrement the asyncFlipOpsActive count:
+	asyncFlipOpsActive--;
+
+#if PSYCH_SYSTEM != PSYCH_WINDOWS
+	// Any threads attached?
+	if (flipRequest->flipperThread) {
+		// Yes. Cancel and destroy / release it, also release all mutex locks:
+
+		// Set opmode to "terminate please":
+		flipRequest->opmode = -1;
+		
+		// Unlock the lock in case we hold it, so the thread can't block on it:
+		if ((rc=pthread_mutex_unlock(&(flipRequest->performFlipLock))) && (rc!=EPERM)) {
+			printf("PTB-DEBUG: In PsychReleaseFlipInfoStruct(): mutex_unlock in thread shutdown operation failed  [%s].\n", strerror(rc));
+			printf("PTB-ERROR: This must not ever happen! PTB design bug or severe operating system or runtime environment malfunction!! Memory corruption?!?");
+			// Anyway, just hope its not fatal for us...
+		}
+		
+		// Signal the thread in case its waiting on the condition variable:
+		if ((rc=pthread_cond_signal(&(flipRequest->flipperGoGoGo)))) {
+			printf("PTB-ERROR: In PsychReleaseFlipInfoStruct(): pthread_cond_signal in thread shutdown operation failed  [%s].\n", strerror(rc));
+			printf("PTB-ERROR: This must not ever happen! PTB design bug or severe operating system or runtime environment malfunction!! Memory corruption?!?");
+			// Anyway, just hope its not fatal for us...
+			// Try to cancel the thread in a more cruel manner. That's the best we can do.
+			pthread_cancel(flipRequest->flipperThread);
+		}
+
+		// Wait for thread to stop and die:
+		if (PsychPrefStateGet_Verbosity()>5) printf("PTB-DEBUG: Waiting (join()ing) for helper thread of window %p to finish up. If this doesn't happen quickly, you'll have to kill Matlab/Octave...\n", windowRecord);
+
+		// If any error happened here, it wouldn't be a problem for us...
+		pthread_join(flipRequest->flipperThread, NULL);
+		
+		// Ok, thread is dead. Mark it as such:
+		flipRequest->flipperThread = NULL;
+	}
+	
+	// Destroy the mutex:
+	if ((rc=pthread_mutex_destroy(&(flipRequest->performFlipLock))) && (rc!=EINVAL)) {
+		printf("PTB-WARNING: In PsychReleaseFlipInfoStruct: Could not destroy performFlipLock mutex lock [%s].\n", strerror(rc));
+		printf("PTB-WARNING: This will cause ressource leakage. Maybe you should better exit and restart Matlab/Octave?");
+	}
+	
+	// Destroy condition variable:
+	if ((rc=pthread_cond_destroy(&(flipRequest->flipperGoGoGo))) && (rc!=EINVAL)) {
+		printf("PTB-WARNING: In PsychReleaseFlipInfoStruct: Could not destroy flipperGoGoGo condition variable [%s].\n", strerror(rc));
+		printf("PTB-WARNING: This will cause ressource leakage. Maybe you should better exit and restart Matlab/Octave?");
+	}
+#endif
+
+	// Release struct:
+	free(flipRequest);
+	windowRecord->flipInfo = NULL;
+	
+	// Done.
+	return;
+}
+
+/* PsychFlipperThreadMain() the "main()" routine of the asynchronous flip worker thread:
+ *
+ * This routine implements an infinite loop (well, infinite until cancellation at Screen('Close')
+ * time etc.). The loop waits for a trigger signal from the PTB/Matlab/Octave main thread that
+ * an async flip for the associated onscreen window is requested. Then it processes that request
+ * by calling the underlying flip routine properly, returns all return values in the flipRequest
+ * struct and goes to sleep again to wait for the next request.
+ *
+ * Each onscreen window has its own thread, but threads are created lazily at first invokation of
+ * an async fip for a window, so most users will never ever have any of these beasts running.
+ * The threads are destroyed at Screen('Close', window); Screen('CloseAl') or Screen errorhandling/
+ * clear Screen / Matlab exit time.
+ *
+ * While an async flip is active for an onscreen window, the worker thread exclusively owns the
+ * OpenGL context of that window and the main thread is prevented from executing any OpenGL related
+ * commands. This is important because while many OpenGL contexts are allowed to be attached to
+ * many threads in parallel, it's not allowed for one context to be attached to multiple threads!
+ * We have lots of locking and protection in place to prevent such things.
+ *
+ * Its also important that no code from a worker thread is allowed to call back into Matlab, so
+ * the imaging pipeline can not run from this thread: PsychPreflipOperations() is run fromt the main
+ * thread in a fully synchronous manner, only after imaging pipe completion is control handed to the
+ * worker thread. Error output or error handling from within code executed here may or may not be
+ * safe in Matlab, so if one of these errors triggers, things may screw up in uncontrolled ways,
+ * ending in a hang or crash of Matlab/Octave. We try to catch most common errors outside the
+ * worker thread to minimize chance of this happening.
+ *
+ */
+void* PsychFlipperThreadMain(void* windowRecordToCast)
+{
+#if PSYCH_SYSTEM != PSYCH_WINDOWS
+	int rc;
+
+	// Get a handle to our info structs: These pointers must not be NULL!!!
+	PsychWindowRecordType*	windowRecord = (PsychWindowRecordType*) windowRecordToCast;
+	PsychFlipInfoStruct*	flipRequest	 = windowRecord->flipInfo;
+	
+	// Try to lock, block until available if not available:
+	if ((rc=pthread_mutex_lock(&(flipRequest->performFlipLock)))) {
+		// This could potentially kill Matlab, as we're printing from outside the main interpreter thread.
+		// Use fprintf() instead of the overloaded printf() (aka mexPrintf()) in the hope that we don't
+		// wreak havoc -- maybe it goes to the system log, which should be safer...
+		fprintf(stderr, "PTB-ERROR: In PsychFlipperThreadMain(): First mutex_lock in init failed  [%s].\n", strerror(rc));
+
+		// Commit suicide with state "error, lock not held":
+		flipRequest->flipperState = 5;
+		return;
+	}
+	
+	// Got the lock: Set our state as "initialized, ready & waiting":
+	flipRequest->flipperState = 1;
+
+	// Dispatch loop: Repeats infinitely, processing one flip request per loop iteration.
+	// Well, not infinitely, but until we receive a shutdown request and terminate ourselves...
+	while (TRUE) {
+		// Unlock the lock and go to sleep, waiting on the condition variable for a start signal from
+		// the master thread. This is an atomic operation, both unlock and sleep happen simultaneously.
+		// After a wakeup due to signalling, the lock is automatically reacquired, so no need to mutex_lock
+		// anymore. This is also a thread cancellation point...
+		if ((rc=pthread_cond_wait(&(flipRequest->flipperGoGoGo), &(flipRequest->performFlipLock)))) {
+			// Failed: Log it in a hopefully not too unsafe way:
+			fprintf(stderr, "PTB-ERROR: In PsychFlipperThreadMain():  pthread_cond_wait() on flipperGoGoGo trigger failed  [%s].\n", strerror(rc));
+			
+			// Commit suicide with state "error, lock not held":
+			flipRequest->flipperState = 5;
+			return;
+		}
+		
+		// Got woken up, work to do! We have to lock from auto-reqacquire in cond_wait:
+		
+		// Check if we are supposed to terminate:
+		if (flipRequest->opmode == -1) {
+			// We shall terminate: We are not waiting on the flipperGoGoGo variable.
+			// We hold the mutex, so set us to state "terminating with lock held" and exit the loop:
+			flipRequest->flipperState = 4;
+			break;	
+		}
+
+		// Got the lock: Set our state to "executing - flip in progress":
+		flipRequest->flipperState = 2;
+
+		// fprintf(stdout, "WAITING UNTIL T = %lf\n", flipRequest->flipwhen); fflush(NULL);
+
+		// Setup context etc. manually, as PsychSetDrawingTarget() is a no-op when called from
+		// this thread:
+		
+		// Attach to context - It's detached in the main thread:
+		PsychSetGLContext(windowRecord);
+		
+		// Setup view:
+		PsychSetupView(windowRecord);
+
+		// Nothing more to do, the system backbuffer is bound, no FBO's are set at this point.
+
+		// Unpack struct and execute synchronous flip: Synchronous in our thread, asynchronous from Matlabs/Octaves perspective!
+		flipRequest->vbl_timestamp = PsychFlipWindowBuffers(windowRecord, flipRequest->multiflip, flipRequest->vbl_synclevel, flipRequest->dont_clear, flipRequest->flipwhen, &(flipRequest->beamPosAtFlip), &(flipRequest->miss_estimate), &(flipRequest->time_at_flipend), &(flipRequest->time_at_onset));
+
+		// Flip finished and struct filled with return arguments.
+		// Set our state to 3 aka "flip operation finished, ready for new commands":
+		flipRequest->flipperState = 3;
+		
+		// Detach our GL context, so main interpreter thread can use it again. This will also unbind any bound FBO's.
+		// As there wasn't any drawing target bound throughout our execution, and the drawingtarget was reset to
+		// NULL in main thread before our invocation, there's none bound now. --> The first Screen command in
+		// the main thread will rebind and setup the context and drawingtarget properly:
+		PsychOSUnsetGLContext(windowRecord);
+
+		//fprintf(stdout, "DETACHED, CONDWAIT\n"); fflush(NULL);
+		
+		// Repeat the dispatch loop. That will atomically unlock the lock and set us asleep until we
+		// get triggered again with more work to do:
+	}
+	
+	// Need to unlock the mutex:
+	if (flipRequest->flipperState == 4) {
+		if ((rc=pthread_mutex_unlock(&(flipRequest->performFlipLock)))) {
+			// This could potentially kill Matlab, as we're printing from outside the main interpreter thread.
+			// Use fprintf() instead of the overloaded printf() (aka mexPrintf()) in the hope that we don't
+			// wreak havoc -- maybe it goes to the system log, which should be safer...
+			fprintf(stderr, "PTB-ERROR: In PsychFlipperThreadMain(): Last mutex_unlock in termination failed  [%s].\n", strerror(rc));
+
+			// Commit suicide with state "error, lock not held":
+			flipRequest->flipperState = 5;
+			return;
+		}
+	}
+
+#endif
+
+	// Ok, we're not blocked on condition variable and we've unlocked the lock (or at least, did our best to do so),
+	// and set the termination state: Go and die peacefully...
+	return;
+}
+
+/*	PsychFlipWindowBuffersIndirect()
+ *
+ *	This is a wrapper around PsychFlipWindowBuffers(); which gets all flip request parameters
+ *	passed in a struct PsychFlipInfoStruct, decodes that struct, calls the PsychFlipWindowBuffers()
+ *	accordingly, then encodes the returned flip results into the struct.
+ *
+ *	This method not only allows synchronous flips - in which case its the same behaviour
+ *	as PsychFlipWindowBuffers(), just with struct parameters - but also asynchronous flips:
+ *	In that case, the flip request is just scheduled for later async, parallel execution by
+ *	a background helper thread. Another invocation allows to retrieve the results of that
+ *	flip synchronously.
+ *
+ *	This is the preferred method of calling flips from userspace, used in SCREENFlip.c for
+ *	standard Screen('Flips'), but also for async Screen('FlipAsyncStart') and Screen('FlipAsyncEnd').
+ *
+ *	Btw.: Async flips are only supported on Unix operating systems: GNU/Linux and Apple MacOS/X.
+ *
+ *	The passed windowRecord of the onscreen window to flip must contain a PsychFlipInfoStruct*
+ *	flipRequest with all neccessary info for the flip parameters and the fields in which result
+ *	shall be returned, as well as the datastructures for thread/mutex/cond locking etc...
+ *
+ *  flipRequest->opmode can be one of:
+ *	0 = Execute Synchronous flip, 1 = Start async flip, 2 = Finish async flip, 3 = Poll for finish of async flip.
+ *
+ *  *	Synchronous flips are performed without changing the mutex lock flipRequest->performFlipLock. We check if
+ *		there are not flip ops scheduled or executing for the window, then simply execute the flip and return its
+ *		results, if none are active.
+ *
+ *	*	Asynchronous flips are always started with the flipInfo struct setup with all needed parameters and
+ *		the performFlipLock locked on triggering the worker thread: Either because we create the thread at
+ *		first invocation and acquire the lock just before initial trigger, or because we are initiating a flip
+ *		after a previous successfull and finished async flip -- in which case we come from there with the lock
+ *		held. Also the worker thread is waiting on the flipperGoGoGo condition variable.
+ *
+ *	*	Async flips are finalized or polled for finalization (and then finalized on poll success) by entering with
+ *		the lock not held, so we need to lock->check->unlock (in not ready yet case) or lock->check->finalize in
+ *		success case - in which case we leave with the worker thread waiting on the flipperGoGoGo for new work and
+ *		our performFlipLock held -- Just as we want it for the next async flip invocation.
+ *
+ *  More important stuff:
+ *
+ *  *	Code executing in the PsychFlipperThreadMain() worker thread is not allowed to print anything to the
+ *		Matlab/Octave console, alloate or deallocate memory or other stuff that might interact with the runtime
+ *		environment Matlab or Octave. We don't know if they are thread-safe, but assume they are not!
+ *
+ *	*	Error handling as well as clear Screen and Screen('Close', window) or Screen('CloseAll') all trigger
+ *		PsychCloseWindow() for the onscreen window, which in turn triggers cleanup in PsychReleaseFlipInfoStruct().
+ *		That routine must not only release the struct, but also make absolutely sure that our thread gets cancelled
+ *		or signalled to exit and joined, then destroyed and all mutexes unlocked and destroyed!!!
+ *
+ *  *	The master interpreter thread must detach from the PTB internal OpenGL context for the windowRecord and
+ *		not reattach until an async flip is finished! PsychSetGLContext() contains appropriate checking code:
+ *		Only one thread is allowed to attach to a specific context, so we must basically lock that ressource as
+ *		long as our flipperThread needs it to perform preflip,bufferswap and timestamping, postflip operations...
+ *
+ *  *	The userspace OpenGL context is not so critical in theory, but we protect that one as well, as it is a
+ *		separate context, so no problems from the OpenGL/OS expected (multiple threads can have multiple contexts
+ *		attached, as long as each context only has one thread attached), but both contexts share the same drawable
+ *		and therefore the same backbuffer. That could prevent bufferswaps at requested deadline/VSYNC because some
+ *		usercode rasterizes into the backbuffer and subverts our preflip operations...
+ *
+ *	Returns success state: TRUE on success, FALSE on error.
+ *
+ */
+bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
+{
+	int rc;
+	PsychFlipInfoStruct* flipRequest;
+	
+	if (NULL == windowRecord) PsychErrorExitMsg(PsychError_internal, "NULL-Ptr for windowRecord passed in PsychFlipWindowsIndirect()!!");
+	
+	flipRequest = windowRecord->flipInfo;
+	if (NULL == flipRequest) PsychErrorExitMsg(PsychError_internal, "NULL-Ptr for 'flipRequest' field of windowRecord passed in PsychFlipWindowsIndirect()!!");
+
+	// Synchronous flip requested?
+	if (flipRequest->opmode == 0) {
+		// Yes. Any pending operation in progress?
+		if (flipRequest->asyncstate != 0) PsychErrorExitMsg(PsychError_internal, "Tried to invoke synchronous flip while flip still in progress!");
+		
+		// Unpack struct and execute synchronous flip:
+		flipRequest->vbl_timestamp = PsychFlipWindowBuffers(windowRecord, flipRequest->multiflip, flipRequest->vbl_synclevel, flipRequest->dont_clear, flipRequest->flipwhen, &(flipRequest->beamPosAtFlip), &(flipRequest->miss_estimate), &(flipRequest->time_at_flipend), &(flipRequest->time_at_onset));
+
+		// Done, and all return values filled in struct. We leave asyncstate at its zero setting, ie., idle and simply return:
+		return(TRUE);
+	}
+
+#if PSYCH_SYSTEM != PSYCH_WINDOWS
+
+	// Asynchronous flip mode, either request to trigger one or request to finalize one:
+	if (flipRequest->opmode == 1) {
+		// Async flip start request:
+		if (flipRequest->asyncstate != 0) PsychErrorExitMsg(PsychError_internal, "Tried to invoke asynchronous flip while flip still in progress!");
+
+		// Current multiflip > 0 implementation is not thread-safe, so we don't support this:
+		if (flipRequest->multiflip != 0)  PsychErrorExitMsg(PsychError_user, "Using a non-zero 'multiflip' flag while starting an asynchronous flip! This is forbidden! Aborted.\n");
+
+		// PsychPreflip operations are not thread-safe due to possible callbacks into Matlab interpreter thread
+		// as part of hookchain processing when the imaging pipeline is enabled: We perform/trigger them here
+		// before entering the async flip thread:
+		PsychPreFlipOperations(windowRecord, flipRequest->dont_clear);
+
+		// Tell Flip that pipeline - flushing has been done already to avoid redundant flush'es:
+		windowRecord->PipelineFlushDone = TRUE;
+
+		// ... and flush the pipe:
+		glFlush();
+
+		// First time async request? Threads already set up?
+		if (flipRequest->flipperThread == NULL) {
+			// First time init: Need to startup flipper thread:
+
+			// printf("IN THREADCREATE\n"); fflush(NULL);
+
+			// Create & Init the two mutexes:
+			if ((rc=pthread_mutex_init(&(flipRequest->performFlipLock), NULL))) {
+				printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): Could not create performFlipLock mutex lock [%s].\n", strerror(rc));
+				PsychErrorExitMsg(PsychError_system, "Insufficient system ressources for mutex creation as part of async flip setup!");
+			}
+			
+			if ((rc=pthread_cond_init(&(flipRequest->flipperGoGoGo), NULL))) {
+				printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): Could not create flipperGoGoGo condition variable [%s].\n", strerror(rc));
+				PsychErrorExitMsg(PsychError_system, "Insufficient system ressources for condition variable creation as part of async flip setup!");
+			}
+			
+			// Set initial thread state to "inactive, not initialized at all":
+			flipRequest->flipperState = 0;
+			
+			// Create and startup thread:
+			if ((rc=pthread_create(&(flipRequest->flipperThread), NULL, PsychFlipperThreadMain, (void*) windowRecord))) {
+				printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): Could not create flipper  [%s].\n", strerror(rc));
+				PsychErrorExitMsg(PsychError_system, "Insufficient system ressources for mutex creation as part of async flip setup!");
+			}
+
+			//printf("ENTERING THREADCREATEFINISHED MUTEX\n"); fflush(NULL);
+			
+			// The thread is started with flipperState == 0, ie., not "initialized and ready", the lock is unlocked.
+			// First thing the thread will do is try to lock the lock, then set its flipperState to 1 == initialized and
+			// ready, then init itself, then enter a wait on our flipperGoGoGo condition variable and atomically unlock
+			// the lock.
+			// We now need to try to acquire the lock, then - after we got it - check if we got it because we were faster
+			// than the flipperThread and he didn't have a chance to get it (iff flipperState still == 0) - in which case
+			// we need to release the lock, wait a bit and then retry a lock->check->sleep->unlock->... cycle. If we got it
+			// because flipperState == 1 then this means the thread had the lock, initialized itself, set its state to ready
+			// and went sleeping and releasing the lock (that's why we could lock it). In that case, the thread is ready to
+			// do work for us and is just waiting for us. At that point we: a) Have the lock, b) can trigger the thread via
+			// condition variable to do work for us. That's the condition we want and we can proceed as in the non-firsttimeinit
+			// case...
+			while (TRUE) {
+				// Try to lock, block until available if not available:
+			
+				//printf("ENTERING THREADCREATEFINISHED MUTEX: MUTEX_LOCK\n"); fflush(NULL);
+
+				if ((rc=pthread_mutex_lock(&(flipRequest->performFlipLock)))) {
+					printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): First mutex_lock in init failed  [%s].\n", strerror(rc));
+					PsychErrorExitMsg(PsychError_system, "Internal error or deadlock avoided as part of async flip setup!");
+				}
+				
+				//printf("ENTERING THREADCREATEFINISHED MUTEX: MUTEX_LOCKED!\n"); fflush(NULL);
+
+				// Got it! Check condition:
+				if (flipRequest->flipperState == 1) {
+					// Thread ready and we have the lock: Proceed...
+					break;
+				}
+
+				//printf("ENTERING THREADCREATEFINISHED MUTEX: MUTEX_UNLOCK\n"); fflush(NULL);
+
+				if ((rc=pthread_mutex_unlock(&(flipRequest->performFlipLock)))) {
+					printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): First mutex_unlock in init failed  [%s].\n", strerror(rc));
+					PsychErrorExitMsg(PsychError_system, "Internal error or deadlock avoided as part of async flip setup!");
+				}
+
+				//printf("ENTERING THREADCREATEFINISHED MUTEX: MUTEX_UNLOCKED\n"); fflush(NULL);
+
+				// Thread not ready. Sleep a millisecond and repeat...
+				PsychWaitIntervalSeconds(0.001);
+
+				//printf("ENTERING THREADCREATEFINISHED MUTEX: RETRY\n"); fflush(NULL);
+			}
+
+			// End of first-time init for this windowRecord and its thread.
+
+			// printf("FIRST TIME INIT DONE\n"); fflush(NULL);
+		}
+		
+		// Our flipperThread is ready to do work for us (waiting on flipperGoGoGo condition variable) and
+		// we have the lock on the flipRequest struct. The struct is already filled with all input parameters
+		// for a flip request, so we can simply release our lock and signal the thread that it should do its
+		// job:
+
+		// printf("IN ASYNCSTART: DROP CONTEXT\n"); fflush(NULL);
+
+		// Detach from our OpenGL context:
+		PsychSetDrawingTarget(NULL);
+		PsychOSUnsetGLContext(windowRecord);
+		
+		// Increment the counter asyncFlipOpsActive : On non-zero count, none of the threads is allowed
+		// to attach to contexts of non-onscreen windows and ressources anymore:
+		asyncFlipOpsActive++;
+
+		// printf("IN ASYNCSTART: MUTEXUNLOCK\n"); fflush(NULL);
+
+		// Release the lock: This is not strictly needed, as the ptrhead_cond_signal() semantics
+		// would automatically take the lock from us and assign it to the signalled thread.
+		// TODO CHECK: Might be even better to not unlock for more deterministic flow of scheduling...
+		if ((rc=pthread_mutex_unlock(&(flipRequest->performFlipLock)))) {
+			printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): mutex_unlock in trigger operation failed  [%s].\n", strerror(rc));
+			PsychErrorExitMsg(PsychError_internal, "This must not ever happen! PTB design bug or severe operating system or runtime environment malfunction!! Memory corruption?!?");
+		}
+
+		// printf("IN ASYNCSTART: MUTEXUNLOCKED -- SIGNALLING %s\n", strerror(rc)); fflush(NULL);
+		
+		// Trigger the thread:
+		if ((rc=pthread_cond_signal(&(flipRequest->flipperGoGoGo)))) {
+			printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): pthread_cond_signal in trigger operation failed  [%s].\n", strerror(rc));
+			PsychErrorExitMsg(PsychError_internal, "This must not ever happen! PTB design bug or severe operating system or runtime environment malfunction!! Memory corruption?!?");
+		}
+
+		// printf("IN ASYNCSTART: MUTEXUNLOCKED -- SIGNALLED -- ASYNCSTATE 1 -- RETURNING\n"); fflush(NULL);
+		
+		// That's it, operation in progress: Mark it as such.
+		flipRequest->asyncstate = 1;
+		
+		// Done.
+		return(TRUE);
+	}
+	
+	// Request to wait or poll for finalization of an async flip operation:
+	if ((flipRequest->opmode == 2) || (flipRequest->opmode == 3)) {
+		// Child protection:
+		if (flipRequest->asyncstate != 1) PsychErrorExitMsg(PsychError_internal, "Tried to invoke end of an asynchronous flip while although none is in progress!");
+
+		// We try to get the lock, then check if flip is finished. If not, we need to wait
+		// a bit and retry:
+		while (TRUE) {
+			if (flipRequest->opmode == 2) {
+				// Blocking wait:
+				// Try to lock, block until available if not available:
+
+				//printf("END: MUTEX_LOCK\n"); fflush(NULL);
+				
+				if ((rc=pthread_mutex_lock(&(flipRequest->performFlipLock)))) {
+					printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): mutex_lock in wait for finish failed  [%s].\n", strerror(rc));
+					PsychErrorExitMsg(PsychError_system, "Internal error or deadlock avoided as part of async flip end!");
+				}
+			}
+			else {
+				// Polling mode:
+				// Try to lock, fail if not available:
+
+				//printf("END: MUTEX_TRYLOCK: %i\n", flipRequest->flipperState); fflush(NULL);
+
+				if ((rc=pthread_mutex_trylock(&(flipRequest->performFlipLock)))) {
+					// Failed. If errno == EBUSY then the lock is busy and we exit our polling operation totally:
+					if(rc == EBUSY) return(FALSE);
+					
+					// Otherwise bad things happened!
+					printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): mutex_lock in poll for finish failed  [%s].\n", strerror(rc));
+					PsychErrorExitMsg(PsychError_system, "Internal error or deadlock avoided as part of async flip poll end!");
+				}
+			}
+
+			// printf("END: MUTEX_LOCKED\n"); fflush(NULL);
+			
+			// Got it! Check condition:
+			if (flipRequest->flipperState == 3) {
+				// Thread finished with flip request execution, ready for new work and waiting for a trigger and we have the lock: Proceed...
+				break;
+			}
+
+			//printf("END: NOTREADY MUTEX_UNLOCK\n"); fflush(NULL);
+
+			// Not finished. Unlock:
+			if ((rc=pthread_mutex_unlock(&(flipRequest->performFlipLock)))) {
+				printf("PTB-ERROR: In Screen('FlipAsyncBegin'): PsychFlipWindowBuffersIndirect(): mutex_unlock in wait/poll for finish failed  [%s].\n", strerror(rc));
+				PsychErrorExitMsg(PsychError_system, "Internal error or deadlock avoided as part of async flip end!");
+			}
+
+			//printf("END: NOTREADY MUTEX_UNLOCKED\n"); fflush(NULL);
+
+			if (flipRequest->opmode == 3) {
+				// Polling mode: We just exit our polling op, so user code can retry later:
+				return(FALSE);
+			}
+			
+			//printf("END: RETRY\n"); fflush(NULL);
+			
+			// Waiting mode, need to repeat:
+			// Thread not finished. Sleep a millisecond and repeat...
+			PsychWaitIntervalSeconds(0.001);
+		}
+
+		//printf("END: SUCCESS\n"); fflush(NULL);
+		
+		// Ok, the thread is finished and ready for new work and waiting.
+		// We have the lock as well.
+		
+		// Reset thread state to "initialized, ready and waiting" just as if it just started at first invocation:
+		flipRequest->flipperState = 1;
+
+		// Set flip state to finished:
+		flipRequest->asyncstate = 2;
+		
+		// Decrement the asyncFlipOpsActive count:
+		asyncFlipOpsActive--;
+
+		// Now we are in the same condition as after first time init. The thread is waiting for new work,
+		// we hold the lock so we can read out the flipRequest struct or fill it with a new request,
+		// and all information from the finalized flip is available in the struct.
+		// We can return to our parent function with our result:
+		return(TRUE);
+	}
+
+#else
+
+	// MS-Windows: Async flip ops not supported:
+	PsychErrorExitMsg(PsychError_unimplemented, "Sorry, asynchronous display flip operations are not supported on inferior operating systems.");
+
+#endif
+
+	return(TRUE);
 }
 
 /*
@@ -1253,9 +1877,6 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     PsychGetScreenSize(windowRecord->screenNumber, &scw, &sch);
     vbl_startline = (int) sch;
 
-    // Enable GL-Context of current onscreen window:
-    PsychSetGLContext(windowRecord);
-
     // Enable this windowRecords framebuffer as current drawingtarget:
     PsychSetDrawingTarget(windowRecord);
     
@@ -1274,6 +1895,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     
     if (multiflip > 0) {
         // Experimental Multiflip requested. Build list of all onscreen windows...
+		// CAUTION: This is not thread-safe in the Matlab/Octave environment, due to
+		// callbacks into Matlabs/Octaves memory managment from a non-master thread!
+		// --> multiflip > 0 is not allowed for async flips!!!
         PsychCreateVolatileWindowRecordPointerList(&numWindows, &windowRecordArray);
     }
     
@@ -1292,6 +1916,8 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     
     // Perform preflip-operations: Backbuffer backups for the different dontclear-modes
     // and special compositing operations for specific stereo algorithms...
+	// These are not thread-safe! For async flip, these must be called in async flip start
+	// while still on the main thread, so this call here turns into a no-op:
     PsychPreFlipOperations(windowRecord, dont_clear);
     
 	// Special imaging mode active? in that case a FBO may be bound instead of the system framebuffer.
@@ -1433,9 +2059,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	
     // Trigger the "Front <-> Back buffer swap (flip) on next vertical retrace" and
 	// take a measurement of the beamposition at time of swap request:
-	line_at_swaprequest = (int) CGDisplayBeamPosition(displayID);
+	line_at_swaprequest = (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber);
     PsychOSFlipWindowBuffers(windowRecord);
-	line_at_swaprequest = (line_at_swaprequest + (int) CGDisplayBeamPosition(displayID)) * 0.5;
+	line_at_swaprequest = (line_at_swaprequest + (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber)) * 0.5;
 	
 	// Also swap the slave window, if any:
 	if (windowRecord->slaveWindow) PsychOSFlipWindowBuffers(windowRecord->slaveWindow);
@@ -1457,7 +2083,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             // Wait for VBL onset via experimental busy-waiting spinloop instead of
             // blocking: We spin-wait until the rasterbeam of our master-display enters the
             // VBL-Area of the display:
-            while (vbl_startline > (int) CGDisplayBeamPosition(displayID));
+            while (vbl_startline > (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber));
         }
         else {
             // Standard blocking wait for flip/VBL onset requested:
@@ -1492,7 +2118,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         }
         
         // Query and return rasterbeam position immediately after Flip and before timestamp:
-        *beamPosAtFlip=(int) CGDisplayBeamPosition(displayID);
+        *beamPosAtFlip=(int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber);
 
          // We take a timestamp here and return it to "userspace"
         PsychGetAdjustedPrecisionTimerSeconds(&time_at_vbl);
@@ -1505,7 +2131,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             // microseconds, let's say 250 microsecs. for now, so the low-level vbl interrupt task
             // in IOKits workloop can do its job. But first let's try to do it without yielding...
 			vbltimestampquery_retrycount = 0;
-                        PsychWaitIntervalSeconds(0.00025);
+			PsychWaitIntervalSeconds(0.00025);
 			postflip_vbltimestamp = PsychOSGetVBLTimeAndCount(windowRecord->screenNumber, &postflip_vblcount);
 
 			// If a valid preflip timestamp equals the postflip timestamp although the swaprequest likely didn't
@@ -1523,19 +2149,20 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 			// Some diagnostics at high debug-levels:
 			if (vbltimestampquery_retrycount > 0 && PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: In PsychFlipWindowBuffers(), VBLTimestamping: RETRYCOUNT %i : Delta Swaprequest - preflip_vbl timestamp: %lf secs.\n", vbltimestampquery_retrycount, time_at_swaprequest - preflip_vbltimestamp);
 			
-			if (vbltimestampquery_retrycount>=8) {
+			if ((vbltimestampquery_retrycount>=8) && (PsychPrefStateGet_Verbosity() > 0)) {
 				// VBL irq queries broken! Disable them.
 				printf("PTB-ERROR: VBL kernel-level timestamp queries broken on your setup  [Query failed multiple times]! Please disable them via Screen('Preference', 'VBLTimestampingMode', 0);\n");
 				printf("PTB-ERROR: until the problem is resolved. You may want to restart Matlab and retry.\n");
 			}
 			
-                        // We try to detect wrong order of events, but again allow for a bit of slack,
-                        // as some drivers (this time on PowerPC) have their own share of trouble.
-			if (postflip_vbltimestamp - time_at_vbl > 0.002) {
+			// We try to detect wrong order of events, but again allow for a bit of slack,
+			// as some drivers (this time on PowerPC) have their own share of trouble.
+			if ((postflip_vbltimestamp - time_at_vbl > 0.002) && (PsychPrefStateGet_Verbosity() > 0)) {
 				// VBL irq queries broken! Disable them.
 				printf("PTB-ERROR: VBL kernel-level timestamp queries broken on your setup [Impossible order of events]! Please disable them via Screen('Preference', 'VBLTimestampingMode', 0);\n");
 				printf("PTB-ERROR: until the problem is resolved. You may want to restart Matlab and retry.\n");
 				printf("PTB-ERROR: postflip - time at vbl == %lf secs.\n", postflip_vbltimestamp - time_at_vbl);
+				printf("PTB-ERROR: Btw. if you are running in windowed mode, this is not unusual -- timestamping doesn't work well in windowed mode...\n");
 			}
         }
         #endif
@@ -1707,17 +2334,17 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         // Reenable VBL-Sync for all onscreen windows except our primary one:
         for(i=0;i<numWindows;i++) {
             if (PsychIsOnscreenWindow(windowRecordArray[i]) && (windowRecordArray[i]!=windowRecord)) {
-	      PsychOSSetVBLSyncLevel(windowRecordArray[i], 1);
+				PsychOSSetVBLSyncLevel(windowRecordArray[i], 1);
             }
         }
     }
     
     if (multiflip>0) {
-        // Cleanup our multiflip windowlist:
+        // Cleanup our multiflip windowlist: Not thread-safe!
         PsychDestroyVolatileWindowRecordPointerList(windowRecordArray);
     }
     
-	 // Cleanup temporary gamma tables if needed:
+	 // Cleanup temporary gamma tables if needed: Should be thread-safe due to standard libc call.
 	 if ((windowRecord->inRedTable) && (windowRecord->loadGammaTableOnNextFlip > 0)) {
 		free(windowRecord->inRedTable); windowRecord->inRedTable = NULL;
 		free(windowRecord->inGreenTable); windowRecord->inGreenTable = NULL;
@@ -1743,6 +2370,30 @@ void PsychSetGLContext(PsychWindowRecordType *windowRecord)
 	// Child protection: Calling this function is only allowed in non-userspace rendering mode:
     if (PsychIsUserspaceRendering()) PsychErrorExitMsg(PsychError_user, "You tried to call a Screen graphics command after Screen('BeginOpenGL'), but without calling Screen('EndOpenGL') beforehand! Read the help for 'Screen EndOpenGL?'.");
 
+	// Check if any async flip on any onscreen window in progress: In that case only the async flip worker thread is allowed to call PsychSetGLContext()
+	// on async-flipping onscreen windows, and none of the threads is allowed to attach to non-onscreen-window ressources.
+	// asyncFlipOpsActive is a count of currently async-flipping onscreen windows...
+	#if PSYCH_SYSTEM != PSYCH_WINDOWS
+		// First check if it's an onscreen window: We allow the main thread to attach to onscreen windows which are not (yet) involved in an async flip operation:
+		if ((windowRecord->flipInfo) && (windowRecord->flipInfo->asyncstate == 1) && (!pthread_equal(windowRecord->flipInfo->flipperThread, pthread_self()))) {
+			// Wrong thread - This one is not allowed to attach to any OpenGL context for this windowRecord at the moment.
+			// Likely a programming error by the user:
+			PsychErrorExitMsg(PsychError_user, "Your code tried to execute a Screen() graphics command or Matlab/Octave/C OpenGL command for an onscreen window while an asynchronous flip operation was in progress on that window!\nThis is not allowed for that command! Finalize the flip first via Screen('AsyncFlipCheckEnd') or Screen('AsyncFlipEnd')!");    
+		}
+
+		// Then check if it's something else (offscreen window, texture, proxy, ...). We don't allow the main thread (or any thread)
+		// to attach to such an object while *any* window is participating in an async flip. Rationale: Such objects are technically
+		// not owned by a single GL context. Pro forma they were created in a specific context so it would be sufficient to find out
+		// if that context is participating in async flip and prevent attachment in that case -- sufficient to prevent the GPU or OS
+		// from malfunctioning or our code from crashing. However, once created they are shared between all contexts because we enable
+		// context ressource sharing on all our contexts. That means that operations performed on them may impact the performance and
+		// latency of operations in unrelated contexts, e.g., the ones involved in async flip --> Potential to impair the stimulus
+		// onset timing of async-flipping windows.
+		if (!PsychIsOnscreenWindow(windowRecord) && (asyncFlipOpsActive > 0)) {
+			PsychErrorExitMsg(PsychError_user, "Your code tried to execute a Screen() graphics command or Matlab/Octave/C OpenGL command for an offscreen window, texture or proxy while some asynchronous flip operation was in progress!\nThis is not allowed for that command! Finalize the async flip(s) first via Screen('AsyncFlipCheckEnd') or Screen('AsyncFlipEnd')!");
+		}
+	#endif
+	
 	// Call OS - specific context switching code:
     PsychOSSetGLContext(windowRecord);
 }
@@ -1812,10 +2463,9 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
         windowRecord->IFIRunningSum = 0;
         windowRecord->nrIFISamples = 0;
 
-        // Setup context and back-drawbuffer:
-        PsychSetGLContext(windowRecord);
-
-        // Enable this windowRecords framebuffer as current drawingtarget:
+        // Enable this windowRecords framebuffer as current drawingtarget: Important to do this, even
+		// if it gets immediately disabled below, as this also sets the OpenGL context and takes care
+		// of all state transitions between onscreen/offscreen windows etc.:
         PsychSetDrawingTarget(windowRecord);
 
 		// ...and immediately disable it in imagingmode, because it won't be the system backbuffer,
@@ -2025,8 +2675,6 @@ void PsychVisualBell(PsychWindowRecordType *windowRecord, double duration, int b
     PsychGetAdjustedPrecisionTimerSeconds(&tdeadline);
     tdeadline+=duration;
     
-    // Setup context:
-    PsychSetGLContext(windowRecord);
     // Enable this windowRecords framebuffer as current drawingtarget:
     PsychSetDrawingTarget(windowRecord);
 
@@ -2123,7 +2771,7 @@ void PsychVisualBell(PsychWindowRecordType *windowRecord, double duration, int b
         glFinish();
 
         // Query and visualize scanline immediately after VBL onset, aka return of glFinish();
-        scanline=(int) CGDisplayBeamPosition(cgDisplayID);    
+        scanline=(int) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);    
         if (belltype==3) {
             glColor3f(1,1,0);
             glBegin(GL_LINES);
@@ -2172,9 +2820,6 @@ void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
     // Early reject: If this flag is set, then there's no need for any processing:
     // We only continue processing textures, aka offscreen windows...
     if (windowRecord->windowType!=kPsychTexture && windowRecord->backBufferBackupDone) return;
-
-    // Switch to associated GL-Context of windowRecord:
-    PsychSetGLContext(windowRecord);
 
     // Enable this windowRecords framebuffer as current drawingtarget:
     PsychSetDrawingTarget(windowRecord);
@@ -2618,10 +3263,19 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 	 }
 
     PsychTestForGLErrors();
-    
-	// EXPERIMENTAL: Execute hook chain for preparation of user space drawing ops:
-	PsychPipelineExecuteHook(windowRecord, kPsychUserspaceBufferDrawingPrepare, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
 
+	// Fixup possible low-level framebuffer layout changes caused by commands above this point. Needed from native 10bpc FB support to work reliably.
+	PsychFixupNative10BitFramebufferEnableAfterEndOfSceneMarker(windowRecord);
+
+	// EXPERIMENTAL: Execute hook chain for preparation of user space drawing ops: Not thread safe!!!
+	if (((windowRecord->flipInfo) && (windowRecord->flipInfo->asyncstate !=0)) && PsychIsHookChainOperational(windowRecord, kPsychUserspaceBufferDrawingPrepare)) {
+		// Hooohooo: Someone tries to use this hookchain from within an async flip! We don't support this:
+		return;
+	}
+	else {
+		PsychPipelineExecuteHook(windowRecord, kPsychUserspaceBufferDrawingPrepare, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
+	}
+	
     // Done.
     return;
 }
@@ -2634,31 +3288,104 @@ PsychWindowRecordType* PsychGetDrawingTarget(void)
 /* PsychSetDrawingTarget - Set the target window for following drawing ops.
  *
  * Set up 'windowRecord' as the target window for all drawing operations.
+ *
+ * This routine is usually called from the Screen drawing- and userspace OpenGL <-> Screen
+ * state transition routines to setup a specific PTB window as drawing target.
+ *
+ * It is also called by Screen's internal special image processing routines (e.g,
+ * 'TransformTexture' and preparation routines for OpenGL double-buffer swaps to
+ * *disable* a window as drawing target, so the low-level internal code is free
+ * to do whatever it wants with the system framebuffer or OpenGL FBO's without
+ * the danger of interfering/damaging the integrity of onscreen windows and offscreen
+ * windows/textures.
+ *
+ * Basic usage is one of three ways:
+ *
+ * * PsychSetDrawingTarget(windowRecord) to prepare drawing into the framebuffer of
+ * windowRecord, including all behind-the-scenes management, activating the associated
+ * OpenGL context for that window and setting up viewport, scissor and projection/modelview
+ * matrices etc.
+ *
+ * * PsychSetDrawingTarget(0x1) to safely reset the drawing target to "None". This will
+ * perform all relevant tear-down actions (switching off FBOs, performing backbuffer backups etc.)
+ * for the previously active drawing target, then setting the current drawing target to NULL.
+ * This command is to be used by PTB internal routines if they need to be able to do
+ * whatever they want with the system backbuffer or FBO's via low-level OpenGL calls,
+ * without needing to worry about possible side-effects or image corruption in any
+ * user defined onscreen/offscreen windows or textures. This is used in routines like
+ * 'Flip', 'OpenWindow', 'OpenOffscreenWindow', 'TransformTexture' etc.
+ * After this call, the current OpenGL context binding will be undefined! Or to be more
+ * accurate: If no window was active then maybe no context will be bound -- Any OpenGL
+ * command would cause a crash! If a window was active then that windows context will
+ * be bound -- probably not what you want, unless you carefully verified it *is* what
+ * you want! ==> Check your assumption wrt. bound context or use PsychSetGLContext()
+ * to explicitely set the context you need!
+ *
+ * * PsychSetDrawingTarget(NULL) is a hard-reset, like the (0x1) case, but without
+ * performing sensible tear-down actions. Wrong usage will leave Screen in an undefined
+ * state! All current uses of this call have been carefully audited for correctness,
+ * usually you don't need this!
+ * 
+ * The implementation contains two pathways of execution: One for use of imaging pipeline,
+ * i.e., with FBO backed framebuffers -- this is the preferred way on modern hardware,
+ * as it is more flexible, robust, simpler and faster. For old hardware and non-imaging
+ * mode there is a slow path that tries to emulate FBO's with old OpenGL 1.1 mechanisms
+ * like glCopyTexImage() et al. This one is relatively limited and inflexible, slow
+ * and convoluted!
+ *
+ * FastPath:
+ *
  * If windowRecord corresponds to an onscreen window, the standard framebuffer is
- * selected as drawing target. If 'windowRecord' corresponds to a Psychtoolbox
- * texture (aka Offscreen Window), we bind the texture as OpenGL framebuffer object,
- * so we have render-to-texture functionality.
+ * selected as drawing target when imagingMode == Use fast offscreen windows, otherwise
+ * (full imaging pipe) the FBO of the windows virtual framebuffer is bound.
+ * If 'windowRecord' corresponds to a Psychtoolbox texture (or Offscreen Window), we
+ * bind the texture as OpenGL framebuffer object, so we have render-to-texture functionality.
  *
- * This routine only performs state-transitions if necessary to save expensive
- * state switches. Calling the routine with a NULL-Ptr doesn't change the rendertarget
- * but signals render-completion.
+ * This requires support for EXT_Framebuffer_object extension, ie., OpenGL 1.5 or higher.
+ * On OS/X it requires Tiger 10.4.3 or later.
  *
- * This routine requires support for OpenGL Framebuffer objects, aka OpenGL 1.5 with
- * extension or OpenGL 2 or later. As a consequence it requires OS-X 10.4.3 or later or
- * a Windows system with proper support. It is a no-op on all other systems.
+ * SlowPath:
  *
+ * Textures and offscreen windows are implemented via standard OpenGL textures, but as
+ * OpenGL FBO's are not available (or disabled), we use the backbuffer as both, backbuffer
+ * of an onscreen window, and as a framebuffer for offscreen windows/textures when drawing
+ * to them. The routine performs switching between windows (onscreen or offscreen) by
+ * saving the backbuffer of the previously active rendertarget into an OpenGL texture via
+ * glCopyTexImage() et al., then initializing the backbuffer with the content of the texture
+ * of the new drawingtarget by blitting the texture into the framebuffer. Lots of care
+ * has to be taken to always backup/restore from/to the proper backbuffer ie. the proper
+ * OpenGL context (if multiple are used), to handle the case of transposed or inverted
+ * textures (e.g, quicktime engine, videocapture engine, Screen('MakeTexture')), and
+ * to handle the case of TEXTURE_2D textures on old hardware that doesn't support rectangle
+ * textures! This is all pretty complex and convoluted.
+ *
+ *
+ * This routine only performs state-transitions if necessary, in order to save expensive
+ * state switches. It tries to be lazy and avoid work!
+ *
+ * A special case is calls of this routine from background worker threads not equal
+ * to the Matlab/Octave/PTB main execution thread. These threads are part of the async
+ * flip implementation on OS/X and Linux. They call code that sometimes calls into this
+ * routine. The system is designed to behave properly if this routine just return()'s without
+ * doing anything when called from such a workerthread. That's why we check and early-exit
+ * in case of non-master thread invocation.
+ * 
  */
 void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 {
-    static GLuint framebufferobject = 0;
-    static Boolean fbo_workaround_needed = FALSE;
-    static GLuint framebufferobject2 = 0;
-    static GLuint renderbuffer = 0;
-    static unsigned int recursionLevel = 0;
-    static int use_framebuffer_objects = -1;
-    int texid, twidth, theight;
+    static unsigned int		recursionLevel = 0;
+    int						twidth, theight;
     Boolean EmulateOldPTB = PsychPrefStateGet_EmulateOldPTB();
-    
+
+	// Are we called from the main interpreter thread? If not, then we return
+	// immediately (No-Op). Worker threads for async flip don't expect this
+	// subroutine to execute!
+	#if PSYCH_SYSTEM != PSYCH_WINDOWS
+		if (!pthread_equal(masterthread, pthread_self())) return;
+	#endif
+
+	// Called from main thread --> Work to do.
+
     // Increase recursion level count:
     recursionLevel++;
     
@@ -2669,16 +3396,43 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
         return;
     }
     
-	// windowRecord or NULL provided? NULL would mean a warm-start:
+	if ((currentRendertarget == NULL) && (windowRecord == 0x1)) {
+		// Fast exit: No rendertarget set and savfe reset to "none" requested.
+		// Nothing special to do, just revert to NULL case:
+		windowRecord = NULL;
+	}
+	
+	// Make sure currentRendertargets context is active if currentRendertarget is non-NULL:
+	if (currentRendertarget) PsychSetGLContext(currentRendertarget);
+
+	// windowRecord or NULL provided? NULL would mean a warm-start. A value of 0x1 means
+	// to backup the current state of bound 'currentRendertarget', then reset to a NULL
+	// target, ie. no target. This is like warmstart, but binding any rendertarget later
+	// will do the right thing, instead of "forgetting" state info about currentRendertarget.
     if (windowRecord) {
         // State transition requested?
         if (currentRendertarget != windowRecord) {
             // Need to do a switch between drawing target windows:
+			
+			if (windowRecord == 0x1) {
+				// Special case: No new rendertarget, just request to backup the old
+				// one and leave it in a tidy, consistent state, then reset to NULL
+				// binding. We achiive this by turning windowRecord into a NULL request and
+				// unbinding any possibly bound FBO's:
+				windowRecord = NULL;
+
+				// Bind system framebuffer if FBO's supported on this system:
+				if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+			}
 
 			// Check if the imaging pipeline is enabled for this window. If so, we will use
-			// the fast FBO based rendertarget implementation:
-            if ((windowRecord->imagingMode & kPsychNeedFastBackingStore) || (windowRecord->imagingMode == kPsychNeedFastOffscreenWindows)) {
+			// the fast FBO based rendertarget implementation - unless windowRecord is a NULL target,
+			// in which case we're done already:
+            if (windowRecord && ((windowRecord->imagingMode & kPsychNeedFastBackingStore) || (windowRecord->imagingMode == kPsychNeedFastOffscreenWindows))) {
                 // Imaging pipeline (at least partially) active for this window. Use OpenGL framebuffer objects: This is the fast-path!
+
+				// Switch to new context if needed: This will unbind any pending FBO's in old context, if any:
+				PsychSetGLContext(windowRecord);
 
                 // Transition to offscreen rendertarget?
                 if (windowRecord->windowType == kPsychTexture) {
@@ -2708,7 +3462,6 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 				} // Special setup for offscreen windows or textures finished.
 				else {
 					// Bind onscreen window as drawing target:
-					
 					if (windowRecord->imagingMode == kPsychNeedFastOffscreenWindows) {
 						// Only fast offscreen windows active: Onscreen window is the system framebuffer.
 						// Revert to it:
@@ -2740,9 +3493,15 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 				
                 // Whatever is bound at the moment needs to be backed-up into a texture...
                 // If currentRendertarget is NULL then we've got nothing to back up.
-                if (currentRendertarget) {
-                    // There is a bound render target.
-                    if (currentRendertarget->windowType == kPsychTexture || windowRecord->windowType == kPsychTexture) {
+				// If currentRendertarget is using the imaging pipeline in any way, then there's also no
+				// need for any backups, as all textures/offscreen windows are backed by FBO's and the
+				// system framebuffer is just used as backingstore for onscreen windows, ie., no need
+				// to ever backup system framebuffer into any kind of texture based storage.
+				// Therefore skip this if any imaging mode is active (i.e., imagingMode is non-zero):
+                if (currentRendertarget && (currentRendertarget->imagingMode == 0)) {
+                    // There is a bound render target in non-imaging mode: Any backups of its current backbuffer to some
+					// texture backing store needed?
+                    if (currentRendertarget->windowType == kPsychTexture || (windowRecord && (windowRecord->windowType == kPsychTexture))) {
                         // Ok we transition from- or to a texture. We need to backup the old content:
                         if (EmulateOldPTB) {
                             // OS-9 emulation: frontbuffer = framebuffer, backbuffer = offscreen scratchpad
@@ -2814,66 +3573,75 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 									glCopyTexImage2D(PsychGetTextureTarget(currentRendertarget), 0, GL_RGBA8, 0, 0, twidth, theight, 0); 
 								}
                             }
-                        }
-                    }
-                }
+                        } // Backbuffer -> Texture backup code.
+                    } // Transition from- or to a texture.
+                } // currentRenderTarget non-NULL.
 				
-                // We only blit when a texture was involved, either as previous rendertarget or as new rendertarget:
-                if (windowRecord->windowType == kPsychTexture || (currentRendertarget && currentRendertarget->windowType == kPsychTexture)) {
-                    // OS-9 emulation: frontbuffer = framebuffer, backbuffer = offscreen scratchpad
-                    if (EmulateOldPTB) {
-                        // OS-9 emulation: frontbuffer = framebuffer, backbuffer = offscreen scratchpad
-                        if (PsychIsOnscreenWindow(windowRecord)) {
-                            // Need to write the content to the frontbuffer to restore from the backup copy:
-                            glReadBuffer(GL_FRONT);
-                            glDrawBuffer(GL_FRONT);
-                        }
-                        else {
-							// Need to write the content to the backbuffer (scratch buffer for offscreen windows) to restore from the backup copy:
-                            glReadBuffer(GL_BACK);
-                            glDrawBuffer(GL_BACK);
-                        }
-                    }
-					
-                    // In emulation mode for old PTB, we only need to restore offscreen windows, as they
-                    // share the backbuffer as scratchpad. Each onscreen window has its own frontbuffer, so
-                    // it will be unaffected by the switch --> No need to backup & restore.
-                    if (!EmulateOldPTB || (EmulateOldPTB && !PsychIsOnscreenWindow(windowRecord))) {
-                        // Setup viewport and projections to fit new dimensions of new rendertarget:
-                        PsychSetupView(windowRecord);
-						glPushMatrix();
-						glLoadIdentity();
-						
-                        // Now we need to blit the new rendertargets texture into the framebuffer. We need to make
-						// sure that alpha-blending is disabled during this blit operation:
-						if (glIsEnabled(GL_BLEND)) {
-							// Alpha blending enabled. Disable it, blit texture, reenable it:
-							glDisable(GL_BLEND);
-							PsychBlitTextureToDisplay(windowRecord, windowRecord, windowRecord->rect, windowRecord->rect, 0, 0, 1);
-							glEnable(GL_BLEND);
+				// At this point we're done with the context and stuff of the old currentRendertarget.
+				// Everything backed up.
+				
+				// A real new rendertarget requested?
+				if (windowRecord) {
+					// Yes. Activate its OpenGL context:
+					PsychSetGLContext(windowRecord);
+
+					// We only blit when a texture was involved, either as previous rendertarget or as new rendertarget:
+					if (windowRecord->windowType == kPsychTexture || (currentRendertarget && currentRendertarget->windowType == kPsychTexture)) {
+						// OS-9 emulation: frontbuffer = framebuffer, backbuffer = offscreen scratchpad
+						if (EmulateOldPTB) {
+							// OS-9 emulation: frontbuffer = framebuffer, backbuffer = offscreen scratchpad
+							if (PsychIsOnscreenWindow(windowRecord)) {
+								// Need to write the content to the frontbuffer to restore from the backup copy:
+								glReadBuffer(GL_FRONT);
+								glDrawBuffer(GL_FRONT);
+							}
+							else {
+								// Need to write the content to the backbuffer (scratch buffer for offscreen windows) to restore from the backup copy:
+								glReadBuffer(GL_BACK);
+								glDrawBuffer(GL_BACK);
+							}
 						}
-						else {
-							// Alpha blending not enabled. Just blit it:
-							PsychBlitTextureToDisplay(windowRecord, windowRecord, windowRecord->rect, windowRecord->rect, 0, 0, 1);
-						}
-                        
-						glPopMatrix();
 						
-						// Ok, the framebuffer has been initialized with the content of our texture.
-                    }
-                }
-                
+						// In emulation mode for old PTB, we only need to restore offscreen windows, as they
+						// share the backbuffer as scratchpad. Each onscreen window has its own frontbuffer, so
+						// it will be unaffected by the switch --> No need to backup & restore.
+						if (!EmulateOldPTB || (EmulateOldPTB && !PsychIsOnscreenWindow(windowRecord))) {
+							// Setup viewport and projections to fit new dimensions of new rendertarget:
+							PsychSetupView(windowRecord);
+							glPushMatrix();
+							glLoadIdentity();
+							
+							// Now we need to blit the new rendertargets texture into the framebuffer. We need to make
+							// sure that alpha-blending is disabled during this blit operation:
+							if (glIsEnabled(GL_BLEND)) {
+								// Alpha blending enabled. Disable it, blit texture, reenable it:
+								glDisable(GL_BLEND);
+								PsychBlitTextureToDisplay(windowRecord, windowRecord, windowRecord->rect, windowRecord->rect, 0, 0, 1);
+								glEnable(GL_BLEND);
+							}
+							else {
+								// Alpha blending not enabled. Just blit it:
+								PsychBlitTextureToDisplay(windowRecord, windowRecord, windowRecord->rect, windowRecord->rect, 0, 0, 1);
+							}
+							
+							glPopMatrix();
+							
+							// Ok, the framebuffer has been initialized with the content of our texture.
+						}
+					}	// End of from- to- texture/offscreen window transition...
+				}	// End of setup of a real new rendertarget windowRecord...
+
                 // At this point we should have the image of our drawing target in the framebuffer.
                 // If this transition didn't involve a switch from- or to a texture aka offscreen window,
                 // then the whole switching up to now was a no-op... This way, we optimize for the common
                 // case: No drawing to Offscreen windows at all, but proper use of other drawing functions
                 // or of MakeTexture.
-            }
+            } // End of switching code for imaging vs. non-imaging.
             
 			// Common code after fast- or slow-path switching:
 			
             // Setup viewport, clip rectangle and projections to fit new dimensions of new drawingtarget:
-            PsychSetupView(windowRecord);
+            if (windowRecord) PsychSetupView(windowRecord);
 			
             // Update our bookkeeping, set windowRecord as current rendertarget:
             currentRendertarget = windowRecord;
@@ -2883,14 +3651,14 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
     } // End of if(windowRecord) - then branch...
     else {
         // windowRecord==NULL. Reset of currentRendertarget and framebufferobject requested:
-		
+
+		// Bind system framebuffer if FBO's supported on this system:
+        if (glBindFramebufferEXT && currentRendertarget) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+
 		// Reset current rendertarget to 'none':
         currentRendertarget = NULL;
-		
-		// Bind system framebuffer if FBO's supported on this system:
-        if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
     }
-	
+
     // Decrease recursion level tracker:
     recursionLevel--;
     

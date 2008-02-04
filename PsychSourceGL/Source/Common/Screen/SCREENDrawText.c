@@ -314,8 +314,8 @@ PsychError SCREENDrawText(void)
     CGColorSpaceRelease (cgColorSpace);
     CGContextRelease(cgContext);	
     
-    //Convert the CG graphics bitmap into a GL texture.  
-    PsychSetGLContext(winRec);
+    // From here on: Convert the CG graphics bitmap into a GL texture.  
+
     // Enable this windowRecords framebuffer as current drawingtarget:
     PsychSetDrawingTarget(winRec);
 
@@ -713,12 +713,11 @@ PsychError SCREENDrawText(void)
 	yPositionIsBaseline = PsychPrefStateGet_TextYPositionIsBaseline();
 	PsychCopyInIntegerArg(7, kPsychArgOptional, &yPositionIsBaseline);
 
-    PsychSetGLContext(winRec);
-
     // Enable this windowRecords framebuffer as current drawingtarget:
     PsychSetDrawingTarget(winRec);
 
-	 PsychCoerceColorMode( &(winRec->textAttributes.textColor));
+	PsychUpdateAlphaBlendingFactorLazily(winRec);
+	PsychCoerceColorMode( &(winRec->textAttributes.textColor));
     PsychSetGLColor(&(winRec->textAttributes.textColor), winRec);
 
     // Does the font (better, its display list) need to be build or rebuild, because
@@ -940,8 +939,6 @@ PsychError SCREENDrawTextGDI(PsychRectType* boundingbox)
 		yPositionIsBaseline = PsychPrefStateGet_TextYPositionIsBaseline();
 		PsychCopyInIntegerArg(7, kPsychArgOptional, &yPositionIsBaseline);
 
-		PsychSetGLContext(winRec);
-		
 		// Enable this windowRecords framebuffer as current drawingtarget:
 		PsychSetDrawingTarget(winRec);
 		
@@ -1226,6 +1223,8 @@ PsychError SCREENDrawTextGDI(PsychRectType* boundingbox)
 
 	// Blit it to screen: The GL_BGRA swizzles RGBA <-> BGRA properly:
 	scanptr = (unsigned char*) pBits + skiplines * oldWidth * 4;
+
+    glPixelZoom(1,1);
 	glDrawPixels(oldWidth, renderheight, GL_RGBA, GL_UNSIGNED_BYTE, scanptr);
 	
 	// Disable alpha test after blit:

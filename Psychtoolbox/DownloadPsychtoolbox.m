@@ -1,5 +1,5 @@
-function DownloadPsychtoolbox(flavor,targetdirectory)
-% DownloadPsychtoolbox(flavor,targetdirectory)
+function DownloadPsychtoolbox(flavor,targetdirectory,downloadmethod)
+% DownloadPsychtoolbox([flavor] [,targetdirectory] [,downloadmethod=0])
 %
 % This script downloads the latest Mac OSX or Windows Psychtoolbox from the
 % Subversion master server to your disk, creating your working copy, ready
@@ -21,15 +21,12 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 % the drive name where Psychtoolbox should be installed, e.g.,
 % 'C:\MyToolboxes\n'.
 %
-% You must specify the desired flavor of Psychtoolbox release via the
+% You should specify the desired flavor of Psychtoolbox release via the
 % "flavor" parameter: 'stable', 'beta' (aka 'current'), or
-% 'Psychtoolbox-x.y.z'.
+% 'Psychtoolbox-x.y.z'. If you don't specify it, 'beta' will be chosen by
+% default.
 %
-% 'stable' - Download the most recent fully tested release. This will
-% become the next official Psychtoolbox release. It has been tested by
-% developers and users in real world applications. Choose the 'stable'
-% flavor if you don't like surprises. Stable releases are usually multiple
-% months behind the Beta releases, so this is for the really anxious.
+% Flavors and their meaning: If in doubt, use the 'beta'!
 %
 % 'beta', 'current' - Download the most recent beta release. This code has
 % been tested by a few developers and is ready for testing by end users.
@@ -38,11 +35,26 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 % to bug fixes, enhancements, and new features.  The argument 'current' is
 % a synonym for 'beta'.
 %
+% 'stable' - Download the most recent fully tested release. This will
+% become the next official Psychtoolbox release. It has been tested by
+% developers and users in real world applications. Choose the 'stable'
+% flavor if you don't like surprises. Stable releases are usually multiple
+% months behind the Beta releases, so this is for the really anxious.
+%
 % 'Psychtoolbox-x.y.z' - Download the code that corresponds to official
 % release "Psychtoolbox-x.y.z", where "x.y.z" is the version number. This
 % is nearly identical to the packages that can be downloaded from
 % www.psychtoolbox.org. The difference is that critical bugs get fixed in
 % this version.
+%
+% Normally your download should just work(TM). The installer knows three
+% different methods of download and tries all of them if neccessary, ie.,
+% if the preferred method fails, the 2nd best is tried etc. Should the
+% installer get stuck for an inappropriate amount of time (More than 5-10
+% minutes), you can try to abort it and restart it, providing the
+% additional 'downloadmethod' parameter with a setting of either 1, 2 or 3,
+% to change the order of tried download methods in case the downloader
+% would get stuck with a specific method.
 %
 % INSTALLATION INSTRUCTIONS:
 %
@@ -61,6 +73,10 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 % Subversion client, you will need to exit and restart Matlab, so it
 % can find the new subversion executable. In many cases it may be
 % neccessary to even reboot your computer after installation of subversion.
+% Btw. you should avoid to install the client into a path that contains
+% blanks/spaces/white-space as this can lead to download failures in some
+% cases, e.g., 'C:\Program Files\...' may be bad because there is a blank
+% between the "Program" and "Files".
 %
 % Alternatively, if you don't have the neccessary permissions to install
 % Subversion into a system folder, you can install Subversion into an
@@ -187,6 +203,14 @@ function DownloadPsychtoolbox(flavor,targetdirectory)
 %              lower-cased.
 % 11/17/07 mk  Prioritized https:// checkout over http:// checkout --> More
 %              likely to bypass proxy servers and succeed.
+% 12/25/07 mk  Add check for white spaces in path to subversion client - Output warning, if so.
+% 12/25/07 mk  Add optional 'downloadmethod' parameter, which allows to
+%              select initial choie of download protocol to use, in order to allow to
+%              bypass misconfigured proxies and firewalls. Problem reported
+%              by Patrick Mineault.
+% 01/08/08 mk  On OS/X, add an additional search path for 'svn': /usr/bin/
+%              as per suggestion of Donald Kalar. Presumably, Apples Leopard ships
+%              with a svn client preinstalled in that location.
 
 % Flush all MEX files: This is needed at least on M$-Windows for SVN to
 % work if Screen et al. are still loaded.
@@ -195,13 +219,14 @@ clear mex
 % Check OS
 isWin=strcmp(computer,'PCWIN') | strcmp(computer,'PCWIN64');
 isOSX=strcmp(computer,'MAC') | strcmp(computer,'MACI');
-if ~isWin && ~isOSX
+isLinux=strcmp(computer,'GLNX86');
+if ~isWin && ~isOSX && ~isLinux
 os=computer;
 if strcmp(os,'MAC2')
 os='Mac OS9';
 end
 fprintf('Sorry, this installer doesn''t support your operating system: %s.\n',os);
-fprintf([mfilename ' can only install the new (OSX and Windows) \n'...
+fprintf([mfilename ' can only install the new (OSX, Linux and Windows) \n'...
    'OpenGL-based versions of the Psychtoolbox. To install the older (OS9 and Windows) \n'...
    'versions (not based on OpenGL) please go to the psychtoolbox website: \n'...
    'web http://psychtoolbox.org/download.html\n']);
@@ -215,10 +240,19 @@ if nargin<2
     else
         % We do not have a default path on Windows, so the user must provide it:
         fprintf('You did not provide the full path to the directory where Psychtoolbox should be\n');
-        fprintf('installed. This is required for Microsoft Windows installation. Please enter a full\n');
+        fprintf('installed. This is required for Microsoft Windows and Linux installation. Please enter a full\n');
         fprintf('path as the second argument to this script, e.g. DownloadPsychtoolbox(''beta'',''C:\\Toolboxes\\'').\n');
         error('For Windows, the call to %s must specify a full path for the location of installation.',mfilename);
     end     
+end
+
+% Override for download method provided?
+if nargin <3
+    downloadmethod = 0;
+else
+    if downloadmethod<0 | downloadmethod>3
+        error('Invalid downloadmethod provided. Valid are values between 0 and 3.');
+    end
 end
 
 % Set flavor defaults and synonyms
@@ -268,20 +302,37 @@ else
 
     % Currently, we only know how to check this for Mac OSX.
     if isOSX
-        svnpath='/usr/local/bin/';
-        if exist('/usr/local/bin/svn','file')~=2
-            fprintf('The Subversion client "svn" is not in its expected\n');
-            fprintf('location "/usr/local/bin/svn" on your disk. Please \n');
-            fprintf('download and install the most recent Subversion client from:\n');
-            fprintf('web http://metissian.com/projects/macosx/subversion/ -browser\n');
-            fprintf('and then run %s again.\n',mfilename);
-            error('Subversion client is missing. Please install it.');
+        % Try OS/X 10.5 Leopard install location for svn first:
+        svnpath='/usr/bin/';
+        if exist('/usr/bin/svn','file')~=2
+            % This would have been the default install location of the svn
+            % client bundled with OS/X 10.5.x Leopard. Let's try the
+            % default install location from the web installer:
+            svnpath='/usr/local/bin/';
+            if exist('/usr/local/bin/svn','file')~=2
+                fprintf('The Subversion client "svn" is not in its expected\n');
+                fprintf('location "/usr/local/bin/svn" on your disk. Please \n');
+                fprintf('download and install the most recent Subversion client from:\n');
+                fprintf('web http://metissian.com/projects/macosx/subversion/ -browser\n');
+                fprintf('and then run %s again.\n',mfilename);
+                error('Subversion client is missing. Please install it.');
+            end
         end
     end
 end
 
 if ~isempty(svnpath)
     fprintf('Will use the svn client which is located in this folder: %s\n', svnpath);
+end
+
+if any(isspace(svnpath))
+    fprintf('WARNING! There are spaces (blanks) in the path to the svn client executable (see above).\n');
+    fprintf('On some systems this can cause a download failure, with some error message that may look\n');
+    fprintf('roughly like this: %s is not recognized as an internal or external command,\n', svnpath(1:min(find(isspace(svnpath)))));
+    fprintf('operable program or batch file.\n\n');
+    fprintf('Should the download fail with such a message then move/install the svn.exe program into a\n');
+    fprintf('folder whose path does not contain any blanks/spaces and retry.\n\n');
+    warning('Spaces in path to subversion client -- May cause download failure.');
 end
 
 % Does SAVEPATH work?
@@ -435,7 +486,11 @@ end
 if isOSX
     fprintf('I will now download the latest Psychtoolbox for OSX.\n');
 else
-    fprintf('I will now download the latest Psychtoolbox for Windows.\n');
+    if isLinux
+        fprintf('I will now download the latest Psychtoolbox for Linux.\n');
+    else
+        fprintf('I will now download the latest Psychtoolbox for Windows.\n');
+    end
 end
 fprintf('Requested flavor is: %s\n',flavor);
 fprintf('Target folder for installation: %s\n',targetdirectory);
@@ -444,11 +499,24 @@ if any(isspace(p)) % Double check, to be sure.
     error('No spaces are allowed in the destination folder name.');
 end
 
-checkoutcommand=[svnpath 'svn checkout svn://svn.berlios.de/osxptb/' flavor '/Psychtoolbox/ ' p];
+% Choose initial download method. Defaults to zero, ie. svn-serve protocol:
+if downloadmethod <= 1
+    checkoutcommand=[svnpath 'svn checkout svn://svn.berlios.de/osxptb/' flavor '/Psychtoolbox/ ' p];
+else
+    if downloadmethod == 2
+        % Good to get through many firewalls and proxies:
+        checkoutcommand=[svnpath 'svn checkout https://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' p];
+    else
+        % If firewalls and proxies block everything, one can try this *and*
+        % reconfigure its proxy to allow it:
+        checkoutcommand=[svnpath 'svn checkout http://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' p];
+    end
+end
+
 fprintf('The following CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
 fprintf('%s\n',checkoutcommand);
 fprintf('Downloading. It''s nearly 100 MB, which can take many minutes. \nAlas there is no output to this window to indicate progress until the download is complete. \nPlease be patient ...\n');
-if isOSX
+if isOSX | isLinux
     [err,result]=system(checkoutcommand);
 else
     [err,result]=dos(checkoutcommand, '-echo');
@@ -463,7 +531,7 @@ if err
     checkoutcommand=[svnpath 'svn checkout https://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' p];
     fprintf('The following alternative CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
     fprintf('%s\n\n',checkoutcommand);
-    if isOSX
+    if isOSX | isLinux
         [err,result]=system(checkoutcommand);
     else
         [err,result]=dos(checkoutcommand, '-echo');
@@ -479,7 +547,7 @@ if err
     checkoutcommand=[svnpath 'svn checkout http://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' p];
     fprintf('The following alternative CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
     fprintf('%s\n\n',checkoutcommand);
-    if isOSX
+    if isOSX | isLinux
         [err,result]=system(checkoutcommand);
     else
         [err,result]=dos(checkoutcommand, '-echo');
@@ -521,7 +589,7 @@ end
 
 fprintf(['Now setting permissions to allow everyone to write to the Psychtoolbox folder. This will \n'...
     'allow future updates by every user on this machine without requiring administrator privileges.\n']);
-if isOSX
+if isOSX | isLinux
     [s,m,mm]=fileattrib(p,'+w','a','s'); % recursively add write privileges for all users.
 else
     [s,m,mm]=fileattrib(p,'+w','','s'); % recursively add write privileges for all users.

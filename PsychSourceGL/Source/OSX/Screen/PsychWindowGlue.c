@@ -268,6 +268,7 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 		attribs[attribcount++]=displayMask;
 
 		// 10 bit per component framebuffer requested (10-10-10-2)?
+		/*	Disabled: We use our special kernel helper driver and PsychEnableNative10BitFramebuffer(); instead on Radeon Gfx et al.
 		if (windowRecord->depth == 30) {
 			// Request a 10 bit per color component framebuffer with 2 bit alpha channel:
 			printf("PTB-INFO: Trying to enable 10 bpc framebuffer...\n");
@@ -277,6 +278,7 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 			attribs[attribcount++]=kCGLPFAAlphaSize;
 			attribs[attribcount++]=16;
 		}
+		*/
 		
 		// 16 bit per component, 64 bit framebuffer requested (16-16-16-16)?
 		if (windowRecord->depth == 64) {
@@ -822,13 +824,7 @@ void PsychOSSetGLContext(PsychWindowRecordType *windowRecord)
 		}
 		
 		// Switch to new context:
-		CGLSetCurrentContext(windowRecord->targetSpecific.contextObject);
-		
-		// If imaging pipe is active, we need to reset the current drawing target, so it and its
-		// FBO bindings get properly reinitialized before next use. In non-imaging mode this is
-		// not needed, because the new context already contains the proper setup for transformations,
-		// drawbuffers and such, as well as the matching content in the backbuffer:
-		if (windowRecord->imagingMode > 0) PsychSetDrawingTarget(NULL);
+		CGLSetCurrentContext(windowRecord->targetSpecific.contextObject);		
     }
 }
 
@@ -859,6 +855,16 @@ void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, Boolean copyfr
 */
 void PsychOSUnsetGLContext(PsychWindowRecordType *windowRecord)
 {
+	if (CGLGetCurrentContext() != NULL) {
+		// We need to glFlush the old context before switching, otherwise race-conditions may occur:
+		glFlush();
+		
+		// Need to unbind any FBO's in old context before switch, otherwise bad things can happen...
+		if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+		glFlush();
+	}
+
+	// Detach totally:
     CGLSetCurrentContext(NULL);
 }
 

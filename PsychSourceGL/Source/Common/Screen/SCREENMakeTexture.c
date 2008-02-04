@@ -476,12 +476,16 @@ PsychError SCREENMakeTexture(void)
     textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
 	textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
 
+	// Copy default drawing shaders from parent:
+	textureRecord->defaultDrawShader   = windowRecord->defaultDrawShader;
+	textureRecord->unclampedDrawShader = windowRecord->unclampedDrawShader;
+	
 	textureRecord->colorRange = windowRecord->colorRange;
 	// Copy imaging mode flags from parent:
 	textureRecord->imagingMode = windowRecord->imagingMode;
 
     // Texture orientation is zero aka transposed aka non-renderswapped.
-    textureRecord->textureOrientation = 0;
+    textureRecord->textureOrientation = (assume_texorientation != 2) ? 0 : 2;
     
 	// This is our best guess about the number of image channels:
 	textureRecord->nrchannels = numMatrixPlanes;
@@ -560,8 +564,3 @@ PsychError SCREENMakeTexture(void)
     
     return(PsychError_none);
 }
-
-
-
-
-

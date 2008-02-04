@@ -72,8 +72,8 @@ void PsychDetectTextureTarget(PsychWindowRecordType *win)
 {
     // First time invocation?
     if (texturetarget==0) {
-        // Yes. Need to auto-detect texturetarget to use...
-		PsychSetGLContext(win);
+        // Yes. Need to auto-detect texturetarget to use. This routine is called with
+		// the OpenGL context for the 'win' already attached, from PsychOpenOnscreenWindow().
 
         if (strstr(glGetString(GL_EXTENSIONS), "GL_EXT_texture_rectangle") && GL_TEXTURE_RECTANGLE_EXT != GL_TEXTURE_2D) {
 	    // Great! GL_TEXTURE_RECTANGLE_EXT is available! Use it.
@@ -317,7 +317,7 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 	// Definition of width and height is swapped due to texture rotation trick, see comments in PsychBlit.....
 	if (win->textureOrientation==0 || win->textureOrientation==1) {
 		// Transposed case: Optimized for fast MakeTexture from Matlab image matrix.
-		// This is true for all calls from MakeTexure.
+		// This is true for all calls from MakeTexure, except ones with the textureOrientation flag set to 2:
 		sourceHeight=PsychGetWidthFromRect(win->rect);
 		sourceWidth=PsychGetHeightFromRect(win->rect);
 	}
@@ -632,7 +632,11 @@ void PsychFreeTextureForWindowRecord(PsychWindowRecordType *win)
        (win->targetSpecific.contextObject)) {
         // Activate associated OpenGL context:
         PsychSetGLContext(win);
-        PsychTestForGLErrors();
+
+		// PsychTestForGLErrors() is a GPU-CPU synchronization point, so in order to keep good
+		// parallelism, we only do it at verbosity levels of 5 and greater.
+        if (PsychPrefStateGet_Verbosity() > 4) PsychTestForGLErrors();
+		
         // Call special texture release routine for Movie textures: This routine will
         // check if 'win' is a movie texture and perform the necessary cleanup work, if so:
         PsychFreeMovieTexture(win);
@@ -652,7 +656,9 @@ void PsychFreeTextureForWindowRecord(PsychWindowRecordType *win)
 			if (texmemguesstimate < 0) texmemguesstimate = 0;
 		}
 		
-        PsychTestForGLErrors();
+		// PsychTestForGLErrors() is a GPU-CPU synchronization point, so in order to keep good
+		// parallelism, we only do it at verbosity levels of 5 and greater.
+        if (PsychPrefStateGet_Verbosity() > 4) PsychTestForGLErrors();
     }
 
     // Free system RAM backing memory buffer, if any:
@@ -672,19 +678,23 @@ void PsychBlitTextureToDisplay(PsychWindowRecordType *source, PsychWindowRecordT
 		double                  transX, transY;
         GLenum                  texturetarget;
 		GLuint					shader, attrib;
-		
-        // Activate rendering context of target window:
-		PsychSetGLContext(target);
 
+        // Enable targets framebuffer as current drawingtarget, except if this is a
+		// blit operation from a window into itself and the imaging pipe is on:
+        if ((source != target) || (target->imagingMode==0)) {
+			PsychSetDrawingTarget(target);
+		}
+		else {
+			// Activate rendering context of target window without changing drawing target:
+			PsychSetGLContext(target);
+		}
+		
         // Setup texture-target if not already done:
         PsychDetectTextureTarget(target);
         
         // Query target for this specific texture:
         texturetarget = PsychGetTextureTarget(source);
-        
-        // Enable target's framebuffer as current drawingtarget, except if this is a
-		// blit operation from a window into itself and the imaging pipe is on:
-        if ((source != target) || (target->imagingMode==0)) PsychSetDrawingTarget(target);
+
 		//printf("%i\n", source->textureOrientation);
 		
         // This code allows the application of sourceRect, as it is meant to be:

@@ -31,10 +31,10 @@
 	
 	TO DO: 
 	
-		¥ The "glue" files should should be suffixed with a platform name.  The original (bad) plan was to distingish platform-specific files with the same 
+		ï¿½ The "glue" files should should be suffixed with a platform name.  The original (bad) plan was to distingish platform-specific files with the same 
 		name by their placement in a directory tree.
 		
-		¥ All of the functions which accept a screen number should be suffixed with "...FromScreenNumber". 
+		ï¿½ All of the functions which accept a screen number should be suffixed with "...FromScreenNumber". 
  
 		
      							
@@ -75,7 +75,12 @@ void						PsychShowCursor(int screenNumber);
 void						PsychPositionCursor(int screenNumber, int x, int y);
 void						PsychReadNormalizedGammaTable(int screenNumber, int *numEntries, float **redTable, float **greenTable, float **blueTable);
 void						PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redTable, float *greenTable, float *blueTable);
-
+int                         PsychGetDisplayBeamPosition(CGDirectDisplayID cgDisplayId, int screenNumber);
+PsychError					PsychOSSynchronizeDisplayScreens(int *numScreens, int* screenIds, int* residuals, unsigned int syncMethod, double syncTimeOut, int allowedResidual);
+void						PsychOSShutdownPsychtoolboxKernelDriverInterface(void);
+unsigned int				PsychOSKDReadRegister(int screenId, unsigned int offset, unsigned int* status);
+unsigned int				PsychOSKDWriteRegister(int screenId, unsigned int offset, unsigned int value, unsigned int* status);
+boolean						PsychOSIsKernelDriverAvailable(int screenId);
 
 //end include once
 #endif

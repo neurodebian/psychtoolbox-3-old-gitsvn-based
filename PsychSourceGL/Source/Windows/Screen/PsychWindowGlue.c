@@ -829,12 +829,19 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     // Finally, show our new window:
     ShowWindow(hWnd, SW_SHOW);
 
-    // Give it higher priority than other applications windows:
-    // Disabled: Interferes with JAVA-GetChar: SetForegroundWindow(hWnd);
+	// Following settings enforce the onscreen window being and staying the
+	// foreground window with keyboard focus. However they interfere with our
+	// Java based GetChar implementation, so use of GetChar and of this feature
+	// is mutually exclusive. A special 'Preference'-'ConserveVRAM' flag allows
+	// to enable this feature:
+	if (conserveVRAM & kPsychEnforceForegroundWindow) {
+		// Give it higher priority than other applications windows:
+		SetForegroundWindow(hWnd);
 
-    // Set the focus on it:
-    // Disabled: Interferes with JAVA-GetChar: SetFocus(hWnd);
-
+		// Set the focus on it:
+		SetFocus(hWnd);
+	}
+	
     // Capture the window if it is a fullscreen one: This window will receive all
     // mouse move and mouse button press events. Important for GetMouse() to work
     // properly...
@@ -1022,13 +1029,7 @@ void PsychOSSetGLContext(PsychWindowRecordType *windowRecord)
 		}
 
 		// Switch to new context:
-		wglMakeCurrent(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.contextObject);
-		
-		// If imaging pipe is active, we need to reset the current drawing target, so it and its
-		// FBO bindings get properly reinitialized before next use. In non-imaging mode this is
-		// not needed, because the new context already contains the proper setup for transformations,
-		// drawbuffers and such, as well as the matching content in the backbuffer:
-		if (windowRecord->imagingMode > 0) PsychSetDrawingTarget(NULL);
+		wglMakeCurrent(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.contextObject);		
 	}
 }
 

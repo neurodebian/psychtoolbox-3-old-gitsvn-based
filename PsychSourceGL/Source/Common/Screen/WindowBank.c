@@ -288,8 +288,16 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 
 	// Reset memory accounting info for this windowRecord:
 	(*winRec)->surfaceSizeBytes = 0;
-}
+	
+	// NULL out flipinfo struct:
+	(*winRec)->flipInfo = NULL;
+	
+	// Init our shader handles to zero -- Off by default:
+	(*winRec)->unclampedDrawShader = 0;
+	(*winRec)->defaultDrawShader = 0;
 
+	return;
+}
 
 /*
 	Free the window record memory and set the corresponding window array entry to null.

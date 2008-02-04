@@ -18,7 +18,7 @@
 		Functions in this file comprise an abstraction layer for probing and controlling screen state.  
 		
 		Each C function which implements a particular Screen subcommand should be platform neutral.  For example, the source to SCREENPixelSizes() 
-		should be platform-neutral, despite that the calls in OS X and Windows to detect available pixel sizes are
+		should be platform-neutral, despite that the calls in OS X and Linux to detect available pixel sizes are
 		different.  The platform specificity is abstracted out in C files which end it "Glue", for example PsychScreenGlue, PsychWindowGlue, 
 		PsychWindowTextClue.
 	
@@ -28,20 +28,279 @@
 	NOTES:
 	
 	TO DO: 
-	
-		¥ The "glue" files should should be suffixed with a platform name.  The original (bad) plan was to distingish platform-specific files with the same 
-		name by their placement in a directory tree.
-		
-		¥ All of the functions which accept a screen number should be suffixed with "...FromScreenNumber". 
+
 */
 
 
 #include "Screen.h"
 
+
+/* These are needed for our ATI specific beamposition query implementation: */
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <asm/page.h>
+
+// We build with VidModeExtension support unless forcefully disabled at compile time via a -DNO_VIDMODEEXTS
+#ifndef NO_VIDMODEEXTS
+#define USE_VIDMODEEXTS 1
+#endif
+
+#ifdef USE_VIDMODEEXTS
 // Functions for setup and query of hw gamma CLUTS and for monitor refresh rate query:
 #include <X11/extensions/xf86vmode.h>
 
+#else
+#define XF86VidModeNumberErrors 0
+#endif
+
+
 // file local variables
+/* Following structures are needed by our ATI beamposition query implementation: */
+/* Location and format of the relevant hardware registers of the R500/R600 chips
+ * was taken from the official register spec for that chips which was released to
+ * the public by AMD/ATI end of 2007 and is available for download at XOrg.
+ * TODO: Add download link to ATI spec documents!
+ *
+ * I'm certain this should work on any R500/600 chip, but as i don't have any
+ * specs for earlier Radeons, i don't know what happens on such GPU's. If it
+ * works, it'll work by accident/luck, but not because we designed for it ;-).
+ */
+ 
+/* The method - and small bits of code - for accessing the ATI Radeons registers
+ * directly, was taken/borrowed/derived from the useful "Radeontool" utility from
+ * Frederick Dean. Below is the copyright notice and credits of Radeontool:
+ *
+ * Radeontool   v1.4
+ * by Frederick Dean <software@fdd.com>
+ * Copyright 2002-2004 Frederick Dean
+ * Use hereby granted under the zlib license.
+ *
+ * Warning: I do not have the Radeon documents, so this was engineered from 
+ * the radeon_reg.h header file.  
+ *
+ * USE RADEONTOOL AT YOUR OWN RISK
+ *
+ * Thanks to Deepak Chawla, Erno Kuusela, Rolf Offermanns, and Soos Peter
+ * for patches.
+ */
+
+
+// The D1CRTC_STATUS_POSITION register (32 bits) encodes vertical beam position in
+// bits 0:12 (the least significant 13 bits), and horizontal beam position in
+// bits 16-28. D2 is the secondary display pipeline (e.g., the external video port
+// on a laptop), whereas D1 is the primary pipeline (e.g., internal panel of a laptop).
+// The addresses and encoding is the same for the X1000 series and the newer HD2000/3000
+// series chips...
+#define RADEON_D1CRTC_STATUS_POSITION 0x60a0
+#define RADEON_D2CRTC_STATUS_POSITION 0x68a0
+#define RADEON_VBEAMPOSITION_BITMASK  0x1fff
+#define RADEON_HBEAMPOSITION_BITSHIFT 16
+
+// This (if we would use it) would give access to on-chip frame counters. These increment
+// once per video refresh cycle - at the beginning of a new cycle (scanline zero) and
+// can be software reset, but normally start at system bootup with zero. Not yet sure
+// if we should/would wanna use 'em but we'll see...
+#define RADEON_D1CRTC_STATUS_FRAME_COUNT 0x60a4
+#define RADEON_D2CRTC_STATUS_FRAME_COUNT 0x68a4
+
+
+// gfx_cntl_mem is mapped to the actual device's memory mapped control area.
+// Not the address but what it points to is volatile.
+unsigned char * volatile gfx_cntl_mem = NULL;
+unsigned int  gfx_length = 0;
+
+// Count of kernel drivers:
+static int    numKernelDrivers = 0;
+
+// Helper routine: Read a single 32 bit unsigned int hardware register at
+// offset 'offset' and return its value:
+static unsigned int radeon_get(unsigned int offset)
+{
+    unsigned int value;
+    value = *(unsigned int * volatile)(gfx_cntl_mem + offset);  
+    return(value);
+}
+
+// Helper routine: Write a single 32 bit unsigned int hardware register at
+// offset 'offset':
+static void radeon_set(unsigned int offset, unsigned int value)
+{
+    *(unsigned int* volatile)(gfx_cntl_mem + offset) = value;  
+}
+
+// Helper routine: mmap() the MMIO memory mapped I/O PCI register space of
+// graphics card hardware registers into our address space for easy access
+// by the radeon_get() routine. 
+static unsigned char * map_device_memory(unsigned int base, unsigned int length) 
+{
+    int mem_fd;
+    unsigned char *device_mem = NULL;
+    
+    // Open device file /dev/mem -- Raw read/write access to system memory space -- Only root can do this:
+    if ((mem_fd = open("/dev/mem", O_RDWR) ) < 0) {
+        printf("PTB-WARNING: Beamposition queries unavailable because can't open /dev/mem\nYou must run Matlab/Octave with root privileges for this to work.\n\n");
+	return(NULL);
+    }
+    
+    // Try to mmap() the MMIO PCI register space to the block of memory and return a handle/its base address.
+    // We only ask for a read-only shared mapping and don't request write-access. This as a child protection
+    // as we only need to read registers -- this protects against accidental writes to sensitive device control
+    // registers:
+    device_mem = (unsigned char *) mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, base);
+    
+    // Close file handle to /dev/mem. Not needed anymore, our mmap() will keep the mapping until unmapped...
+    close(mem_fd);
+    
+    // Worked?
+    if (MAP_FAILED == device_mem) {
+	printf("PTB-WARNING: Beamposition queries unavailable because could not mmap() device memory: mmap error [%s]\n", strerror(errno));
+    	return(NULL);
+    }
+    
+    // Return memory pointer to mmap()'ed registers...
+    gfx_length = length;
+    
+    return(device_mem);
+}
+
+// Helper routine: Unmap gfx card control memory and release associated ressources:
+void PsychScreenUnmapDeviceMemory(void)
+{
+	// Any mapped?
+	if (gfx_cntl_mem) {
+		// Unmap:
+		munmap(gfx_cntl_mem, gfx_length);
+		gfx_cntl_mem = NULL;
+		gfx_length = 0;
+	}
+	return;
+}
+
+// Helper routine: Check if a supported ATI Radeon card (X1000, HD2000 or HD3000 .... series)
+// is installed, detect base address of its register space, mmap() it into our address space.
+// This is done by parsing the output of the lspci command...
+boolean PsychScreenMapRadeonCntlMemory(void)
+{
+	int pipefd[2];
+	int forkrc;
+	FILE *fp;
+	char line[1000];
+	int base;
+
+	if(pipe(pipefd)) {
+		printf("PTB-DEBUG:[In ATI Radeon detection code]: pipe() failure\n");
+		return(FALSE);
+	}
+	forkrc = fork();
+	if(forkrc == -1) {
+		printf("PTB-DEBUG:[In ATI Radeon detection code] fork() failure\n");
+		return(FALSE);
+	} else if(forkrc == 0) { /* if child */
+		close(pipefd[0]);
+		dup2(pipefd[1],1);  /* stdout */
+		setenv("PATH","/sbin:/usr/sbin:/bin:/usr/bin",1);
+		execlp("lspci","lspci","-v",NULL);
+		// This point is normally not reached, unless an error occured:
+		printf("PTB-DEBUG:[In ATI Radeon detection code] exec lspci failure\n");
+		return(FALSE);
+	}
+	
+	// Parent code: Listen at our end of the pipeline for some news from the 'lspci' command:
+	close(pipefd[1]);
+	fp = fdopen(pipefd[0],"r");
+	if(fp == NULL) {
+		printf("PTB-DEBUG:[In ATI Radeon detection code] fdopen error\n");
+		return(FALSE);
+	}
+#if 0
+	This is an example output of "lspci -v" ...
+
+	00:1f.6 Modem: Intel Corp. 82801CA/CAM AC 97 Modem (rev 01) (prog-if 00 [Generic])
+	Subsystem: PCTel Inc: Unknown device 4c21
+	Flags: bus master, medium devsel, latency 0, IRQ 11
+	I/O ports at d400 [size=256]
+	I/O ports at dc00 [size=128]
+
+	01:00.0 VGA compatible controller: ATI Technologies Inc Radeon Mobility M6 LY (prog-if 00 [VGA])
+	Subsystem: Dell Computer Corporation: Unknown device 00e3
+	Flags: bus master, VGA palette snoop, stepping, 66Mhz, medium devsel, latency 32, IRQ 11
+	Memory at e0000000 (32-bit, prefetchable) [size=128M]
+	I/O ports at c000 [size=256]
+	Memory at fcff0000 (32-bit, non-prefetchable) [size=64K]
+	Expansion ROM at <unassigned> [disabled] [size=128K]
+	Capabilities: <available only to root>
+
+	02:00.0 Ethernet controller: 3Com Corporation 3c905C-TX/TX-M [Tornado] (rev 78)
+	Subsystem: Dell Computer Corporation: Unknown device 00e3
+	Flags: bus master, medium devsel, latency 32, IRQ 11
+	I/O ports at ec80 [size=128]
+	Memory at f8fffc00 (32-bit, non-prefetchable) [size=128]
+	Expansion ROM at f9000000 [disabled] [size=128K]
+	Capabilities: <available only to root>
+
+	We need to look through it to find the smaller region base address fcff0000.
+
+#endif
+
+	// Iterate line-by-line over lspci output until the Radeon descriptor block is found:
+	while(1) {
+		/* for every line up to the "Radeon" string */
+		if(fgets(line,sizeof(line),fp) == NULL) {  /* if end of file */
+			printf("PTB-INFO: No ATI Radeon hardware found in lspci output. Beamposition queries unsupported.\n");
+			close(fp);
+			return(FALSE);
+		}
+		
+		if(strstr(line,"Radeon") || strstr(line,"ATI Tech")) {  /* if line contains a "radeon" string */
+			break; // Found it!
+		}
+	};
+	
+	// Iterate over Radeon descriptor block until the line with the control register mapping is found:
+	while(1) { /* for every line up till memory statement */
+		if(fgets(line,sizeof(line),fp) == NULL || line[0] != '\t') {  /* if end of file */
+			printf("PTB-INFO: ATI Radeon control memory not found in lspci output. Beamposition queries unsupported.\n");
+			close(fp);
+			return(FALSE);
+		}
+		
+		if(0) printf("%s",line);
+		
+		if(strstr(line,"emory") && strstr(line,"K")) {  /* if line contains a "Memory" and "K" string */
+				break; // Found it! This line contains the base address...
+		}
+	};
+	
+	// Close lspci output and comm-pipe:
+	close(fp);
+	
+	// Extract base address from config-line:
+	if(sscanf(line,"%*s%*s%x",&base) == 0) { /* third token as hex number */
+		printf("PTB-INFO: ATI Radeon control memory not found in lspci output [parse error of lspci output]. Beamposition queries unsupported.\n");
+		return(FALSE);
+	}
+	
+	// Got it!
+	printf("PTB-INFO: ATI-Radeon found. Base control address is %x.\n",base);
+	
+	// mmap() the PCI register space into our memory: Currently we map 0x8000 bytes, although the actual
+	// configuration space would be 0xffff bytes, but we neither need, nor know what the upper regions of
+	// this space do, so no need to map'em: gfx_cntl_mem will contain the base of the register block,
+	// all register addresses in the official Radeon specs are offsets to that base address. This will
+	// return NULL if the mapping fails, e.g., due to insufficient permissions etc...
+	gfx_cntl_mem = map_device_memory(base, 0x8000);
+	
+	// Return final success or failure status:
+	return((gfx_cntl_mem) ? TRUE : FALSE);
+}
+
 
 // Maybe use NULLs in the settings arrays to mark entries invalid instead of using boolean flags in a different array.   
 static boolean			displayLockSettingsFlags[kPsychMaxPossibleDisplays];
@@ -55,6 +314,8 @@ static CGDisplayCount 		numDisplays;
 static CGDirectDisplayID 	displayCGIDs[kPsychMaxPossibleDisplays];
 // displayX11Screens stores the mapping of PTB screenNumber's to corresponding X11 screen numbers:
 static int                      displayX11Screens[kPsychMaxPossibleDisplays];
+// Maps screenid's to Graphics hardware pipelines: Used to choose pipeline for beampos-queries...
+static unsigned char		displayScreensToPipes[kPsychMaxPossibleDisplays];
 
 // X11 has a different - and much more powerful and flexible - concept of displays than OS-X or Windows:
 // One can have multiple X11 connections to different logical displays. A logical display corresponds
@@ -93,6 +354,7 @@ void PsychLockScreenSettings(int screenNumber);
 void PsychUnlockScreenSettings(int screenNumber);
 boolean PsychCheckScreenSettingsLock(int screenNumber);
 //boolean PsychGetCGModeFromVideoSetting(CFDictionaryRef *cgMode, PsychScreenSettingsType *setting);
+void InitPsychtoolboxKernelDriverInterface(void);
 
 // Error callback handler for X11 errors:
 static int x11VidModeErrorHandler(Display* dis, XErrorEvent* err)
@@ -121,16 +383,22 @@ void InitializePsychDisplayGlue(void)
         displayLockSettingsFlags[i]=FALSE;
         displayOriginalCGSettingsValid[i]=FALSE;
         displayOverlayedCGSettingsValid[i]=FALSE;
+	displayScreensToPipes[i]=i;
     }
     
     //init the list of Core Graphics display IDs.
     InitCGDisplayIDList();
+
+    // Attach to kernel-level Psychtoolbox graphics card interface driver if possible
+    // *and* allowed by settings, setup all relevant mappings:
+    InitPsychtoolboxKernelDriverInterface();
 }
 
 void InitCGDisplayIDList(void)
 {  
   int i, j, k, count, scrnid;
   char* ptbdisplays = NULL;
+  char* ptbpipelines = NULL;
   char displayname[1000];
   CGDirectDisplayID x11_dpy = NULL;
  
@@ -213,6 +481,17 @@ void InitCGDisplayIDList(void)
 
   if (numDisplays>1) printf("PTB-Info: A total of %i physical X-Windows display screens is available for use.\n", numDisplays);
   fflush(NULL);
+
+  // Did user provide an override for the screenid --> pipeline mapping?
+  ptbpipelines = getenv("PSYCHTOOLBOX_PIPEMAPPINGS");
+  if (ptbpipelines) {
+	// Yep. Format is: One character (a number between "0" and "9") for each screenid,
+	// e.g., "021" would map screenid 0 to pipe 0, screenid 1 to pipe 2 and screenid 2 to pipe 1.
+	// The default is "012...", ie screen 0 = pipe 0, 1 = pipe 1, 2 =pipe 2, n = pipe n
+	for (j=0; j<strlen(ptbpipelines) && j<numDisplays; j++) {
+	   displayScreensToPipes[j] = ((ptbpipelines[j] - 0x30)>=0 && (ptbpipelines[j] - 0x30)<kPsychMaxPossibleDisplays) ? (ptbpipelines[j] - 0x30) : 0;
+	}
+  }
 
   return;
 }
@@ -429,6 +708,8 @@ int PsychGetScreenDepthValue(int screenNumber)
 
 float PsychGetNominalFramerate(int screenNumber)
 {
+#ifdef USE_VIDMODEEXTS
+
   // Information returned by the XF86VidModeExtension:
   XF86VidModeModeLine mode_line;  // The mode line of the current video mode.
   int dot_clock;                  // The RAMDAC / TDMS pixel clock frequency.
@@ -456,10 +737,15 @@ float PsychGetNominalFramerate(int screenNumber)
 
   // Done.
   return(vrefresh);
+#else
+  return(0);
+#endif
 }
 
 float PsychSetNominalFramerate(int screenNumber, float requestedHz)
 {
+#ifdef USE_VIDMODEEXTS
+
   // Information returned by/sent to the XF86VidModeExtension:
   XF86VidModeModeLine mode_line;  // The mode line of the current video mode.
   int dot_clock;                  // The RAMDAC / TDMS pixel clock frequency.
@@ -540,6 +826,9 @@ float PsychSetNominalFramerate(int screenNumber, float requestedHz)
 
   // Done.
   return(vrefresh);
+#else
+  return(0);
+#endif
 }
 
 /* Returns the physical display size as reported by X11: */
@@ -805,6 +1094,8 @@ void PsychPositionCursor(int screenNumber, int x, int y)
 */
 void PsychReadNormalizedGammaTable(int screenNumber, int *numEntries, float **redTable, float **greenTable, float **blueTable)
 {
+#ifdef USE_VIDMODEEXTS
+
   CGDirectDisplayID	cgDisplayID;
   static  float localRed[256], localGreen[256], localBlue[256];
   
@@ -827,11 +1118,14 @@ void PsychReadNormalizedGammaTable(int screenNumber, int *numEntries, float **re
 
   // The LUT's always have 256 slots for the 8-bit framebuffer:
   *numEntries= 256;
+#endif
   return;
 }
 
 void PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redTable, float *greenTable, float *blueTable)
 {
+#ifdef USE_VIDMODEEXTS
+
   CGDirectDisplayID	cgDisplayID;
   int     i;        
   psych_uint16	RTable[256];
@@ -852,6 +1146,202 @@ void PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redT
   // Set new gammaTable:
   PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, screenNumber);
   XF86VidModeSetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+#endif
+
   return;
 }
 
+// PsychGetDisplayBeamPosition() contains the implementation of display beamposition queries.
+// It requires both, a cgDisplayID handle, and a logical screenNumber and uses one of both for
+// deciding which display pipe to query, whatever of both is more efficient or suitable for the
+// host platform -- This is ugly, but neccessary, because the mapping with only one of these
+// specifiers would be either ambigous (wrong results!) or usage would be inefficient and slow
+// (bad for such a time critical low level call!). On some systems it may even ignore the arguments,
+// because it's not capable of querying different pipes - ie., it will always query a hard-coded pipe.
+//
+int PsychGetDisplayBeamPosition(CGDirectDisplayID cgDisplayId, int screenNumber)
+{
+  // Beamposition queries aren't supported by the X11 graphics system.
+  // However, for gfx-hardware where we have reliable register specs, we
+  // can do it ourselves, bypassing the X server.
+
+  // On systems that we can't handle, we return -1 as an indicator
+  // to high-level routines that we don't know the rasterbeam position.
+  int beampos = -1;
+  
+  // Currently we can do do-it-yourself-style beamposition queries for
+  // ATI's Radeon X1000, HD2000/3000 series chips due to availability of
+  // hardware register specs. See top of this file for the setup and
+  // shutdown code for the memory mapped access mechanism.
+  if (gfx_cntl_mem) {
+	  // Ok, supported chip and setup worked. Read the mmapped register,
+	  // either for CRTC-1 if pipe for this screen is zero, or CRTC-2 otherwise:
+	  beampos = radeon_get((displayScreensToPipes[screenNumber] == 0) ? RADEON_D1CRTC_STATUS_POSITION : RADEON_D2CRTC_STATUS_POSITION) & RADEON_VBEAMPOSITION_BITMASK;
+  }
+
+  // Return our result or non-result:
+  return(beampos);
+}
+
+// Try to attach to kernel level ptb support driver and setup everything, if it works:
+void InitPsychtoolboxKernelDriverInterface(void)
+{
+	// This is currently a no-op on Linux, as most low-level stuff is done via mmapped() MMIO access...
+	return;
+}
+
+// Try to detach to kernel level ptb support driver and tear down everything:
+void PsychOSShutdownPsychtoolboxKernelDriverInterface(void)
+{
+	if (numKernelDrivers > 0) {
+		// Nothing to do yet...
+	}
+
+	// Ok, whatever happened, we're detached (for good or bad):
+	numKernelDrivers = 0;
+
+	return;
+}
+
+boolean PsychOSIsKernelDriverAvailable(int screenId)
+{
+	// Currently our "kernel driver" is available if MMIO mem could be mapped:
+	// A real driver would indicate its presence via numKernelDrivers > 0 (see init/teardown code just above this routine):
+	return((gfx_cntl_mem) ? TRUE : FALSE);
+}
+
+int PsychOSCheckKDAvailable(int screenId, unsigned int * status)
+{
+	// This doesn't make much sense on Linux yet. 'connect' should be something like a handle
+	// to a kernel driver connection, e.g., the filedescriptor fd of the devicefile for ioctl()s
+	// but we don't have such a thing yet.  Could be also a pointer to a little struct with all
+	// relevant info...
+	// Currently we do a dummy assignment...
+	int connect = displayScreensToPipes[screenId];
+
+	if ((numKernelDrivers<=0) && (gfx_cntl_mem == NULL)) {
+		if (status) *status = ENODEV;
+		return(0);
+	}
+	
+	if (connect == 0xff) {
+		if (status) *status = ENODEV;
+		if (PsychPrefStateGet_Verbosity() > 6) printf("PTB-DEBUGINFO: Could not access kernel driver connection for screenId %i - No such connection.\n", screenId);
+		return(0);
+	}
+
+	if (status) *status = 0;
+
+	// Force this to '1', so the truth value is non-zero aka TRUE.
+	connect = 1;
+	return(connect);
+}
+
+
+unsigned int PsychOSKDReadRegister(int screenId, unsigned int offset, unsigned int* status)
+{
+	// Check availability of connection:
+	int connect;
+	if (!(connect = PsychOSCheckKDAvailable(screenId, status))) return(0xffffffff);
+	if (status) *status = 0;
+
+	// Return readback register value:
+	return(radeon_get(offset));
+}
+
+unsigned int PsychOSKDWriteRegister(int screenId, unsigned int offset, unsigned int value, unsigned int* status)
+{
+	// Check availability of connection:
+	int connect;
+	if (!(connect = PsychOSCheckKDAvailable(screenId, status))) return(0xffffffff);
+	if (status) *status = 0;
+
+	// Write the register:
+	radeon_set(offset, value);
+	
+	// Return success:
+	return(0);
+}
+
+// Synchronize display screens video refresh cycle. See PsychSynchronizeDisplayScreens() for help and details...
+PsychError PsychOSSynchronizeDisplayScreens(int *numScreens, int* screenIds, int* residuals, unsigned int syncMethod, double syncTimeOut, int allowedResidual)
+{
+	int screenId = 0;
+	double	abortTimeOut, now;
+	int residual;
+	
+	// Check availability of connection:
+	int connect;
+	unsigned int status;
+	
+	// No support for other methods than fast hard sync:
+	if (syncMethod > 1) {
+		if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Could not execute display resync operation with requested non hard sync method. Not supported for this setup and settings.\n"); 
+		return(PsychError_unimplemented);
+	}
+	
+	// The current implementation only supports syncing all heads of a single card
+	if (*numScreens <= 0) {
+		// Resync all displays requested: Choose screenID zero for connect handle:
+		screenId = 0;
+	}
+	else {
+		// Resync of specific display requested: We only support resync of all heads of a single multi-head card,
+		// therefore just choose the screenId of the passed master-screen for resync handle:
+		screenId = screenIds[0];
+	}
+	
+	if (!(connect = PsychOSCheckKDAvailable(screenId, &status))) {
+		if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Could not execute display resync operation for master screenId %i. Not supported for this setup and settings.\n", screenId); 
+		return(PsychError_unimplemented);
+	}
+	
+	// Setup deadline for abortion or repeated retries:
+	PsychGetAdjustedPrecisionTimerSeconds(&abortTimeOut);
+	abortTimeOut+=syncTimeOut;
+	residual = INT_MAX;
+	
+	// Repeat until timeout or good enough result:
+	do {
+		// If this isn't the first try, wait 0.5 secs before retry:
+		if (residual != INT_MAX) PsychWaitIntervalSeconds(0.5);
+		
+		residual = INT_MAX;
+
+		// No op for now...		
+
+		// Make it always TRUE == Success as this is a no op for now anyway...
+		if (TRUE) {
+			residual = (int) 0;
+			if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: Graphics display heads resynchronized. Residual vertical beamposition error is %ld scanlines.\n", residual);
+		}
+		else {
+			if (PsychPrefStateGet_Verbosity() > 0) printf("PTB-ERROR: Graphics display head synchronization failed.\n");
+			break;
+		}
+		
+		// Timestamp:
+		PsychGetAdjustedPrecisionTimerSeconds(&now);
+	} while ((now < abortTimeOut) && (abs(residual) > allowedResidual));
+
+	// Return residual value if wanted:
+	if (residuals) { 
+		residuals[0] = residual;
+	}
+	
+	if (abs(residual) > allowedResidual) {
+		if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Failed to synchronize heads down to the allowable residual of +/- %i scanlines. Final residual %i lines.\n", allowedResidual, residual);
+	}
+	
+	// TODO: Error handling not really worked out...
+	if (residual == INT_MAX) return(PsychError_system);
+	
+	// Done.
+	return(PsychError_none);
+}
+
+int PsychOSKDGetBeamposition(int screenId)
+{
+	// No-Op: This is implemented in PsychGetBeamposition() above directly...
+	return(-1);
+}
