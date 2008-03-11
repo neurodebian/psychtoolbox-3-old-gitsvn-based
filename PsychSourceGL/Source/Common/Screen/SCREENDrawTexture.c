@@ -29,20 +29,6 @@
 
 	TO DO:  
 
-		- Change the default target rect to be centered in the target window
-
-		- Use  glTexSubImage2D instead of glTexImage2D so that when we specify the subrect of the source image we get left and top bounds ..wait, we don't need to do that
-		because we do that with texcoord instead, right ?
-
-		- Make sure that we are not inverted and fix it if so
-
-		- Fix the close all windows on clear all problem
-
-		- Write GetImageFromTexture or just overload GetImage so that it works for textures also. 
-
-		- Test GetImage on the screen after drawing a texture.
-
-
 */
 
 
@@ -158,7 +144,13 @@ static char synopsisString[] =
 		
 		// Setup global vertex color as modulate color for texture drawing:
 		PsychCoerceColorMode(&color);
-		PsychSetGLColor(&color, target);		
+		// This call stores unclamped color in target->currentColor, as needed
+		// if color is to be processed by some bound shader (procedural or filtershader)
+		// inside PsychBlitTextureToDisplay():
+		PsychConvertColorToDoubleVector(&color, target, &(target->currentColor));
+		// Submit the same color to fixed function pipe attribute as well, in case no
+		// shader is bound, or shader pulls from standard color attribute (we can't know yet):
+		glColor4dv(target->currentColor);
 	}
 
 	// Assign optional override texture shader, if any provided:
@@ -462,7 +454,7 @@ PsychError SCREENDrawTextures(void)
 		if (numdstRects > 1) {
 			// Get i'th destination rectangle:
 			PsychCopyRect(targetRect, &(dstRects[i*4]));
-		} else if (numsrcRects == 1) {
+		} else if (numdstRects == 1) {
 			// Single destination rect provided - get it:
 			PsychCopyRect(targetRect, &(dstRects[0]));
 		} else {
@@ -501,7 +493,8 @@ PsychError SCREENDrawTextures(void)
 		
 		// Multiple modulateColors provided?
 		if (nc > 1) {
-			// Yes. Set it up as current vertex color:
+			// Yes. Set it up as current vertex color: We submit to internal currentColor for
+			// shader based color processing and via glColorXXX() for fixed pipe processing:
 			if (mc==3) {
 				if (colors) {
 					// RGB double:

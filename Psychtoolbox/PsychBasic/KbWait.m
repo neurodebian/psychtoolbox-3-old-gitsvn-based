@@ -1,7 +1,10 @@
-function secs = KbWait(deviceNumber)
-% secs = KbWait([deviceNumber])
+function [secs, keyCode, deltaSecs] = KbWait(deviceNumber, forWhat)
+% [secs, keyCode, deltaSecs] = KbWait([deviceNumber][, forWhat=0])
 %
-% Waits until any key is down and returns the time in seconds.
+% Waits until any key is down and optionally returns the time in seconds
+% and the keyCode vector of keyboard states, just as KbCheck would do. Also
+% allows to wait for release of all keys or for single keystrokes, see
+% below.
 %
 % If you have trouble with KbWait always returning immediately, this could
 % be due to "stuck keys". See "help DisableKeysForKbCheck" on how to work
@@ -17,6 +20,21 @@ function secs = KbWait(deviceNumber)
 %
 %  WaitSecs(0.2);KbWait
 %
+% KbWait can also wait for releasing of keys instead of pressing of keys
+% if you set the optional 2nd argument 'forWhat' to 1.
+%
+% If you want to wait for a single keystroke, set the 'forWhat' value to 2.
+% KbWait will then first wait until all keys are released, then for the
+% first keypress, then it will return. The above example could be realized
+% via:
+%
+%  KbWait([], 2);
+%
+% If you would set 'forWhat' to 3 then it would wait for releasing the key
+% after pressing it againg, ie. waitForAllKeysReleased -> waitForKeypress
+% -> waitForAllKeysReleased -> Return [secs, keyCode] of the key press.
+%
+%
 % OSX: ___________________________________________________________________
 %
 % KbWait uses the PsychHID function, a general purpose function for
@@ -30,7 +48,7 @@ function secs = KbWait(deviceNumber)
 % change, the function can be reset using "clear KbWait".
 % _________________________________________________________________________
 %
-% See also: KbCheck, GetChar, CharAvail, KbDemo.
+% See also: KbCheck, KbStrokeWait, KbPressWait, KbReleaseWait, GetChar, CharAvail, KbDemo.
 
 % 3/6/97    dhb  Wrote it.
 % 8/2/97    dgp  Explain difference between key and character. See KbCheck.
@@ -45,19 +63,57 @@ function secs = KbWait(deviceNumber)
 %                improvements.
 % 3/15/07   kas  Added in option to poll all keyboard devices by passing
 %                deviceNumber == -1
+%
+% 3/03/08   mk   Added option 'forWhat' to optionally wait for key release
+%                or isolated keystrokes, and optional return argument 'keyCode'
+%                to return keyCode vector, just as KbCheck does.
 
 persistent kbs
 
+% Time (in seconds) to wait between "failed" checks, in order to not
+% overload the system in realtime mode. 5 msecs seems to be an ok value...
+yieldInterval = 0.005;
+
+if nargin < 2
+    forWhat = 0;
+end
+
 if nargin == 0
-    while(1)
-        [isDown, secs] = KbCheck;
-        if isDown
-            break;
-        end
-        % Wait for 5 msecs to prevent system overload.
-        WaitSecs(0.005);
+    deviceNumber = [];
+end
+
+% Wait for keystroke?
+if (forWhat == 2) | (forWhat == 3)
+    % Wait for keystroke, ie., first make sure all keys are released, then
+    % wait for a keypress:
+    
+    % Wait for key release. we know we have deviceNumber valid here:
+    KbWait(deviceNumber, 1);
+    
+    if forWhat == 2
+        % Now just go on with forWhat = 0, ie., wait for keypress:
+        forWhat = 0;
+    else
+        % Wait for keypress:
+        [secs, keyCode, deltaSecs] = KbWait(deviceNumber);
+        
+        % Wait for key release. we know we have deviceNumber valid here:
+        KbWait(deviceNumber, 1);
+
+        return;
     end
-elseif nargin == 1
+end
+
+if isempty(deviceNumber)
+    while(1)
+        [isDown, secs, keyCode, deltaSecs] = KbCheck;
+        if isDown == ~forWhat
+            return;
+        end
+        % Wait for yieldInterval to prevent system overload.
+        WaitSecs(yieldInterval);
+    end
+else
     if deviceNumber == -1 & IsOSX
         if isempty(kbs) % only poll for keyboards on the first function call
             devices=PsychHID('Devices');
@@ -66,28 +122,25 @@ elseif nargin == 1
                 error('No keyboard devices were found.')
             end
         end
+        
         while(1)
             for i = kbs
-                [isDown, secs] = KbCheck(i);
-                if isDown
+                [isDown, secs, keyCode, deltaSecs] = KbCheck(i);
+                if isDown == ~forWhat
                     return;
                 end
             end
-            % Wait for 5 msecs to prevent system overload.
-            WaitSecs(0.005);
+            % Wait for yieldInterval to prevent system overload.
+            WaitSecs(yieldInterval);
         end
     else
         while(1)
-            [isDown, secs] = KbCheck(deviceNumber);
-            if isDown
-                break;
+            [isDown, secs, keyCode, deltaSecs] = KbCheck(deviceNumber);
+            if isDown == ~forWhat
+                return;
             end
-            % Wait for 5 msecs to prevent system overload.
-            WaitSecs(0.005);
+            % Wait for yieldInterval to prevent system overload.
+            WaitSecs(yieldInterval);
         end
-    end
-else
-    if nargin > 1
-        error('Too many arguments supplied to KbWait');
     end
 end

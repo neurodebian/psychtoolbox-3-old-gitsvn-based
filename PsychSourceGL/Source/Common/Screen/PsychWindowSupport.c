@@ -589,11 +589,11 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     PsychOSFlipWindowBuffers(*windowRecord);
     // We do it twice to clear possible stereo-contexts as well...
     if ((*windowRecord)->stereomode==kPsychOpenGLStereo) {
-        glDrawBuffer(GL_BACK_RIGHT);
-        glClear(GL_COLOR_BUFFER_BIT);
+	glDrawBuffer(GL_BACK_RIGHT);
+	glClear(GL_COLOR_BUFFER_BIT);
 	if (visual_debuglevel>=4) { glRasterPos2i(logo_x, logo_y); glDrawPixels(gimp_image.width, gimp_image.height, GL_RGBA, GL_UNSIGNED_BYTE, (void*) &gimp_image.pixel_data[0]); }
 	PsychOSFlipWindowBuffers(*windowRecord);
-        glClear(GL_COLOR_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT);
 	if (visual_debuglevel>=4) { glRasterPos2i(logo_x, logo_y); glDrawPixels(gimp_image.width, gimp_image.height, GL_RGBA, GL_UNSIGNED_BYTE, (void*) &gimp_image.pixel_data[0]); }
 	PsychOSFlipWindowBuffers(*windowRecord);
     }    
@@ -898,9 +898,9 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     if (skip_synctests < 2) {
       // Reliable estimate? These are our minimum requirements...
       if (numSamples<50 || stddev>0.001) {
-        sync_disaster = true;
-	if(PsychPrefStateGet_Verbosity()>1)
-	  printf("\nWARNING: Couldn't compute a reliable estimate of monitor refresh interval! Trouble with VBL syncing?!?\n");
+		  sync_disaster = true;
+		  if(PsychPrefStateGet_Verbosity()>1)
+			  printf("\nWARNING: Couldn't compute a reliable estimate of monitor refresh interval! Trouble with VBL syncing?!?\n");
       }
       
       // Check for mismatch between measured ifi from glFinish() VBLSync method and the value reported by the OS, if any:
@@ -940,20 +940,20 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     }
     
     if (sync_disaster) {
-      // We fail! Continuing would be too dangerous without a working VBL sync. We don't
-      // want to spoil somebodys study just because s(he) is relying on a non-working sync.
-      if(PsychPrefStateGet_Verbosity()>0){		
-	printf("\n\n");
-	printf("----- ! PTB - ERROR: SYNCHRONIZATION FAILURE ! ----\n\n");
-	printf("One or more internal checks (see Warnings above) indicate that synchronization\n");
-	printf("of Psychtoolbox to the vertical retrace (VBL) is not working on your setup.\n\n");
-	printf("This will seriously impair proper stimulus presentation and stimulus presentation timing!\n");
-	printf("Please read 'help SyncTrouble' for information about how to solve or work-around the problem.\n");
-	printf("You can force Psychtoolbox to continue, despite the severe problems, by adding the command\n");
-	printf("Screen('Preference', 'SkipSyncTests',1); at the top of your script, if you really know what you are doing.\n\n\n");
-      }
-      
-      // Abort right here if sync tests are enabled:
+		// We fail! Continuing would be too dangerous without a working VBL sync. We don't
+		// want to spoil somebodys study just because s(he) is relying on a non-working sync.
+		if(PsychPrefStateGet_Verbosity()>0){		
+			printf("\n\n");
+			printf("----- ! PTB - ERROR: SYNCHRONIZATION FAILURE ! ----\n\n");
+			printf("One or more internal checks (see Warnings above) indicate that synchronization\n");
+			printf("of Psychtoolbox to the vertical retrace (VBL) is not working on your setup.\n\n");
+			printf("This will seriously impair proper stimulus presentation and stimulus presentation timing!\n");
+			printf("Please read 'help SyncTrouble' for information about how to solve or work-around the problem.\n");
+			printf("You can force Psychtoolbox to continue, despite the severe problems, by adding the command\n");
+			printf("Screen('Preference', 'SkipSyncTests',1); at the top of your script, if you really know what you are doing.\n\n\n");
+		}
+		
+		// Abort right here if sync tests are enabled:
 		if (!skip_synctests) {
 			// We abort! Close the onscreen window:
 			PsychOSCloseWindow(*windowRecord);
@@ -963,8 +963,8 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 			return(FALSE);
 		}
 		
-      // Flash our visual warning bell at alert-level for 1 second if skipping sync tests is requested:
-      PsychVisualBell((*windowRecord), 1, 2);
+		// Flash our visual warning bell at alert-level for 1 second if skipping sync tests is requested:
+		PsychVisualBell((*windowRecord), 1, 2);
     }
     
     // Ok, basic syncing to VBL via CGLFlushDrawable + glFinish seems to work and we have a valid
@@ -2468,6 +2468,9 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
 		// of all state transitions between onscreen/offscreen windows etc.:
         PsychSetDrawingTarget(windowRecord);
 
+		// Disable any shaders:
+		PsychSetShader(windowRecord, 0);
+		
 		// ...and immediately disable it in imagingmode, because it won't be the system backbuffer,
 		// but a FBO -- which would break sync of glFinish() with bufferswaps and vertical retrace.
 		if ((windowRecord->imagingMode > 0) && (windowRecord->imagingMode != kPsychNeedFastOffscreenWindows)) PsychSetDrawingTarget(NULL);
@@ -2827,6 +2830,9 @@ void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
     // We stop processing here if window is a texture, aka offscreen window...
     if (windowRecord->windowType==kPsychTexture) return;
     
+	// Disable any shaders:
+	PsychSetShader(windowRecord, 0);
+	
     // Reset viewport to full-screen default:
     glViewport(0, 0, screenwidth, screenheight);
     glScissor(0, 0, screenwidth, screenheight);
@@ -3146,6 +3152,7 @@ void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
  */
 void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 {
+	GLenum glerr;
     int screenwidth=(int) PsychGetWidthFromRect(windowRecord->rect);
     int screenheight=(int) PsychGetHeightFromRect(windowRecord->rect);
     int stereo_mode=windowRecord->stereomode;
@@ -3209,13 +3216,14 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 				// Clearing (both)  back buffer requested:
 				if (stereo_mode==kPsychOpenGLStereo) {
 					glDrawBuffer(GL_BACK_LEFT);
-					glClear(GL_COLOR_BUFFER_BIT);
+					PsychGLClear(windowRecord);
 					glDrawBuffer(GL_BACK_RIGHT);
-					glClear(GL_COLOR_BUFFER_BIT);
+					PsychGLClear(windowRecord);
 				}
 				else {
 					glDrawBuffer(GL_BACK);
-					glClear(GL_COLOR_BUFFER_BIT);
+					PsychGLClear(windowRecord);
+
 				}
 			}
 		}
@@ -3238,13 +3246,13 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 			// Bind left view (or mono view) buffer:
 			glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, windowRecord->fboTable[windowRecord->drawBufferFBO[0]]->fboid);
 			// and clear it:
-			glClear(GL_COLOR_BUFFER_BIT);
+			PsychGLClear(windowRecord);
 			
 			if (windowRecord->stereomode > 0) {
 				// Bind right view buffer for stereo mode:
 				glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, windowRecord->fboTable[windowRecord->drawBufferFBO[1]]->fboid);
 				// and clear it:
-				glClear(GL_COLOR_BUFFER_BIT);
+				PsychGLClear(windowRecord);
 			}
 		}
 		
@@ -3252,16 +3260,22 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 		PsychSetDrawingTarget(windowRecord);
 	}
 
-	if (glGetError() == GL_OUT_OF_MEMORY) {
-		// Special case: Out of memory after Flip + Postflip operations.
-		printf("PTB-Error: The OpenGL graphics hardware encountered an out of memory condition!\n");
-		printf("PTB-Error: One cause of this could be that you are running your display at a too\n");
-		printf("PTB-Error: high resolution and/or use Anti-Aliasing with a multiSample value that\n");
-		printf("PTB-Error: your gfx-card can't handle at the current display resolution. If this is\n");
-		printf("PTB-Error: the case, you may have to reduce multiSample level or display resolution.\n");
-		printf("PTB-Error: It may help to quit and restart Matlab or Octave before continuing.\n");
-	 }
-
+	glerr = glGetError();
+	if (glerr != GL_NO_ERROR) {
+		if (glerr == GL_OUT_OF_MEMORY) {
+			// Special case: Out of memory after Flip + Postflip operations.
+			printf("PTB-Error: The OpenGL graphics hardware encountered an out of memory condition!\n");
+			printf("PTB-Error: One cause of this could be that you are running your display at a too\n");
+			printf("PTB-Error: high resolution and/or use Anti-Aliasing with a multiSample value that\n");
+			printf("PTB-Error: your gfx-card can't handle at the current display resolution. If this is\n");
+			printf("PTB-Error: the case, you may have to reduce multiSample level or display resolution.\n");
+			printf("PTB-Error: It may help to quit and restart Matlab or Octave before continuing.\n");
+		}
+		else {
+			printf("PTB-Error: The OpenGL graphics hardware encountered the following OpenGL error after flip: %s.\n", gluErrorString(glerr));
+		}
+	}
+	
     PsychTestForGLErrors();
 
 	// Fixup possible low-level framebuffer layout changes caused by commands above this point. Needed from native 10bpc FB support to work reliably.
@@ -3449,6 +3463,7 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 					// MakeTexture will be auto-converted as well, unless some special flags to MakeTexture are given.
 					// --> The user code needs to do something very unusual and special to trigger an error abort here, and if it triggers
 					// one, it will abort with a helpful error message, telling how to fix the problem very simply.
+					PsychSetShader(windowRecord, 0);
 					PsychNormalizeTextureOrientation(windowRecord);
 					
 					// Do we already have a framebuffer object for this texture? All textures start off without one,
@@ -3610,6 +3625,9 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 							PsychSetupView(windowRecord);
 							glPushMatrix();
 							glLoadIdentity();
+
+							// Disable any shaders:
+							PsychSetShader(windowRecord, 0);
 							
 							// Now we need to blit the new rendertargets texture into the framebuffer. We need to make
 							// sure that alpha-blending is disabled during this blit operation:
@@ -3733,4 +3751,47 @@ int PsychRessourceCheckAndReminder(boolean displayMessage) {
 	
 	// Return total sum of open ressource hogs ;-)
 	return(i + j);
+}
+
+/* PsychSetShader() -- Lazily choose a GLSL shader to use for further operations.
+ *
+ * The routine shall bind the shader 'shader' for the OpenGL context of window
+ * 'windowRecord'. It assumes that the OpenGL context for that windowRecord is
+ * already bound.
+ *
+ * This is a wrapper around glUseProgram(). It does nothing if GLSL isn't supported,
+ * ie. if gluseProgram() is not available. Otherwise it checks the currently bound
+ * shader and only rebinds the new shader if it isn't already bound - avoiding redundant
+ * calls to glUseProgram() as such calls might be expensive on some systems.
+ *
+ * A 'shader' value of zero disables shading and enables fixed-function pipe, as usual.
+ * A positive value sets the shader with that handle. Negative values have special
+ * meaning in that the select special purpose shaders stored in the 'windowRecord'.
+ *
+ * Currently the value -1 is defined to choose the windowRecord->defaultDrawShader.
+ * That shader can be anything special, zero for fixed function pipe, or e.g., a shader
+ * to disable color clamping.
+ */
+int PsychSetShader(PsychWindowRecordType *windowRecord, int shader)
+{
+	int oldShader;
+
+	// Have GLSL support?
+	if (glUseProgram) {
+		// Choose this windowRecords assigned default draw shader if shader == -1:
+		if (shader == -1) shader = (int) windowRecord->defaultDrawShader;
+		if (shader <  -1) { printf("PTB-BUG: Invalid shader id %i requested in PsychSetShader()! Switching to fixed function.\n", shader); shader = 0; }
+		
+		// Query currently bound shader:
+		glGetIntegerv(GL_CURRENT_PROGRAM, &oldShader);
+		
+		// Switch required? Switch if so:
+		if (shader != oldShader) glUseProgram((GLuint) shader);
+	}
+	else {
+		shader = 0;
+	}
+	
+	// Return new bound shader (or zero in case of fixed function only):
+	return(shader);
 }
