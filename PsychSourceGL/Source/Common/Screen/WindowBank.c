@@ -261,11 +261,18 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 	(*winRec)->stipplePattern=0xAAAA;		//alternating pixels stipple pattern
 	(*winRec)->stippleFactor=1;
 	(*winRec)->stippleEnabled=FALSE;
-
+	
+	// Set GL color buffer writemask glColorMask to "all enabled":
+	(*winRec)->colorMask[0] = TRUE;
+	(*winRec)->colorMask[1] = TRUE;
+	(*winRec)->colorMask[2] = TRUE;
+	(*winRec)->colorMask[3] = TRUE;
+	
 	// Initialize stereo settings:
 	(*winRec)->stereomode=0;
 	(*winRec)->stereodrawbuffer=2;                  // No stero drawbuffer selected at window open time.
 	(*winRec)->slaveWindow=NULL;					// No slave window attached.
+	(*winRec)->parentWindow=NULL;					// No parent window attached.
 	(*winRec)->targetFlipFieldType=-1;				// Don't care if flipping should only happen in even or odd video refresh frames.
 	(*winRec)->auxbuffer_dirty[0]=FALSE;            // AUX-Buffers clean on startup.
 	(*winRec)->auxbuffer_dirty[1]=FALSE;
@@ -282,6 +289,9 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 
 	// No special flags set by default:
 	(*winRec)->specialflags = 0;
+	// No capabilities setup yet:
+	(*winRec)->gfxcaps = 0;
+	
 	// No aux param vector set by default:
 	(*winRec)->auxShaderParams = NULL;
 	(*winRec)->auxShaderParamsCount = 0;
@@ -296,6 +306,10 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 	(*winRec)->unclampedDrawShader = 0;
 	(*winRec)->defaultDrawShader = 0;
 
+	// Set surface addresses to zero:
+	(*winRec)->gpu_preflip_Surfaces[0] = 0;
+	(*winRec)->gpu_preflip_Surfaces[1] = 0;
+	
 	return;
 }
 
@@ -410,13 +424,13 @@ boolean IsWindowIndex(PsychNumdexType numdex)
 */
 PsychError FindWindowRecord(PsychWindowIndexType windowIndex, PsychWindowRecordType **windowRecord)
 {
-	//check for valid index
-	if(windowIndex<PSYCH_FIRST_WINDOW || windowIndex>PSYCH_LAST_WINDOW)
-		return(PsychError_invalidWindex); //invalid index
-		
-	*windowRecord = windowRecordArrayWINBANK[windowIndex];
-        PsychCheckIfWindowRecordIsValid(*windowRecord);  //this would fail because of an early exit when the window was created.
+	// Check for valid index: Must be within bounds of our array of windowRecord pointers, and the referenced slot must be a non-NULL ptr to a windowRecord:
+	if(windowIndex<PSYCH_FIRST_WINDOW || windowIndex>PSYCH_LAST_WINDOW || ((*windowRecord = windowRecordArrayWINBANK[windowIndex]) == NULL)) return(PsychError_invalidWindex); // Invalid index!
 
+	// It is a windowRecord: Check if it is valid, ie., has been properly initialized by PTB:
+	PsychCheckIfWindowRecordIsValid(*windowRecord);  // This would, e.g., fail because of an early exit when the window was created. It is considered an internal error if this triggers.
+
+	// Success.
 	return(PsychError_none);
 }
 
@@ -472,7 +486,52 @@ void PsychDestroyVolatileWindowRecordPointerList(PsychWindowRecordType **pointer
     mxFree((void *)pointerList);
 }
 
+/* PsychAssignParentWindow()
+ * Assign a specific windowRecord as the parent windowRecord of a windowRecord.
+ * This sets up the "parent" pointer and copies a variety of state and settings from the
+ * parent to the child, e.g., OpenGL context, device context, color clamp settings etc...,
+ * i.e., it performs the one time setup of the childs properties with the parents properties.
+ *
+ * Usually called by all functions that create new offscreen windows or textures to assign
+ * the creating onscreen window to a child offscreen window or texture or proxy.
+ *
+ */
+void  PsychAssignParentWindow(PsychWindowRecordType *childWin, PsychWindowRecordType *parentWin)
+{
+	// Assign parent:
+	childWin->parentWindow = parentWin;
+	
+	// Copy some state and settings from parent to child:
+	childWin->targetSpecific.contextObject = parentWin->targetSpecific.contextObject;
+	childWin->targetSpecific.deviceContext = parentWin->targetSpecific.deviceContext;
+	childWin->targetSpecific.glusercontextObject = parentWin->targetSpecific.glusercontextObject;
 
+	// Copy default drawing shaders from parent:
+	childWin->defaultDrawShader   = parentWin->defaultDrawShader;
+	childWin->unclampedDrawShader = parentWin->unclampedDrawShader;
+	
+	// Copy color range and mode from parent window:
+	childWin->colorRange = parentWin->colorRange;
+
+	// Copy imaging mode flags from parent:
+	childWin->imagingMode = parentWin->imagingMode;
+
+	// Inherit capability bits of parents context:
+	childWin->gfxcaps = parentWin->gfxcaps;
+	
+	return;
+}
+
+/* PsychGetParentWindow()
+ * Return the windowRecord* of the parent window of a given window, or the windowRecord itself
+ * if the window doesn't have a parent because its a top-level onscreen window, ie., it is its
+ * own parent.
+ */
+PsychWindowRecordType* PsychGetParentWindow(PsychWindowRecordType *windowRecord)
+{
+	while (windowRecord->parentWindow) windowRecord = windowRecord->parentWindow;
+	return(windowRecord);
+}
 
 //  ------------------------------------------------------------------
 //	Accessor functions for stuff internal to WindowBank.cpp.   

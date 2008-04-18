@@ -16,6 +16,12 @@
   This is a catch-all for information that's not of too much interest for regular
   users, but useful for Psychtoolbox helper functions (M-Files).
   
+  NOTES:
+
+  Be careful with length of struct field names! Only names up to 31 characters are
+  supported by Matlab 5.x (and maybe 6.x -- untested). Larger names cause matching
+  failure!
+
 */
 
 #include "Screen.h"
@@ -35,8 +41,11 @@ static char seeAlsoString[] = "OpenWindow, Flip, NominalFrameRate";
 PsychError SCREENGetWindowInfo(void) 
 {
     const char *FieldNames[]={ "Beamposition", "LastVBLTimeOfFlip", "LastVBLTime", "VBLCount", "StereoMode", "ImagingMode", "MultiSampling", "MissedDeadlines", "StereoDrawBuffer",
-							   "GuesstimatedMemoryUsageMB", "VBLStartline", "VBLEndline", "VideoRefreshFromBeamposition", "GLVendor", "GLRenderer", "GLVersion"};
-	const int  fieldCount = 16;
+							   "GuesstimatedMemoryUsageMB", "VBLStartline", "VBLEndline", "VideoRefreshFromBeamposition", "GLVendor", "GLRenderer", "GLVersion",
+							   "GLSupportsFBOUpToBpc", "GLSupportsBlendingUpToBpc", "GLSupportsTexturesUpToBpc", "GLSupportsFilteringUpToBpc", "GLSupportsPrecisionColors",
+							   "GLSupportsFP32Shading"};
+							   
+	const int  fieldCount = 22;
 	PsychGenericScriptType	*s;
 	
     PsychWindowRecordType *windowRecord;
@@ -47,7 +56,7 @@ PsychError SCREENGetWindowInfo(void)
 	double vbl_startline;
 	long scw, sch;
 	bool onscreen;
-	
+
     //all subfunctions should have these two lines.  
     PsychPushHelp(useString, synopsisString, seeAlsoString);
     if(PsychIsGiveHelp()){PsychGiveHelp();return(PsychError_none);};
@@ -124,12 +133,54 @@ PsychError SCREENGetWindowInfo(void)
 		PsychSetStructArrayDoubleElement("VideoRefreshFromBeamposition", 0, windowRecord->ifi_beamestimate, s);
 		
 		// Renderer information:
-		PsychSetGLContext(windowRecord);
+		PsychSetDrawingTarget(windowRecord);
 		PsychSetStructArrayStringElement("GLVendor", 0, glGetString(GL_VENDOR), s);
 		PsychSetStructArrayStringElement("GLRenderer", 0, glGetString(GL_RENDERER), s);
 		PsychSetStructArrayStringElement("GLVersion", 0, glGetString(GL_VERSION), s);
+
+		// FBO's supported, and how deep?
+		if (windowRecord->gfxcaps & kPsychGfxCapFBO) {
+			if (windowRecord->gfxcaps & kPsychGfxCapFPFBO32) {
+				PsychSetStructArrayDoubleElement("GLSupportsFBOUpToBpc", 0, 32, s);
+			} else
+			if (windowRecord->gfxcaps & kPsychGfxCapFPFBO16) {
+				PsychSetStructArrayDoubleElement("GLSupportsFBOUpToBpc", 0, 16, s);
+			} else PsychSetStructArrayDoubleElement("GLSupportsFBOUpToBpc", 0, 8, s);
+		}
+		else {
+			PsychSetStructArrayDoubleElement("GLSupportsFBOUpToBpc", 0, 0, s);
+		}
+
+		// How deep is alpha blending supported?
+		if (windowRecord->gfxcaps & kPsychGfxCapFPBlend32) {
+			PsychSetStructArrayDoubleElement("GLSupportsBlendingUpToBpc", 0, 32, s);
+		} else if (windowRecord->gfxcaps & kPsychGfxCapFPBlend16) {
+			PsychSetStructArrayDoubleElement("GLSupportsBlendingUpToBpc", 0, 16, s);
+		} else PsychSetStructArrayDoubleElement("GLSupportsBlendingUpToBpc", 0, 8, s);
+		
+		// How deep is texture mapping supported?
+		if (windowRecord->gfxcaps & kPsychGfxCapFPTex32) {
+			PsychSetStructArrayDoubleElement("GLSupportsTexturesUpToBpc", 0, 32, s);
+		} else if (windowRecord->gfxcaps & kPsychGfxCapFPTex16) {
+			PsychSetStructArrayDoubleElement("GLSupportsTexturesUpToBpc", 0, 16, s);
+		} else PsychSetStructArrayDoubleElement("GLSupportsTexturesUpToBpc", 0, 8, s);
+		
+		// How deep is texture filtering supported?
+		if (windowRecord->gfxcaps & kPsychGfxCapFPFilter32) {
+			PsychSetStructArrayDoubleElement("GLSupportsFilteringUpToBpc", 0, 32, s);
+		} else if (windowRecord->gfxcaps & kPsychGfxCapFPFilter16) {
+			PsychSetStructArrayDoubleElement("GLSupportsFilteringUpToBpc", 0, 16, s);
+		} else PsychSetStructArrayDoubleElement("GLSupportsFilteringUpToBpc", 0, 8, s);
+
+		if (windowRecord->gfxcaps & kPsychGfxCapVCGood) {
+			PsychSetStructArrayDoubleElement("GLSupportsPrecisionColors", 0, 1, s);
+		} else PsychSetStructArrayDoubleElement("GLSupportsPrecisionColors", 0, 0, s);
+
+		if (windowRecord->gfxcaps & kPsychGfxCapFP32Shading) {
+			PsychSetStructArrayDoubleElement("GLSupportsFP32Shading", 0, 1, s);
+		} else PsychSetStructArrayDoubleElement("GLSupportsFP32Shading", 0, 0, s);
 	}
-	
+
     // Done.
     return(PsychError_none);
 }

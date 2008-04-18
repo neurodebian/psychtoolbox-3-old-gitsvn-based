@@ -37,56 +37,6 @@
 
 #include "Screen.h"
 
-// Source code for a fragment shader that performs bilinear texture filtering.
-// This shader is used as a drop-in replacement for GL's GL_LINEAR built-in
-// texture filter, whenever that filter is not available: All current ATI
-// hardware and all pre GF6000 NVidia hardware can't filter float textures,
-// GF6/7 series NVidia hardware can only filter 16bpc floats, not 32bpc floats.
-static char textureBilinearFilterFragmentShaderSrc[] =
-"\n"
-" \n"
-"uniform sampler2DRect Image; \n"
-"varying vec4 unclampedFragColor; \n"
-" \n"
-"void main() \n"
-"{ \n"
-"    /* Get wanted texture coordinate for which we should filter: */ \n"
-"    vec2 texinpos = (gl_TexCoord[0].st) - vec2(0.5, 0.5); \n"
-"    /* Retrieve texel colors for 4 nearest neighbours: */ \n"
-"    vec4 tl=texture2DRect(Image, floor(texinpos)); \n"
-"    vec4 tr=texture2DRect(Image, floor(texinpos) + vec2(1.0, 0.0)); \n"
-"    vec4 bl=texture2DRect(Image, floor(texinpos) + vec2(0.0, 1.0)); \n"
-"    vec4 br=texture2DRect(Image, floor(texinpos) + vec2(1.0, 1.0)); \n"
-"    /* Perform weighted linear interpolation -- bilinear interpolation of the 4: */ \n"
-"    tl=mix(tl,tr,fract(texinpos.x)); \n"
-"    bl=mix(bl,br,fract(texinpos.x)); \n"
-"    vec4 texcolor = mix(tl, bl, fract(texinpos.y)); \n"
-"    /* Multiply filtered texcolor with incoming fragment color (GL_MODULATE emulation): */ \n"
-"    /* Assign result as output fragment color: */ \n"
-"    gl_FragColor = texcolor * unclampedFragColor; \n"
-"} \n";
-
-char textureBilinearFilterVertexShaderSrc[] =
-"/* Simple pass-through vertex shader: Emulates fixed function pipeline, but passes  */ \n"
-"/* modulateColor as varying unclampedFragColor to circumvent vertex color       */ \n"
-"/* clamping on gfx-hardware / OS combos that don't support unclamped operation:     */ \n"
-"/* PTBs color handling is expected to pass the vertex color in modulateColor    */ \n"
-"/* for unclamped drawing for this reason. */ \n"
-"\n"
-"varying vec4 unclampedFragColor;\n"
-"attribute vec4 modulateColor;\n"
-"\n"
-"void main()\n"
-"{\n"
-"    /* Simply copy input unclamped RGBA pixel color into output varying color: */\n"
-"    unclampedFragColor = modulateColor;\n"
-"\n"
-"    gl_TexCoord[0] = gl_MultiTexCoord0;\n"
-"\n"
-"    /* Output position is the same as fixed function pipeline: */\n"
-"    gl_Position    = ftransform();\n"
-"}\n\0";
-
 // If you change useString then also change the corresponding synopsis string in ScreenSynopsis.c
 static char useString[] = "textureIndex=Screen('MakeTexture', WindowIndex, imageMatrix [, optimizeForDrawAngle=0] [, specialFlags=0] [, floatprecision=0] [, textureOrientation=0] [, textureShader=0]);";
 //                                                            1            2              3                          4                5                    6						7
@@ -102,11 +52,13 @@ static char synopsisString[] =
 	"the texture is created as an OpenGL power-of-two texture of type GL_TEXTURE_2D. Otherwise Psychtoolbox will try to "
 	"pick the most optimal format for fast drawing and low memory consumption. Power-of-two textures are especially useful "
 	"for animation of drifting gratings (see the demos) and for simple use with the OpenGL 3D graphics functions. "
-	"If 'specialFlags' is set to 2 then PTB will try to use an own high quality texture filtering algorithm for drawing "
+	"If 'specialFlags' is set to 2 then PTB will try to use its own high quality texture filtering algorithm for drawing "
 	"of bilinearly filtered textures instead of the hardwares built-in method. This only works on modern hardware with "
 	"fragment shader support and is slower than using the hardwares built in filtering, but it may provide higher precision "
 	"on some hardware. Please note that PTB automatically enables its own filter algorithm when used with floating point "
-	"textures on some old hardware.\n"
+	"textures or when Screen('ColorRange') is used to enable unclamped color processing: PTB will check if your hardware "
+	"is capable of unrestricted high precision color processing in that case. If your hardware can't guarantee high precision, "
+	"PTB will enable its own shader-based workarounds to provide higher precision at the cost of lower speed. \n"
 	"'floatprecision' defines the precision with which the texture should be stored and processed. Default value is zero, "
 	"which asks to store textures with 8 bit per color component precision, a suitable format for standard images read via "
 	"imread(). A non-zero value will store the textures color component values as floating point precision numbers, useful "
@@ -492,19 +444,8 @@ PsychError SCREENMakeTexture(void)
     
     // The memory buffer now contains our texture data in a format ready to submit to OpenGL.
     
-    // Assign proper OpenGL-Renderingcontext to texture:
-    // MK: Is this the proper way to do it???
-    textureRecord->targetSpecific.contextObject = windowRecord->targetSpecific.contextObject;
-    textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
-	textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
-
-	// Copy default drawing shaders from parent:
-	textureRecord->defaultDrawShader   = windowRecord->defaultDrawShader;
-	textureRecord->unclampedDrawShader = windowRecord->unclampedDrawShader;
-	
-	textureRecord->colorRange = windowRecord->colorRange;
-	// Copy imaging mode flags from parent:
-	textureRecord->imagingMode = windowRecord->imagingMode;
+	// Assign parent window and copy its inheritable properties:
+	PsychAssignParentWindow(textureRecord, windowRecord);
 
     // Texture orientation is zero aka transposed aka non-renderswapped.
     textureRecord->textureOrientation = (assume_texorientation != 2) ? 0 : 2;
@@ -515,43 +456,9 @@ PsychError SCREENMakeTexture(void)
     // Let's create and bind a new texture object and fill it with our new texture data.
     PsychCreateTexture(textureRecord);
     
-	// Is this a floating point texture or any texture and shader based filtering is requested?
-	if (usefloatformat || (usepoweroftwo & 2)) {
-		// Yes. Is floating point filtering supported for this texture type?
-		// Don't know of a way to query this, so we maintain a little blacklist
-		// of hardware we know can't do it: All ATI hardware can't do it. All
-		// hardware can't do it for 32bpc float aka usefloatformat == 2:
-		if ((usepoweroftwo & 2) || usefloatformat == 2 || strstr(glGetString(GL_VENDOR), "ATI")) {
-			// Floating point filtering unsupported or manual filtering requested.
-			// Do we have a filtershader already?
-			if (windowRecord->textureFilterShader == 0 && !(usepoweroftwo & 1)) {
-				// Nope. Need to create one:
-				windowRecord->textureFilterShader = PsychCreateGLSLProgram(textureBilinearFilterFragmentShaderSrc, textureBilinearFilterVertexShaderSrc, NULL);
-				if ((windowRecord->textureFilterShader == 0) && PsychPrefStateGet_Verbosity() > 1) {
-					printf("PTB-WARNING: Created a floating point texture as requested or manual filtering wanted, but was unable to create a float filter shader.\n");
-					printf("PTB-WARNING: (Custom) Filtering - and therefore anti-aliasing - of this texture won't work or at least not at the requested precision.\n");
-				}
-				else {
-					if (PsychPrefStateGet_Verbosity() > 3 && usefloatformat > 0) {
-						printf("PTB-INFO: %i bpc Floating point texture created. This gfx-hardware doesn't support automatic filtering of such\n", 16 * usefloatformat);
-						printf("PTB-INFO: textures. A GLSL fragment filtershader was generated to work-around this.\n");
-					}
-					
-					if (PsychPrefStateGet_Verbosity() > 3 && (usepoweroftwo & 2)) {
-						printf("PTB-INFO: GLSL fragment filtershader created for this texture for custom high quality texture filtering.\n");
-					}					
-				}
-			}
-			else if ((usepoweroftwo & 1) && PsychPrefStateGet_Verbosity() > 1) {
-					printf("PTB-WARNING: Created a floating point power of two texture as requested, but don't have a float filter shader.\n");
-					printf("PTB-WARNING: Filtering - and therefore anti-aliasing - of power of two textures won't work.\n");
-			}
-			
-			// Assign our onscreen windows filtershader to this texture:
-			textureRecord->textureFilterShader = windowRecord->textureFilterShader;
-		}
-	}
-	
+	// Assign GLSL filter-/lookup-shaders if needed:
+	PsychAssignHighPrecisionTextureShaders(textureRecord, windowRecord, usefloatformat, (usepoweroftwo & 2) ? 1 : 0);
+
 	// User specified override shader for this texture provided? This is useful for
 	// basic image processing and procedural texture shading:
 	if (textureShader!=0) {

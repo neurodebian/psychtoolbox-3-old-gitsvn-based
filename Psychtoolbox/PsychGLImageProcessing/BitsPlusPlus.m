@@ -119,6 +119,34 @@ function [win, winRect] = BitsPlusPlus(cmd, arg, dummy, varargin)
 % is active. Please read the notes below the Color++ section for graphics
 % hardware requirements and other useful tips for use of Bits++.
 %
+% If you call this subfunction as 'OpenWindowMono++WithOverlay', the
+% overlay plane of Bits++ gets enabled and an additional overlay window is
+% created for drawing the image for that overlay plane.
+%
+% [overlaywin, overlaywinRect] = BitsPlusPlus('GetOverlayWindow', win);
+% - Will return the handle to the 'overlaywin'dow associated with onscreen
+%
+%   'overlayWin' is the handle to the overlay window associated with the
+%   overlay of onscreen window 'win'. The overlay window is a standard
+%   offscreen window, so you can do anything with it that you would want to
+%   do with offscreen windows. The only difference is that the window is a
+%   pure index window: It only has one "color channel", which can be written
+%   with color values between 0 and 255. Values 1 to 255 get mapped to the
+%   corresponding color indices of the Bits++ overlay plane: A zero value is
+%   transparent -- Content of the onscreen window is visible. Positive
+%   non-zero color values map to the 255 indices available in overlay mode,
+%   these get mapped by the Bits++ CLUT to colors. You can define the
+%   mapping of indices to CLUT colors via the
+%   Screen('LoadNormalizedGammaTable', win, clut, 2); command.
+%
+%   Updates of the overlay image are synchronized to Screen('Flip')
+%   updates. If you draw into the overlay window, the changed overlay image
+%   will become visible at Screen('Flip') time -- in sync with the changed
+%   onscreen window content. The overlay plane is not automatically cleared
+%   to background (or transparent) color after a flip, but its content
+%   persists across flips. You need to clear it out manually via a
+%   Screen('FillRect') command.
+%
 %
 % Activate Color++ mode:
 %
@@ -177,7 +205,8 @@ function [win, winRect] = BitsPlusPlus(cmd, arg, dummy, varargin)
 % drawings, ie. the precision is way higher than needed for any high
 % dynamic range/resolution display device in existence. The downside of this
 % super-precision is that alpha-blending is not supported in this mode, unless
-% you employ an NVidia Geforce 8000 series graphics card. If you need
+% you employ an NVidia Geforce 8000 series (and later) graphics card, or a
+% ATI Radeon HD2000/3000 series graphics card (and later). If you need
 % alpha-blending on older/other hardware then specify the optional flag
 % 'kPsychNeed16BPCFloat' for the 'imagingmode' argument. This will reduce
 % effective accuracy of the framebuffer to 10 bit precision, but allow for
@@ -190,9 +219,9 @@ function [win, winRect] = BitsPlusPlus(cmd, arg, dummy, varargin)
 % Psychtoolbox imaging pipeline and floating point framebuffers. The
 % minimum requirements are ATI Radeon X1000 series or NVidia Geforce-6800
 % series and later graphics hardware. We currently recommend NVidia
-% Geforce-8000 series hardware for best results. However, this functions
-% have been successfully tested on ATI Radeon X1600 and NVidia Geforce-7800
-% hardware as well.
+% Geforce-8000 series or ATI Radeon HD-2000/3000 hardware for best results.
+% However, this functions have been successfully tested on ATI Radeon X1600
+% and NVidia Geforce-7800 hardware as well.
 %
 % All Bits++ modes supported by this function should work Plug & Play,
 % requiring no changes to your stimulus code other than mentioned here to
@@ -203,6 +232,9 @@ function [win, winRect] = BitsPlusPlus(cmd, arg, dummy, varargin)
 
 % History:
 % 22.04.2007 Written (MK).
+% xx.12.2007 Support for DIO T-Lock code generation (MK).
+% 17.04.2008 Add support for overlay windows in Mono++ mode, and for color
+%            correction/gamma correction via PsychColorCorrection (MK).
 
 global GL;
 
@@ -210,10 +242,15 @@ global GL;
 % proper operation of Bitsplusplus with GPU imaging has been verified.
 persistent validated;
 
+% Vector that assigns overlay window handles to onscreen window handles:
+persistent OverlayWindows;
+
 % Encoded T-Lock display list handle for driving Bits++ DIO:
 persistent tlockhandle;
 % Counter of pending T-Lock display list blits: Zero == Disabled.
 persistent blitTLockCode;
+% Corrective x-offset for DIO blitting:
+persistent tlockXOffset;
 
 if nargin < 1
     error('You must specify a command in argument "cmd"!');
@@ -252,13 +289,13 @@ if isempty(validated)
     validated = 0;
     tlockhandle = 0;
     blitTLockCode = 0;
+    tlockXOffset = 0;
+    OverlayWindows = [];
 end
 
-if strcmp(cmd, 'DIOCommand')
+if strcmpi(cmd, 'DIOCommand')
 
-    % Reset to safe default:
-    blitTLockCode = 0;
-    
+    % Setup new DIO command to be converted to T-Lock code and blitted:
     if nargin < 2 || isempty(arg)
         error('window handle for Bits++ onscreen window missing!');
     end
@@ -311,7 +348,7 @@ if strcmp(cmd, 'DIOCommand')
         end
         
         % Add command sequence for this T-Lock code to display list:
-        glRasterPos2i(xDIO, yDIO);
+        glRasterPos2i(xDIO + tlockXOffset, yDIO);
         glDrawPixels(508, 1, GL.RGB, GL.UNSIGNED_BYTE, encodedDIOdata);
     end
     
@@ -326,7 +363,7 @@ if strcmp(cmd, 'DIOCommand')
 
 end
 
-if strcmp(cmd, 'DIOCommandReset')
+if strcmpi(cmd, 'DIOCommandReset')
     % Dummy error check: arg will be used in later revisions...
     if nargin < 2 || isempty(arg)
         error('window handle for Bits++ onscreen window missing!');
@@ -337,7 +374,7 @@ if strcmp(cmd, 'DIOCommandReset')
     return;
 end
 
-if strcmp(cmd, 'ForceUnvalidatedRun')
+if strcmpi(cmd, 'ForceUnvalidatedRun')
     % Enforce use of this routine without verification of correct function
     % of the imaging pipeline. This is used by the correctness test itself
     % in order to be able to run the validation.
@@ -345,7 +382,7 @@ if strcmp(cmd, 'ForceUnvalidatedRun')
     return;
 end
 
-if strcmp(cmd, 'StoreValidation')
+if strcmpi(cmd, 'StoreValidation')
     % Enforce use of this routine without verification of correct function
     % of the imaging pipeline. This is used by the correctness test itself
     % in order to be able to run the validation.
@@ -353,7 +390,7 @@ if strcmp(cmd, 'StoreValidation')
     return;
 end
 
-if strcmp(cmd, 'LoadIdentityClut')
+if strcmpi(cmd, 'LoadIdentityClut')
     % Load an identity CLUT into Bits++ at next Screen('Flip'). This is
     % just a little convenience wrapper around 'LoadNormalizedGammaTable':
     % Restore Bits++ Identity CLUT so it can be used as normal display:
@@ -365,7 +402,7 @@ if strcmp(cmd, 'LoadIdentityClut')
     return;
 end
 
-if strcmp(cmd, 'OpenWindowBits++')
+if strcmpi(cmd, 'OpenWindowBits++')
     % Execute the Screen('OpenWindow') command with proper flags, followed
     % by our own Initialization. Return values of 'OpenWindow'.
     %
@@ -415,23 +452,10 @@ if strcmp(cmd, 'OpenWindowBits++')
     % Ok, if we reach this point then we've got a proper onscreen
     % window on the Bits++. Let's reassign our arguments and continue with
     % the init sequence:
-    arg = win;
 
     % First load the graphics hardwares gamma table with an identity mapping,
     % so it doesn't interfere with Bits++ -- Functions from Bits++ toolbox.
     LoadIdentityClut(win);
-
-    % Now enable finalizer hook chains and load them with the special Bits++
-    % command for T-Lock based Bits++ internal CLUT updates:
-    Screen('HookFunction', win, 'PrependBuiltin', 'LeftFinalizerBlitChain', 'Builtin:RenderClutBits++', '');
-    Screen('HookFunction', win, 'Enable', 'LeftFinalizerBlitChain');
-
-    if (~isempty(stereomode) && stereomode == 1)
-        % This is only needed on quad-buffered stereo contexts. Enable CLUT
-        % updates via T-Lock on right stereo buffer as well:
-        Screen('HookFunction', win, 'PrependBuiltin', 'RightFinalizerBlitChain', 'Builtin:RenderClutBits++', '');
-        Screen('HookFunction', win, 'Enable', 'RightFinalizerBlitChain');
-    end
 
     % We need the GL for DIO T-Lock setup:
     if isempty(GL)
@@ -439,6 +463,36 @@ if strcmp(cmd, 'OpenWindowBits++')
         % flag for Screen():
         InitializeMatlabOpenGL([], [], 1);
     end;
+
+    % Test accuracy/correctness of GPU's rasterizer for different output
+    % positioning methods: Return (non-zero) dx,dy offsets, if any:
+    [rpfx, rpfy, rpix, rpiy, vix] = RasterizerOffsets(win);
+        
+    if rpix~=0
+        tlockXOffset = -rpix;
+        fprintf('OpenWindowBits++: Applying corrective horizontal DIO T-Lock offset of %i pixels for buggy graphics card driver. Will hopefully fix it...\n', tlockXOffset);        
+    end
+    
+    % Now enable finalizer hook chains and load them with the special Bits++
+    % command for T-Lock based Bits++ internal CLUT updates:
+    if vix~=0
+        % vix is wrong offset, therefore negate it to get corrective offset:
+        vix = -vix;
+        fprintf('OpenWindowBits++: Applying corrective horizontal offset of %i pixels for buggy graphics card driver. Will hopefully fix it...\n', vix);
+        offsetstring = sprintf('xPosition=%i', vix);
+    else
+        offsetstring = '';
+    end
+    
+    Screen('HookFunction', win, 'PrependBuiltin', 'LeftFinalizerBlitChain', 'Builtin:RenderClutBits++', offsetstring);    
+    Screen('HookFunction', win, 'Enable', 'LeftFinalizerBlitChain');
+
+    if (~isempty(stereomode) && stereomode == 1)
+        % This is only needed on quad-buffered stereo contexts. Enable CLUT
+        % updates via T-Lock on right stereo buffer as well:
+        Screen('HookFunction', win, 'PrependBuiltin', 'RightFinalizerBlitChain', 'Builtin:RenderClutBits++', offsetstring);
+        Screen('HookFunction', win, 'Enable', 'RightFinalizerBlitChain');
+    end
 
     % Setup finalizer callback for DIO T-Lock updates:
     tlockhandle = SetupDIOFinalizer(win, stereomode);
@@ -462,7 +516,7 @@ if strcmp(cmd, 'OpenWindowBits++')
     return;
 end
 
-if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
+if strcmpi(cmd, 'OpenWindowMono++') || strcmpi(cmd, 'OpenWindowMono++WithOverlay') || strcmpi(cmd, 'OpenWindowColor++')
     % Execute the Screen('OpenWindow') command with proper flags, followed
     % by our own Initialization. Return values of 'OpenWindow'.
     %
@@ -500,6 +554,8 @@ if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
 
     % multiSample gets overriden for now... Would probably interfere
     % with Bits++ display controller:
+    % TODO: Once we have EXT_framebuffer_multisample support, we can
+    % reenable this in a safe way on our virtual FBO backed framebuffer...
     multiSample = 0;
 
     % Imaging mode we take - and combine it with our own requirements:
@@ -515,7 +571,7 @@ if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
     % from different vendors, but the users imagingmode setting is free to
     % override this with a 16 bpc fixed buffer. 16 bpc float works as well
     % but can't use the full Bits++ color range at full precision.
-    if bitand(imagingmode, kPsychNeed16BPCFloat) || bitand(imagingmode, kPsychNeed16BPCFixed)
+    if bitand(imagingmode, kPsychNeed16BPCFloat) || bitand(imagingmode, kPsychNeed16BPCFixed) || bitand(imagingmode, kPsychUse32BPCFloatAsap)
         % User specified override: Use it.
         ourspec = 0;
     else
@@ -523,61 +579,167 @@ if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
         % one:
         ourspec = kPsychNeed32BPCFloat;
     end
-    
+
     % Imagingmode must at least include the following:
     imagingmode = mor(imagingmode, kPsychNeedFastBackingStore, kPsychNeedOutputConversion, ourspec);
 
-    if strcmp(cmd, 'OpenWindowColor++')
+    if strcmpi(cmd, 'OpenWindowColor++')
         % In Color++ mode we only have half the effective horizontal
         % resolution. Tell PTB to take this into account for all relevant
         % calculations:
         imagingmode = mor(imagingmode, kPsychNeedHalfWidthWindow);
     end
-    
+
     % Open the window, pass all parameters (partially modified or overriden), return Screen's return values:
+    % Note that we clear to black (==0), because we set the real background
+    % clear color "further down the road" after we've established our
+    % default color range of 0.0 - 1.0, ie. in the normalized 0 - 1 range.
     if nargin > 9
-        [win, winRect] = Screen('OpenWindow', screenid, clearcolor, winRect, pixelSize, numbuffers, stereomode, multiSample, imagingmode, varargin{7:end});
+        [win, winRect] = Screen('OpenWindow', screenid, 0, winRect, pixelSize, numbuffers, stereomode, multiSample, imagingmode, varargin{7:end});
     else
-        [win, winRect] = Screen('OpenWindow', screenid, clearcolor, winRect, pixelSize, numbuffers, stereomode, multiSample, imagingmode);
+        [win, winRect] = Screen('OpenWindow', screenid, 0, winRect, pixelSize, numbuffers, stereomode, multiSample, imagingmode);
     end
 
     % Ok, if we reach this point then we've got a proper onscreen
     % window on the Bits++. Let's reassign our arguments and continue with
     % the init sequence:
-    arg = win;
 
+    % Some more diagnostics and info for user:
+    winfo = Screen('GetWindowInfo', win);
+    
+    % Unconditional support for 32 bpc float drawable requested?
+    havespoken = 0;
+    if ~bitand(imagingmode, kPsychNeed32BPCFloat)
+        % Nope. Conditional support requested?
+        if (bitand(imagingmode, kPsychUse32BPCFloatAsap) && winfo.GLSupportsBlendingUpToBpc < 32)
+            % Conditional use of 32 bpc float buffers requested, but GPU
+            % doesn't support 32 bpc float blending --> drawBuffer will only be
+            % 16 bpc -- Loss of precision!
+            fprintf('BitsPlusPlus - Info: Your framebuffer is only configured to provide about 10-11 bits of precision, because your\n');
+            fprintf('BitsPlusPlus - Info: script requested support for simultaneous alpha-blending and high precision, but your hardware is not\n');
+            fprintf('BitsPlusPlus - Info: capable of supporting highest precision with alpha-blending enabled. You will therefore only\n');
+            fprintf('BitsPlusPlus - Info: be able to use about 11 bits out of the 14 bits precision that Bits++ provides for stimulus definition.\n');
+            fprintf('BitsPlusPlus - Info: Stimulus postprocessing, e.g., gamma correction, will still make good use of all 14 bits though.\n');
+            fprintf('BitsPlusPlus - Info: You can either live with this limitation, or do not use alpha-blending or upgrade your graphics\n');
+            fprintf('BitsPlusPlus - Info: hardware to Direct3D-10 compliant hardware, e.g., ATI Radeon HD-3000 or NVidia Geforce-8000 and later.\n\n');
+            havespoken = 1;
+        end
+
+        if bitand(imagingmode, kPsychNeed16BPCFloat)
+            fprintf('BitsPlusPlus - Info: Your framebuffer is only configured to provide about 10-11 bits of precision, because your\n');
+            fprintf('BitsPlusPlus - Info: script requested only 16 bpc float precision. You will therefore only be able to use\n');
+            fprintf('BitsPlusPlus - Info: about 11 bits out of the 14 bits precision that Bits++ provides for stimulus drawing.\n');
+            fprintf('BitsPlusPlus - Info: If you want to use the full 14 bit precision, you will need to request a 32 bpc float framebuffer.\n\n');
+            havespoken = 1;
+        end
+
+        if bitand(imagingmode, kPsychNeed16BPCFixed)
+            fprintf('BitsPlusPlus - Info: Your framebuffer is configured to provide 16 bits of precision, because your\n');
+            fprintf('BitsPlusPlus - Info: script requested 16 bits fixed precision. Bits++ will be able to finally output 14 bits precision.\n');
+            fprintf('BitsPlusPlus - Info: Alpha-blending will not work at this configuration with your hardware though. Choose a different\n');            
+            fprintf('BitsPlusPlus - Info: mode if you need alpha-blending and high precision.\n\n');
+            havespoken = 1;
+        end
+    end
+
+    if (havespoken == 0) && (bitand(imagingmode, kPsychNeed32BPCFloat) || bitand(imagingmode, kPsychUse32BPCFloatAsap))
+        fprintf('BitsPlusPlus - Info: Your framebuffer is configured for maximum precision. All internal processing will be done\n');
+        fprintf('BitsPlusPlus - Info: with about 23 bits of precision -- Bits++ will be able to finally output with 14 bits precision.\n');
+        if winfo.GLSupportsBlendingUpToBpc < 32
+            fprintf('BitsPlusPlus - Info: Alpha-blending will not work at this precision with your hardware though.\n');
+            fprintf('BitsPlusPlus - Info: You can either live with this limitation, or upgrade your graphics hardware to Direct3D-10\n');
+            fprintf('BitsPlusPlus - Info: compliant hardware, e.g., ATI Radeon HD-3000 or NVidia Geforce-8000 and later.\n\n');
+        else
+            fprintf('BitsPlusPlus - Info: Alpha-blending should be fully supported at this precision by your hardware.\n\n');            
+        end
+    end
+    
     % First load the graphics hardwares gamma table with an identity mapping,
     % so it doesn't interfere with Bits++ -- Function from Bits++ toolbox.
     LoadIdentityClut(win);
-
-    % Set color range to 0.0 - 1.0: This makes more sense than the normal
-    % 0-255 values. Try to disable color clamping. This may fail and
-    % produce a PTB warning, but if it succeeds then we're better off for
-    % the 2D drawing commands...
-    Screen('ColorRange', win, 1, 0);
 
     % Backup current gfx-settings, so we can restore them after
     % modifications: The LoadGLSLProgramFromFiles() routine enables this
     % implicitely. This is unwanted in case we are in pure 2D mode, so we
     % need to undo it below...
     ogl = Screen('Preference', 'Enable3DGraphics');
+
+    % Create and retrieve a compiled shader and idString-Snippet for
+    % use with the formatting shader to allow for final
+    % color-transformations immediately before Mono++ conversion. This
+    % is mostly meant to implement gammacorrection, clamping or other
+    % transformations needed for a well calibrated display:
+    [icmShaders, icmIdString] = PsychColorCorrection('GetCompiledShaders', win, debuglevel);
     
     % Operate in Mono++ mode or Color++ mode?
-    if strcmp(cmd, 'OpenWindowMono++')
+    if strcmpi(cmd, 'OpenWindowMono++') || strcmpi(cmd, 'OpenWindowMono++WithOverlay')
         % Setup for Mono++ mode:
+        
+        if strcmpi(cmd, 'OpenWindowMono++WithOverlay')
+            useOverlay = 1;
+        else
+            useOverlay = 0;
+        end
+        
+        % Use of overlay plane requested?
+        if useOverlay
+            % Create additional shader for overlay texel fetch:
+            shSrc = 'uniform sampler2DRect overlayImage; float getMonoOverlayIndex(vec2 pos) { return(texture2DRect(overlayImage, pos).r); }';
+
+            % Create Offscreen window for the overlay. It has the same size as
+            % the onscreen window, but only 8 bpc fixed depth and a completely black
+            % background -- fully transparent by default.
+            overlaywin = Screen('OpenOffscreenWindow', win, 0, [], 8);
+
+            % Retrieve low-level OpenGl texture handle to the window:
+            overlaytex = Screen('GetOpenGLTexture', win, overlaywin);
+            
+        else
+            % No.: Create "no-op" shader for zero overlay:
+            shSrc = 'float getMonoOverlayIndex(vec2 pos) { return(0.0); }';
+        end
+
+        % Build shader from source:
+        overlayShader = glCreateShader(GL.FRAGMENT_SHADER);
+        glShaderSource(overlayShader, shSrc);
+        glCompileShader(overlayShader);
+
+        % Attach to list of shaders:
+        icmShaders(end+1) = overlayShader;
 
         % Load Bits++ Mono++ formatting shader:
-        shader = LoadGLSLProgramFromFiles('Bits++_Mono++_FormattingShader', debuglevel);
+        shader = LoadGLSLProgramFromFiles('Bits++_Mono++_FormattingShader', debuglevel, icmShaders);
+
+        if useOverlay
+            % Ok, overlay requested. Setup shader's overlayImage sampler to
+            % texture unit 1 and setup proper pString, so unit 1 has
+            % overlay bound during blit operation:
+            pString = sprintf('TEXTURERECT2D(1)=%i', overlaytex);
+            
+            glUseProgram(shader);
+            glUniform1i(glGetUniformLocation(shader, 'overlayImage'), 1);
+            glUseProgram(0);
+            
+            % Store window handle of overlay window for this onscreen
+            % window for later retrieval:
+            OverlayWindows(win) = overlaywin;
+        else
+            pString = '';
+        end
 
         % Now enable output formatter hook chain and load them with the special Bits++
         % Mono++ data formatting shader: We append the shader because it
         % absolutely must be the last shader to execute in that chain!
-        Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit', 'Mono++ output formatting shader for CRS Bits++', shader);
+        idString = sprintf('Mono++ output formatting shader for CRS Bits++ : %s', icmIdString);
+        Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit', idString, shader, pString);        
     else
         % Setup for Color++ mode:
 
+        % No support for overlays in Color++ mode:
+        useOverlay = 0;
+        
         % Load Bits++ Color++ formatting shader:
-        shader = LoadGLSLProgramFromFiles('Bits++_Color++_FormattingShader', debuglevel);
+        shader = LoadGLSLProgramFromFiles('Bits++_Color++_FormattingShader', debuglevel, icmShaders);
 
         % Now enable output formatter hook chain and load them with the special Bits++
         % Color++ data formatting shader: We append the shader because it
@@ -585,7 +747,8 @@ if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
         % We apply a scaling of 2.0 in horizontal direction for the output
         % blit, to take the fact into account that the internal window
         % buffers only have half display width.
-        Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit', 'Color++ output formatting shader for CRS Bits++', shader, 'Scaling:2.0:1.0');
+        idString = sprintf('Color++ output formatting shader for CRS Bits++ : %s', icmIdString);
+        Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit', idString, shader, 'Scaling:2.0:1.0');
     end
 
     % Setup shaders image source as the first texture unit, this is by
@@ -596,18 +759,80 @@ if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
     glUniform1i(glGetUniformLocation(shader, 'Image'), 0);
     glUseProgram(0);
 
+    % Perform any setup steps that may be needed by the color correction
+    % routines. Must be called after 'shader' creation and attachment to
+    % the imaging pipe:
+    PsychColorCorrection('ApplyPostGLSLLinkSetup', win);
+    
+    % Test accuracy/correctness of GPU's rasterizer for different output
+    % positioning methods: Return (non-zero) dx,dy offsets, if any:
+    [rpfx, rpfy, rpix, rpiy, vix] = RasterizerOffsets(win);
+        
+    if rpix~=0
+        tlockXOffset = -rpix;
+        fprintf('BitsPlusPlus: Applying corrective horizontal DIO T-Lock offset of %i pixels for buggy graphics card driver. Will hopefully fix it...\n', tlockXOffset);        
+    end
+
     % Enable framebuffer output formatter: From this point on, all visual
     % output will be reformatted to Bits++ framebuffer format at each
     % invokation of Screen('DrawingFinished') or Screen('Flip'), whatever
     % comes first.
     Screen('HookFunction', win, 'Enable', 'FinalOutputFormattingBlit');
 
+    % When using the overlay, we need to allow for CLUT updates as well, so
+    % usecode can define and change overlay colors:
+    if useOverlay
+        % Now enable finalizer hook chains and load them with the special Bits++
+        % command for T-Lock based Bits++ internal CLUT updates:
+        if vix~=0
+            % vix is wrong offset, therefore negate it to get corrective offset:
+            vix = -vix;
+            fprintf('OpenWindowMono++WithOverlay: Applying corrective horizontal offset of %i pixels for buggy graphics card driver. Will hopefully fix it...\n', vix);
+            offsetstring = sprintf('xPosition=%i', vix);
+        else
+            offsetstring = '';
+        end
+
+        Screen('HookFunction', win, 'PrependBuiltin', 'LeftFinalizerBlitChain', 'Builtin:RenderClutBits++', offsetstring);
+        Screen('HookFunction', win, 'Enable', 'LeftFinalizerBlitChain');
+
+        if (~isempty(stereomode) && stereomode == 1)
+            % This is only needed on quad-buffered stereo contexts. Enable CLUT
+            % updates via T-Lock on right stereo buffer as well:
+            Screen('HookFunction', win, 'PrependBuiltin', 'RightFinalizerBlitChain', 'Builtin:RenderClutBits++', offsetstring);
+            Screen('HookFunction', win, 'Enable', 'RightFinalizerBlitChain');
+        end
+        
+        % Load an identity CLUT into the Bits++ to start with:
+        linear_lut =  repmat(linspace(0, 1, 256)', 1, 3);
+        Screen('LoadNormalizedGammaTable', win, linear_lut, 2);
+    end
+    
     % Setup finalizer callback for DIO T-Lock updates:
     tlockhandle = SetupDIOFinalizer(win, stereomode);
     
     % Restore old graphics preferences:
     Screen('Preference', 'Enable3DGraphics', ogl);
 
+    % Set color range to 0.0 - 1.0: This makes more sense than the normal
+    % 0-255 values. Try to disable color clamping. This may fail and
+    % produce a PTB warning, but if it succeeds then we're better off for
+    % the 2D drawing commands...
+    Screen('ColorRange', win, 1, 0);
+
+    % Set Screen background clear color, in normalized 0.0 - 1.0 range:
+    if (max(clearcolor) > 1) && (all(round(clearcolor) == clearcolor))
+        % Looks like someone's feeding old style 0-255 integer values as
+        % clearcolor. Output a warning to tell about the expected 0.0 - 1.0
+        % range of values:
+        warning(sprintf('\n\nBitsPlusPlus: You specified a ''clearcolor'' argument for the OpenWindow command that looks \nlike an old 0-255 value instead of the wanted value in the 0.0-1.0 range. Please update your code for correct behaviour.')); %#ok<SPWRN>
+    end
+    
+    % Set the background clear color via old fullscreen 'FillRect' trick,
+    % followed by a flip:
+    Screen('FillRect', win, clearcolor);
+    Screen('Flip', win);
+    
     % Check validation:
     if ~validated
         ValidateBitsPlusImaging(win, 0);
@@ -617,6 +842,29 @@ if strcmp(cmd, 'OpenWindowMono++') || strcmp(cmd, 'OpenWindowColor++')
     validated = 0;
 
     % Ready!
+    return;
+end
+
+if strcmpi(cmd, 'GetOverlayWindow')
+    % Assign onscreen window index:
+    if nargin < 2 || isempty(arg) || ~isa(arg, 'double')
+        error('BitsPlusPlus: "GetOverlayWindow" called without valid onscreen window handle.');
+    end
+    win = arg;
+    
+    if win < 1 || win > length(OverlayWindows)
+        error('BitsPlusPlus: "GetOverlayWindow": No overlay associated with given onscreen window.');
+    end
+
+    if OverlayWindows(win) == 0
+        error('BitsPlusPlus: "GetOverlayWindow": No overlay associated with given onscreen window.');
+    end
+
+    % Ok, this 'win'dow has an overlay: Return its offscreen 'win'dow handle:
+    win = OverlayWindows(win);
+    % And the defining rectangle of the overlay:
+    winRect = Screen('Rect', win);
+    
     return;
 end
 
@@ -641,7 +889,7 @@ function ValidateBitsPlusImaging(win, writefile)
     if ~writefile
         % Check if a validation file exists and if it contains this
         % configuration:
-        fid = fopen([PsychtoolboxRoot 'ptbbitsplusplusvalidationfile.txt'], 'r');
+        fid = fopen([PsychtoolboxConfigDir 'ptbbitsplusplusvalidationfile.txt'], 'r');
         if fid~=-1
             while ~feof(fid)
                 vconf = fgetl(fid);
@@ -670,11 +918,10 @@ function ValidateBitsPlusImaging(win, writefile)
     
     if writefile
         % Append current configuration to file to mark it as verified:
-        [fid msg]= fopen([PsychtoolboxRoot 'ptbbitsplusplusvalidationfile.txt'], 'a');
+        [fid msg]= fopen([PsychtoolboxConfigDir 'ptbbitsplusplusvalidationfile.txt'], 'a');
         if fid == -1
             sca;
-            errtxt = sprintf('Could not write validation file %s to filesystem [%s].', [PsychtoolboxRoot 'ptbbitsplusplusvalidationfile.txt'], msg);
-            error(errtxt);
+            error('Could not write validation file %s to filesystem [%s].', [PsychtoolboxConfigDir 'ptbbitsplusplusvalidationfile.txt'], msg);
         end
 
         % Append line:
@@ -686,7 +933,7 @@ end
 % Helper function for setup of finalizer blit chains in all modes. Sets up
 % callback into our file for T-Lock drawing etc...
 function displist = SetupDIOFinalizer(win, stereomode)
-
+    
     % Generate unique display list handle for later use:
     displist = glGenLists(1);
     
@@ -701,4 +948,139 @@ function displist = SetupDIOFinalizer(win, stereomode)
         Screen('HookFunction', win, 'Enable', 'RightFinalizerBlitChain');
     end
 
+end
+
+function [rpfx, rpfy, rpix, rpiy, vix, viy] = RasterizerOffsets(win)
+
+    global GL;
+
+    % Test for off-by-one bugs in graphics drivers / GPU's and compute
+    % corrective offsets for our Bits++ T-Lock blitters...
+
+    % glRasterPos2f(): Used by Screen('PutImage') for output-positioning:
+    
+    % Clear out top-left 20x20 rectangle of framebuffer:
+    Screen('FillRect', win, 0, [0 0 20 20]);
+
+    % Define drawposition via glRasterPos2f:
+    glRasterPos2f(2, 1);
+
+    % Draw RGB = [128, 0, 0] pixel to that location:
+    testpixel = uint8([128 0 0]);
+    glDrawPixels(1, 1, GL.RGB, GL.UNSIGNED_BYTE, testpixel);
+
+    % Sync the pipeline, so we know the backbuffer contains the result:
+    Screen('DrawingFinished', win, 0, 1);
+
+    % Read top-left 4x4 rectangle back, only the red channel:
+    testreadback = Screen('GetImage', win, [0 0 4 4], 'backBuffer', 0, 1);
+
+    % Must flip here, to clear the "drawingfinished" state from above:
+    Screen('Flip', win);
+    
+    % Find location of red == 128 pixel:
+    pixposition = find(testreadback == 128);
+    if ~isempty(pixposition)
+        [pixy, pixx] = ind2sub(size(testreadback), pixposition);
+        % Map from Matlab indexing to OpenGL indexing: Only x is remapped,
+        % y-offset is consistent due to 1 offset inside our y-origin inside
+        % Screen:
+        pixx = pixx - 1;
+    else
+        pixy = -1;
+        pixx = -1;
+    end
+
+    rpfx = pixx - 2;
+    rpfy = pixy - 1;
+
+    % At expected location?
+    if rpfx~=0
+        fprintf('BitsPlusPlus:GPU-Rasterizertest: Warning: glRasterPos2f() command draws at wrong position (Offset %i, %i)!\n', rpfx, rpfy);
+    end
+
+    % glRasterPos2i(): Used by our DIO T-Lock blitter for output-positioning:
+    
+    % Clear out top-left 20x20 rectangle of framebuffer:
+    Screen('FillRect', win, 0, [0 0 20 20]);
+
+    % Define drawposition via glRasterPos2i:
+    glRasterPos2i(2, 1);
+
+    % Draw RGB = [128, 0, 0] pixel to that location:
+    testpixel = uint8([128 0 0]);
+    glDrawPixels(1, 1, GL.RGB, GL.UNSIGNED_BYTE, testpixel);
+
+    % Sync the pipeline, so we know the backbuffer contains the result:
+    Screen('DrawingFinished', win, 0, 1);
+
+    % Read top-left 4x4 rectangle back, only the red channel:
+    testreadback = Screen('GetImage', win, [0 0 4 4], 'backBuffer', 0, 1);
+
+    % Must flip here, to clear the "drawingfinished" state from above:
+    Screen('Flip', win);
+
+    % Find location of red == 128 pixel:
+    pixposition = find(testreadback == 128);
+    if ~isempty(pixposition)
+        [pixy, pixx] = ind2sub(size(testreadback), pixposition);
+        % Map from Matlab indexing to OpenGL indexing: Only x is remapped,
+        % y-offset is consistent due to 1 offset inside our y-origin inside
+        % Screen:
+        pixx = pixx - 1;
+    else
+        pixy = -1;
+        pixx = -1;
+    end
+
+    rpix = pixx - 2;
+    rpiy = pixy - 1;
+
+    % At expected location?
+    if rpix~=0
+        fprintf('BitsPlusPlus:GPU-Rasterizertest: Warning: glRasterPos2i() command draws at wrong position (Offset %i, %i)!\n', rpix, rpiy);
+    end
+
+    % glVertex2i(): Used by Screen's CLUT T-Lock blitter for output-positioning:
+    
+    % Clear out top-left 20x20 rectangle of framebuffer:
+    Screen('FillRect', win, 0, [0 0 20 20]);
+
+    glPointSize(1);
+    glBegin(GL.POINTS);
+    % Draw RGB = [128, 0, 0] pixel:
+    glColor3ub(128, 0, 0);
+    % Submit glVertex2i at test location:
+    glVertex2i(2, 1);
+    glEnd;
+    
+    % Sync the pipeline, so we know the backbuffer contains the result:
+    Screen('DrawingFinished', win, 0, 1);
+
+    % Read top-left 4x4 rectangle back, only the red channel:
+    testreadback = Screen('GetImage', win, [0 0 4 4], 'backBuffer', 0, 1);
+
+    % Must flip here, to clear the "drawingfinished" state from above:
+    Screen('Flip', win);
+    
+    % Find location of red == 128 pixel:
+    pixposition = find(testreadback == 128);
+    if ~isempty(pixposition)
+        [pixy, pixx] = ind2sub(size(testreadback), pixposition);
+        % Map from Matlab indexing to OpenGL indexing: Only x is remapped,
+        % y-offset is consistent due to 1 offset inside our y-origin inside
+        % Screen:
+        pixx = pixx - 1;
+    else
+        pixy = -1;
+        pixx = -1;
+    end
+
+    vix = pixx - 2;
+    viy = pixy - 1;
+
+    % At expected location?
+    if vix~=0
+        fprintf('BitsPlusPlus:GPU-Rasterizertest: Warning: glVertex2i() command draws at wrong position (Offset %i, %i)!\n', vix, viy);
+    end
 end

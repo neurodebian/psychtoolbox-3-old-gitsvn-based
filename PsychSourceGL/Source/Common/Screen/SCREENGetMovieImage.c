@@ -15,50 +15,47 @@ Psychtoolbox3/Source/Common/SCREENGetMovieImage.c
  Fetch an image from the specified movie object and create an OpenGL texture out of it.
  Return a handle to the texture.
  
- On OS-X, all movie/multimedia handling functions are implemented via the Apple Quicktime API,
- version 7 or later. On a later Windows port we'll probably do the same, but for other OS'es,
- e.g., Linux, we would use a different multimedia engine.
- 
+ On OS-X and Windows, all movie/multimedia handling functions are implemented via the Apple Quicktime API,
+ version 6 or later. 
+
  TO DO:
- 
- 
- 
  
  */
 
-
 #include "Screen.h"
 
-
-static char useString[] = "[ texturePtr [timeindex]]=Screen('GetMovieImage', windowPtr, moviePtr, [waitForImage=1], [fortimeindex]);";
+static char useString[] = "[ texturePtr [timeindex]]=Screen('GetMovieImage', windowPtr, moviePtr, [waitForImage=1], [fortimeindex], [specialFlags = 0]);";
 static char synopsisString[] = 
 "Try to fetch a new texture image from movie object 'moviePtr' for visual playback/display in onscreen window 'windowPtr' and "
 "return a texture-handle 'texturePtr' on successfull completion. 'waitForImage' If set to 1 (default), the function will wait "
 "until the image becomes available. If set to zero, the function will just poll for a new image. If none is ready, it will return "
-"a texturePtr of zero, or -1 if none will become ready because movie has reached its end and is not in loop mode. "
-"'fortimeindex' Don't request the next image, but the image closest to fortimeindex. The (optional) return "
-"value 'timeindex' contains the exact time when the returned image should be displayed - a presentation timestamp. "
-"On OS-X, media files are handled by use of Apples Quicktime-7 API. On other platforms, the playback engine may be different "
+"a texturePtr of zero, or -1 if none will become ready because movie has reached its end and is not in loop mode. \n"
+"'fortimeindex' Don't request the next image, but the image closest to time 'fortimeindex' in seconds. The (optional) return "
+"value 'timeindex' contains the exact time when the returned image should be displayed wrt. to the start of the movie - a presentation timestamp. \n"
+"'specialFlags' (optional) encodes special requirements for the returned texture. A setting of 2 will request that the texture "
+"is prepared for drawing it with highest possible precision. See explanation of 'specialFlags' == 2 in Screen('MakeTexture') "
+"for details. \n"
+"On OS-X and Windows, media files are handled by use of Apples Quicktime-7 API. On other platforms, the playback engine may be different "
 "from Quicktime.";
 static char seeAlsoString[] = "CloseMovie PlayMovie GetMovieImage GetMovieTimeIndex SetMovieTimeIndex";
-
 
 PsychError SCREENGetMovieImage(void) 
 {
     PsychWindowRecordType		*windowRecord;
     PsychWindowRecordType		*textureRecord;
-    PsychRectType			rect;
-    int                                 moviehandle = -1;
-    int                                 waitForImage = TRUE;
-    double                              requestedTimeIndex = -1;
-    double                              presentation_timestamp = 0;
-    int rc=0;
-    
+    PsychRectType				rect;
+    int                         moviehandle = -1;
+    int                         waitForImage = TRUE;
+    double                      requestedTimeIndex = -1;
+    double                      presentation_timestamp = 0;
+    int							rc=0;
+    int							specialFlags = 0;
+	
     // All sub functions should have these two lines
     PsychPushHelp(useString, synopsisString, seeAlsoString);
     if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none);};
     
-    PsychErrorExit(PsychCapNumInputArgs(4));            // Max. 4 input args.
+    PsychErrorExit(PsychCapNumInputArgs(5));            // Max. 4 input args.
     PsychErrorExit(PsychRequireNumInputArgs(2));        // Min. 2 input args required.
     PsychErrorExit(PsychCapNumOutputArgs(2));           // Max. 2 output args.
     
@@ -84,6 +81,9 @@ PsychError SCREENGetMovieImage(void)
     // according to current movie playback time.
     PsychCopyInDoubleArg(4, FALSE, &requestedTimeIndex);
     
+    // Get the optional specialFlags flag:
+    PsychCopyInIntegerArg(5, FALSE, &specialFlags);
+
     while (rc==0) {
         rc = PsychGetTextureFromMovie(windowRecord, moviehandle, TRUE, requestedTimeIndex, NULL, NULL);
         if (rc<0) {
@@ -132,22 +132,16 @@ PsychError SCREENGetMovieImage(void)
     textureRecord->textureMemorySizeBytes= 0;
     textureRecord->textureMemory=NULL;
 
-    // Assign proper OpenGL-Renderingcontext to texture:
-    // MK: Is this the proper way to do it???
-    textureRecord->targetSpecific.contextObject = windowRecord->targetSpecific.contextObject;
-    textureRecord->targetSpecific.deviceContext = windowRecord->targetSpecific.deviceContext;
-	textureRecord->targetSpecific.glusercontextObject = windowRecord->targetSpecific.glusercontextObject;
-
-	// Copy default drawing shaders from parent:
-	textureRecord->defaultDrawShader   = windowRecord->defaultDrawShader;
-	textureRecord->unclampedDrawShader = windowRecord->unclampedDrawShader;
-	
-    textureRecord->colorRange = windowRecord->colorRange;
-	// Copy imaging mode flags from parent:
-	textureRecord->imagingMode = windowRecord->imagingMode;
+	// Assign parent window and copy its inheritable properties:
+	PsychAssignParentWindow(textureRecord, windowRecord);
 
     // Try to fetch an image from the movie object and return it as texture:
     PsychGetTextureFromMovie(windowRecord, moviehandle, FALSE, requestedTimeIndex, textureRecord, &presentation_timestamp);
+
+	// Assign GLSL filter-/lookup-shaders if needed: usefloatformat is always == 0 as
+	// our current movie engine implementations only return 8 bpc fixed textures.
+	// The 'userRequest' flag is set if specialmode flag is set to 8.
+	PsychAssignHighPrecisionTextureShaders(textureRecord, windowRecord, 0, (specialFlags & 2) ? 1 : 0);
 
     // Texture ready for consumption. Mark it valid and return handle to userspace:
     PsychSetWindowRecordValid(textureRecord);
@@ -158,8 +152,3 @@ PsychError SCREENGetMovieImage(void)
     // Ready!
     return(PsychError_none);
 }
-
-
-
-
-

@@ -36,6 +36,78 @@
 
 #include "Screen.h"
 
+// Source code for a fragment shader that performs texture lookup and
+// modulation, but taking the modulatecolor from 'unclampedFragColor'
+// instead of standard interpolated fragment color. This is used when
+// high-precision and unclamped fragment input colors are needed and
+// the hw doesn't support that. It's a drop in replacement for fixed
+// function pipe otherwise:
+static char textureLookupFragmentShaderSrc[] =
+"\n"
+" \n"
+"uniform sampler2DRect Image; \n"
+"varying vec4 unclampedFragColor; \n"
+" \n"
+"void main() \n"
+"{ \n"
+"    vec4 texcolor = texture2DRect(Image, gl_TexCoord[0].st); \n"
+"    /* Multiply texcolor with incoming fragment color (GL_MODULATE emulation): */ \n"
+"    /* Assign result as output fragment color: */ \n"
+"    gl_FragColor = texcolor * unclampedFragColor; \n"
+"} \n";
+
+// Source code for a fragment shader that performs bilinear texture filtering.
+// This shader is used as a drop-in replacement for GL's GL_LINEAR built-in
+// texture filter, whenever that filter is not available: All pre ATI Radeon HD
+// hardware and all pre GF6000 NVidia hardware can't filter float textures,
+// GF6/7 series NVidia hardware can only filter 16bpc floats, not 32bpc floats.
+static char textureBilinearFilterFragmentShaderSrc[] =
+"\n"
+" \n"
+"uniform sampler2DRect Image; \n"
+"varying vec4 unclampedFragColor; \n"
+" \n"
+"void main() \n"
+"{ \n"
+"    /* Get wanted texture coordinate for which we should filter: */ \n"
+"    vec2 texinpos = (gl_TexCoord[0].st) - vec2(0.5, 0.5); \n"
+"    /* Retrieve texel colors for 4 nearest neighbours: */ \n"
+"    vec4 tl=texture2DRect(Image, floor(texinpos)); \n"
+"    vec4 tr=texture2DRect(Image, floor(texinpos) + vec2(1.0, 0.0)); \n"
+"    vec4 bl=texture2DRect(Image, floor(texinpos) + vec2(0.0, 1.0)); \n"
+"    vec4 br=texture2DRect(Image, floor(texinpos) + vec2(1.0, 1.0)); \n"
+"    /* Perform weighted linear interpolation -- bilinear interpolation of the 4: */ \n"
+"    tl=mix(tl,tr,fract(texinpos.x)); \n"
+"    bl=mix(bl,br,fract(texinpos.x)); \n"
+"    vec4 texcolor = mix(tl, bl, fract(texinpos.y)); \n"
+"    /* Multiply filtered texcolor with incoming fragment color (GL_MODULATE emulation): */ \n"
+"    /* Assign result as output fragment color: */ \n"
+"    gl_FragColor = texcolor * unclampedFragColor; \n"
+"} \n";
+
+char textureBilinearFilterVertexShaderSrc[] =
+"/* Simple pass-through vertex shader: Emulates fixed function pipeline, but passes  */ \n"
+"/* modulateColor as varying unclampedFragColor to circumvent vertex color       */ \n"
+"/* clamping on gfx-hardware / OS combos that don't support unclamped operation:     */ \n"
+"/* PTBs color handling is expected to pass the vertex color in modulateColor    */ \n"
+"/* for unclamped drawing for this reason. */ \n"
+"\n"
+"varying vec4 unclampedFragColor;\n"
+"attribute vec4 modulateColor;\n"
+"\n"
+"void main()\n"
+"{\n"
+"    /* Simply copy input unclamped RGBA pixel color into output varying color: */\n"
+"    unclampedFragColor = modulateColor;\n"
+"\n"
+"    gl_TexCoord[0] = gl_MultiTexCoord0;\n"
+"\n"
+"    /* Output position is the same as fixed function pipeline: */\n"
+"    gl_Position    = ftransform();\n"
+"}\n\0";
+
+
+
 // Source code for our GLSL anaglyph stereo shader:
 char anaglyphshadersrc[] = 
 "/* Weight vector for conversion from RGB to Luminance, according to NTSC spec. */ \n"
@@ -183,7 +255,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 	PsychSetGLContext(windowRecord);
 
 	// Check if this system does support OpenGL framebuffer objects and rectangle textures:
-	if (!glewIsSupported("GL_EXT_framebuffer_object") || (!glewIsSupported("GL_EXT_texture_rectangle") && !glewIsSupported("GL_ARB_texture_rectangle") && !glewIsSupported("GL_NV_texture_rectangle"))) {
+	if (!(windowRecord->gfxcaps & kPsychGfxCapFBO)) {
 		// Unsupported! This is a complete no-go :(
 		printf("PTB-ERROR: Initialization of the built-in image processing pipeline failed. Your graphics hardware or graphics driver does not support\n");
 		printf("PTB-ERROR: the required OpenGL framebuffer object extension. You may want to upgrade to the latest drivers or if that doesn't help, to a\n");
@@ -235,12 +307,50 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 
 	// Want dynamic adaption of buffer precision?
 	if (imagingmode & kPsychUse32BPCFloatAsap) {
-		// Yes. Here should be detection code to check if the gfx-hardware is capable
-		// of unrestricted hardware-accelerated 32 bpc float framebuffer blending. If
-		// capable hardware -> use 32bpc float for drawBufferFBOs, if not -> use 16 bpc.
+		// Yes. If the gfx-hardware is capable of unrestricted hardware-accelerated 32 bpc
+		// float framebuffer blending, we use 32bpc float for drawBufferFBOs, if not -> use 16 bpc.
 		
-		// FIXME TODO: For now we just use 16 bpc for the stage 0 FBO's.
+		// Start off with 16 bpc for the stage 0 FBO's.
 		fboInternalFormat = GL_RGBA_FLOAT16_APPLE;
+
+		// Blending on 32 bpc float FBO's supported? Upgrade to 32 bpc float for stage 0 if possible:
+		if (windowRecord->gfxcaps & kPsychGfxCapFPBlend32) fboInternalFormat = GL_RGBA_FLOAT32_APPLE;
+		
+	}
+
+	if (PsychPrefStateGet_Verbosity()>2) {
+		switch(fboInternalFormat) {
+			case GL_RGBA8:
+				printf("PTB-INFO: Will use 8 bits per color component framebuffer for stimulus drawing.\n");
+			break;
+
+			case GL_RGBA16:
+				printf("PTB-INFO: Will use 16 bits per color component framebuffer for stimulus drawing. Alpha blending may not work.\n");
+			break;
+
+			case GL_RGBA_FLOAT16_APPLE:
+				printf("PTB-INFO: Will use 16 bits per color component floating point framebuffer for stimulus drawing. ");
+				if (windowRecord->gfxcaps & kPsychGfxCapFPBlend16) {
+					printf("Alpha blending should work correctly.\n");
+					if (imagingmode & kPsychUse32BPCFloatAsap) {
+						printf("PTB-INFO: Can't use 32 bit precision for drawing because hardware doesn't support alpha-blending in 32 bpc.\n");
+					}
+				}
+				else {
+					printf("Alpha blending may not work on your system with this setup, but only for 8 bits per color component mode.\n");
+				}
+			break;
+
+			case GL_RGBA_FLOAT32_APPLE:
+				printf("PTB-INFO: Will use 32 bits per color component floating point framebuffer for stimulus drawing. ");
+				if (windowRecord->gfxcaps & kPsychGfxCapFPBlend32) {
+					printf("Alpha blending should work correctly.\n");
+				}
+				else {
+					printf("Alpha blending may not work on your system with this setup, but only for lower precision modes.\n");
+				}
+			break;
+		}
 	}
 
 	// Do we need additional depth buffer attachments?
@@ -362,8 +472,29 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 	}
 	
 	// Upgrade to 32 bpc float FBO's needed, starting with the 2nd stage of the pipe?
+	// If so, we can now upgrade, because we won't need alpha-blending anymore in later stages:
 	if (imagingmode & kPsychUse32BPCFloatAsap) fboInternalFormat = GL_RGBA_FLOAT32_APPLE;
 	
+	if (PsychPrefStateGet_Verbosity()>2) {
+		switch(fboInternalFormat) {
+			case GL_RGBA8:
+				printf("PTB-INFO: Will use 8 bits per color component framebuffer for stimulus post-processing (if any).\n");
+			break;
+
+			case GL_RGBA16:
+				printf("PTB-INFO: Will use 16 bits per color component framebuffer for stimulus post-processing (if any).\n");
+			break;
+
+			case GL_RGBA_FLOAT16_APPLE:
+				printf("PTB-INFO: Will use 16 bits per color component floating point framebuffer for stimulus post-processing (if any).\n");
+			break;
+
+			case GL_RGBA_FLOAT32_APPLE:
+				printf("PTB-INFO: Will use 32 bits per color component floating point framebuffer for stimulus post-processing (if any).\n");
+			break;
+		}
+	}
+
 	// Do we need 2nd stage FBOs? We need them as targets for the processed data if support for misc image processing ops is requested.
 	if (needimageprocessing) {
 		// Need real FBO's as targets for image processing:
@@ -739,7 +870,7 @@ void PsychInitializeImagingPipeline(PsychWindowRecordType *windowRecord, int ima
 	//PsychPipelineAddBuiltinFunctionToHook(windowRecord, "StereoLeftCompositingBlit", "Builtin:IdentityBlit", INT_MAX, "");
 	//PsychPipelineEnableHook(windowRecord, "StereoLeftCompositingBlit");
 
-	// Perform a full reset of current drawing target. This is a warm-start of PTB's drawing
+	// Perform a safe reset of current drawing target. This is a warm-start of PTB's drawing
 	// engine, so the next drawing command will trigger binding the proper FBO of our pipeline.
 	// Before this point (==OpenWindow time), all drawing was directly directed to the system
 	// framebuffer - important for all the timing tests and calibrations to work correctly.
@@ -2671,10 +2802,13 @@ boolean PsychBlitterDisplayList(PsychWindowRecordType *windowRecord, PsychHookFu
  */
 boolean PsychPipelineBuiltinRenderClutBitsPlusPlus(PsychWindowRecordType *windowRecord, PsychHookFunction* hookfunc)
 {
+	char* strp;
 	const int bitshift = 16; // Bits++ expects 16 bit numbers, but ignores 2 least significant bits --> Effective 14 bit.
-	int i, j, x, y;
+	int i, x, y;
 	unsigned int r, g, b;
 	double t1, t2;
+	y=1;
+	x=0;
 	
 	if (windowRecord->loadGammaTableOnNextFlip != 0 || windowRecord->inRedTable == NULL) {
 		if (PsychPrefStateGet_Verbosity()>0) printf("PTB-ERROR: Bits++ CLUT encoding failed. No suitable CLUT set in Screen('LoadNormalizedGammaTable'). Skipped!\n");
@@ -2691,62 +2825,73 @@ boolean PsychPipelineBuiltinRenderClutBitsPlusPlus(PsychWindowRecordType *window
 		PsychGetAdjustedPrecisionTimerSeconds(&t1);
 	}
 
-	// Render CLUT as sequence of single points:
-	// We render it twice in two lines, the 2nd line shifted horizontally by one pixel. This way at least one of
-	// the lines will always start at an even pixel location as mandated by Bits++ - More failsafe.
-	// Actually, we don't: Only render it once. These settings are the correct ones (empirically):
-	for (j=0; j<=0 ; j++) {
-		x=j;
-		y=1;
-		
-		glPointSize(1);
-		glBegin(GL_POINTS);
-		
-		// First the T-Lock unlock key:
-		glColor3ub(36, 106, 133);
-		glVertex2i(x++, y);
-		glColor3ub(63, 136, 163);
-		glVertex2i(x++, y);
-		glColor3ub(8, 19, 138);
-		glVertex2i(x++, y);
-		glColor3ub(211, 25, 46);
-		glVertex2i(x++, y);
-		glColor3ub(3, 115, 164);
-		glVertex2i(x++, y);
-		glColor3ub(112, 68, 9);
-		glVertex2i(x++, y);
-		glColor3ub(56, 41, 49);
-		glVertex2i(x++, y);
-		glColor3ub(34, 159, 208);
-		glVertex2i(x++, y);
-		glColor3ub(0, 0, 0);
-		glVertex2i(x++, y);
-		glColor3ub(0, 0, 0);
-		glVertex2i(x++, y);
-		glColor3ub(0, 0, 0);
-		glVertex2i(x++, y);
-		glColor3ub(0, 0, 0);
-		glVertex2i(x++, y);
-		
-		// Now the encoded CLUT: We encode 16 bit values in a high and a low pixel,
-		// Bits++ throws away the two least significant bits - get 14 bit output resolution.
-		for (i=0; i<256; i++) {
-			// Convert 0.0 - 1.0 float value into 0 - 2^14 -1 integer range of Bits++
-			r = (unsigned int)(windowRecord->inRedTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
-			g = (unsigned int)(windowRecord->inGreenTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
-			b = (unsigned int)(windowRecord->inBlueTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
-			
-			// Pixel with high-byte of 16 bit value:
-			glColor3ub((GLubyte) ((r >> 8) & 0xff), (GLubyte) ((g >> 8) & 0xff), (GLubyte) ((b >> 8) & 0xff));
-			glVertex2i(x++, y);
-			
-			// Pixel with low-byte of 16 bit value:
-			glColor3ub((GLubyte) (r & 0xff), (GLubyte) (g  & 0xff), (GLubyte) (b  & 0xff));
-			glVertex2i(x++, y);
+	// Options provided?
+	if (strlen(hookfunc->pString1)>0) {
+		// Check for override vertical position for line. Default is first scanline of display.
+		if (strp=strstr(hookfunc->pString1, "yPosition=")) {
+			// Parse and assign offset:
+			if (sscanf(strp, "yPosition=%i", &y)!=1) {
+				PsychErrorExitMsg(PsychError_user, "builtin:RenderClutBitsPlusPlus: yPosition parameter for T-Lock line position is invalid! Parse error...\n");
+			}
 		}
+
+		// Check for override horizontal position for line. Default is first pixel of scanline.
+		if (strp=strstr(hookfunc->pString1, "xPosition=")) {
+			// Parse and assign offset:
+			if (sscanf(strp, "xPosition=%i", &x)!=1) {
+				PsychErrorExitMsg(PsychError_user, "builtin:RenderClutBitsPlusPlus: xPosition parameter for T-Lock line position is invalid! Parse error...\n");
+			}
+		}
+	}
+	
+	// Render CLUT as sequence of single points:	
+	glPointSize(1);
+	glBegin(GL_POINTS);
+	
+	// First the T-Lock unlock key:
+	glColor3ub(36, 106, 133);
+	glVertex2i(x++, y);
+	glColor3ub(63, 136, 163);
+	glVertex2i(x++, y);
+	glColor3ub(8, 19, 138);
+	glVertex2i(x++, y);
+	glColor3ub(211, 25, 46);
+	glVertex2i(x++, y);
+	glColor3ub(3, 115, 164);
+	glVertex2i(x++, y);
+	glColor3ub(112, 68, 9);
+	glVertex2i(x++, y);
+	glColor3ub(56, 41, 49);
+	glVertex2i(x++, y);
+	glColor3ub(34, 159, 208);
+	glVertex2i(x++, y);
+	glColor3ub(0, 0, 0);
+	glVertex2i(x++, y);
+	glColor3ub(0, 0, 0);
+	glVertex2i(x++, y);
+	glColor3ub(0, 0, 0);
+	glVertex2i(x++, y);
+	glColor3ub(0, 0, 0);
+	glVertex2i(x++, y);
+	
+	// Now the encoded CLUT: We encode 16 bit values in a high and a low pixel,
+	// Bits++ throws away the two least significant bits - get 14 bit output resolution.
+	for (i=0; i<256; i++) {
+		// Convert 0.0 - 1.0 float value into 0 - 2^14 -1 integer range of Bits++
+		r = (unsigned int)(windowRecord->inRedTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
+		g = (unsigned int)(windowRecord->inGreenTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
+		b = (unsigned int)(windowRecord->inBlueTable[i] * (float)((1 << bitshift) - 1) + 0.5f);
 		
-		glEnd();
-	}		
+		// Pixel with high-byte of 16 bit value:
+		glColor3ub((GLubyte) ((r >> 8) & 0xff), (GLubyte) ((g >> 8) & 0xff), (GLubyte) ((b >> 8) & 0xff));
+		glVertex2i(x++, y);
+		
+		// Pixel with low-byte of 16 bit value:
+		glColor3ub((GLubyte) (r & 0xff), (GLubyte) (g  & 0xff), (GLubyte) (b  & 0xff));
+		glVertex2i(x++, y);
+	}
+	
+	glEnd();
 	
 	if (PsychPrefStateGet_Verbosity() > 4) {  
 		glFinish();
@@ -2844,3 +2989,99 @@ boolean PsychPipelineBuiltinRenderStereoSyncLine(PsychWindowRecordType *windowRe
 	return(TRUE);
 }
 
+/* PsychAssignHighPrecisionTextureShaders()
+ *
+ * Helper function, used by all functions that create textures.
+ *
+ * This function checks for a given texture 'textureRecord' and its parent 'windowRecord', if
+ * special GLSL texture filter shaders (for bilinear filterin) and texture lookup shaders
+ * (for nearest neighbour sampling) should be assigned, based on the properties of the
+ * textures, parent window and provided request flags.
+ *
+ * If shaders are needed, assigns them. On first invocation, creates the neccessary
+ * shaders.
+ *
+ * Conditions under which shaders are assigned:
+ * a) Calling code absolutely wants it ('userRequest' > 0).
+ * b) Color clamping is disabled via Screen('ColorRange') and gfx-hw is incapable of doing
+ *    this internally and at high precision, so this works around lacking hw support/precision.
+ * c) It is a floating point texture format that the hw can't handle with its built-in
+ *    filtering facilities, so this is a workaround for such hw. (usefloatformat == 1 for 16bpc float, 2 == 32 bpc float).
+ *
+ * Returns true on success, false on error, but performs error/warning output itself.
+ */
+boolean PsychAssignHighPrecisionTextureShaders(PsychWindowRecordType* textureRecord, PsychWindowRecordType* windowRecord, int usefloatformat, int userRequest)
+{
+	// Detect if its a GL_TEXTURE_2D texture: Currently not handled by our shaders...
+	unsigned int usepoweroftwo = (PsychGetTextureTarget(textureRecord) == GL_TEXTURE_2D) ? 1 : 0;
+	
+	// Remap windowRecord to its parent if any. We want the associated "toplevel" onscreen window,
+	// because only that contains the required settings for colorrange, shaders and gfcaps in
+	// a reliable way:
+	windowRecord = PsychGetParentWindow(windowRecord);
+	
+	// Use a GLSL shader for texture mapping / filtering?
+	// We use a GLSL shader (instead of the standard nearest-neighbour, or bilinear hardware samplers),
+	// if any of these is true:
+	// a) It is a floating point texture and the gfx-hardware is incapable of filtering it in hardware.
+	// b) Color clamping is disabled via Screen('ColorRange') and the gfx-hardware is incapable of high precision vertex color interpolation / non-clamped mode.
+	// c) The script wants us to use shaders via the 'userRequest' setting > 0.	
+	if ((userRequest > 0) || ((windowRecord->colorRange < 0) && !(windowRecord->gfxcaps & kPsychGfxCapVCGood)) || ((usefloatformat == 1) && !(windowRecord->gfxcaps & kPsychGfxCapFPFilter16)) || ((usefloatformat == 2) && !(windowRecord->gfxcaps & kPsychGfxCapFPFilter32))) {
+		// Need filtershaders at least for bilinear filtering:
+		
+		// Do we have bilinear filtershader already? Don't have this stuff for GL_TEXTURE_2D btw...
+		if (windowRecord->textureFilterShader == 0 && !(usepoweroftwo & 1)) {
+			// Nope. Need to create one:
+			windowRecord->textureFilterShader = PsychCreateGLSLProgram(textureBilinearFilterFragmentShaderSrc, textureBilinearFilterVertexShaderSrc, NULL);
+			if ((windowRecord->textureFilterShader == 0) && PsychPrefStateGet_Verbosity() > 1) {
+				printf("PTB-WARNING: Created a floating point texture as requested, or manual filtering wanted, but was unable to create a float filter shader.\n");
+				printf("PTB-WARNING: (Custom) Filtering - and therefore anti-aliasing - of this texture won't work or at least not at the requested precision.\n");
+			}
+			else {
+				if (PsychPrefStateGet_Verbosity() > 3) {
+					if (userRequest > 0) {
+						printf("PTB-INFO: GLSL fragment filtershader created for custom high quality texture filtering.\n");
+					}
+					else if (windowRecord->colorRange < 0) {
+						printf("PTB-INFO: GLSL fragment filtershader created for high quality texture filtering in high-precision unclamped color mode\n");
+					}
+					else if (usefloatformat > 0) {
+						printf("PTB-INFO: %i bpc Floating point texture created. This gfx-hardware doesn't support automatic filtering of such\n", 16 * usefloatformat);
+						printf("PTB-INFO: textures. A GLSL fragment filtershader was generated to work-around this.\n");
+					}
+				}
+			}
+		}
+		else if ((usepoweroftwo & 1) && PsychPrefStateGet_Verbosity() > 1) {
+			printf("PTB-WARNING: Created a power of two texture as requested, and you wanted high-precision texturing, but don't have a GLSL filter shader.\n");
+			printf("PTB-WARNING: Filtering - and therefore anti-aliasing - and high-precision drawing of power of two textures may not work.\n");
+		}
+		
+		// Do we need a simple texture lookup & modulate with vertex color shader for non-filtered texture
+		// mapping? This is not needed for floating point textures per se (all hw can nearest neighbour sample them),
+		// but it is needed if user wants it (userRequest flag > 0) or if unclamped high-precision drawing is
+		// requested but the hw is not up to that task:
+		if ((userRequest > 0) || ((windowRecord->colorRange < 0) && !(windowRecord->gfxcaps & kPsychGfxCapVCGood))) {
+			// Yes, need it - Create a shader if one doesn't yet exist:
+			if (windowRecord->textureLookupShader == 0 && !(usepoweroftwo & 1)) {
+				// Create one:
+				windowRecord->textureLookupShader = PsychCreateGLSLProgram(textureLookupFragmentShaderSrc, textureBilinearFilterVertexShaderSrc, NULL);
+				if ((windowRecord->textureLookupShader == 0) && PsychPrefStateGet_Verbosity() > 1) {
+					printf("PTB-WARNING: Failed to create a texture lookup shader. High precision texture drawing therefore won't work.\n");
+				}				
+			}
+			else if ((usepoweroftwo & 1) && PsychPrefStateGet_Verbosity() > 1) {
+				printf("PTB-WARNING: Created a power of two texture as requested, and you wanted high-precision texturing, but don't have a GLSL shader for that.\n");
+				printf("PTB-WARNING: High-precision drawing of power of two textures therefore may not work.\n");
+			}
+			
+		}
+		
+		// Assign our onscreen windows filtershader to this texture:
+		textureRecord->textureFilterShader = windowRecord->textureFilterShader;
+		textureRecord->textureLookupShader = windowRecord->textureLookupShader;
+	}
+
+	// Done.
+	return(TRUE);
+}

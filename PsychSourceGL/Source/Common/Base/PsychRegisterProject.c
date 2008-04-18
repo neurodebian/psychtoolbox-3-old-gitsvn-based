@@ -32,6 +32,61 @@ static PsychError PsychRegisterModuleName(char *name);
 static PsychError PsychRegisterBase(PsychFunctionPtr baseFunc);
 
 
+/*  This function is called by the special subfunction 'DescribeModuleFunctionsHelper'.
+ *  It returns the full table of registered subfunction names as an array.
+ *  Useful for automatic documentation generators...
+ *
+ */
+PsychError PsychDescribeModuleFunctions(void)
+{
+	static char useString[] = "subfunctionNames = Modulename('DescribeModuleFunctionsHelper' [, mode] [, subfunctionName]);";
+	static char synopsisString[] = "Return a cell array of strings naming all subfunctions supported by this module if "
+								   "the optional 'subfunctionName' argument is omitted. If 'subfunctionName' is a "
+								   "string with a valid subfunction name for the module, and 'mode' is 1, return a 3 element cell "
+								   "array of strings which describe the detailed syntax, help and see also strings "
+								   "for that function - the text you'd get for Modulename('subfunctionName?'); ";
+	static char seeAlsoString[] = "";
+
+	char*						subfname;
+    int							i;
+    PsychGenericScriptType		*cellVector;
+	PsychFunctionPtr			fcn;
+	
+    //all subfunctions should have these two lines.  
+    PsychPushHelp(useString, synopsisString, seeAlsoString);
+    if(PsychIsGiveHelp()){PsychGiveHelp();return(PsychError_none);};
+    
+    // Check for valid number of arguments
+    PsychErrorExit(PsychCapNumInputArgs(2));   	
+    PsychErrorExit(PsychCapNumOutputArgs(1)); 
+    
+	PsychCopyInIntegerArg(1, FALSE, &i);
+	
+	subfname = NULL;
+	PsychAllocInCharArg(2, FALSE, &subfname);
+	
+	if (subfname) {
+		// Find named subfunction in functin table:
+		fcn = PsychGetProjectFunction(subfname);
+		if (fcn) {
+			// This will trigger the subfunction 'fcn' to execute its PsychGiveHelp() method, then
+			// return. PsychGiveHelp() will return the help text to Runtime as cell array of strings,
+			// due to the special flag currentFunctionNameREGISTER == NULL, instead of printing to
+			// runtimes console:
+			PsychSetGiveHelp();
+			currentFunctionNameREGISTER = NULL;
+			(*fcn)();
+			PsychClearGiveHelp();
+		}
+	}
+	else {
+		// Generate a cell array to return
+		PsychAllocOutCellVector(1, FALSE, numFunctionsREGISTER,  &cellVector);
+		for(i=0; i < numFunctionsREGISTER; i++) PsychSetCellVectorStringElement(i, functionTableREGISTER[i].name, cellVector);
+	}
+	        
+    return(PsychError_none);
+}
 
 /*
 	This function is called by the project to register project functions.
@@ -85,7 +140,6 @@ PsychError PsychRegister(char *name,  PsychFunctionPtr func)
 	return(PsychError_none);
 }
 
-
 //for use by projects
 PsychError PsychRegisterExit(PsychFunctionPtr exitFunc)
 {
@@ -95,8 +149,6 @@ PsychError PsychRegisterExit(PsychFunctionPtr exitFunc)
 	}else
 		return(PsychError_registered);
 }
-
-
 
 /* If null is passed then we return the base function, otherwise 
 	we return the named subfuction or NULL if we can't find it.
@@ -132,7 +184,6 @@ PsychFunctionPtr PsychGetProjectFunction(char *command)
 	return NULL;
 }
 
-
 //for use by projects
 char *PsychGetFunctionName(void)
 {	
@@ -145,14 +196,11 @@ char *PsychGetFunctionName(void)
 		return(currentFunctionNameREGISTER);
 }
 
-
 //for use by projects
 char *PsychGetModuleName(void)
 {
 	return(ModuleNameREGISTER);
 }
-
-
 
 PsychFunctionPtr PsychGetProjectExitFunction(void)
 {
@@ -200,13 +248,3 @@ static PsychError PsychRegisterBase(PsychFunctionPtr baseFunc)
 		
 	return(PsychError_none);
 }
-
-
-
-
-
- 
-
-
-
-
