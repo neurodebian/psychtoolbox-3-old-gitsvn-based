@@ -26,6 +26,11 @@
 		The code is shared and #ifdef'ed if needed, because most of it is identical for Linux and OS/X.
 */
 
+#include "Psych.h" 
+
+// Need to exclude this files source-code from compile on Win32:
+#if PSYCH_SYSTEM != PSYCH_WINDOWS
+
 #include "IOPort.h"
 
 // Externally defined level of verbosity:
@@ -308,9 +313,7 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 	options.c_cc[VMIN] = 0;
 
 	if ((p = strstr(configString, "ReceiveTimeout="))) {
-		// Set timeouts for read operations: We set VMIN to zero and VTIME to zero,
-		// which means: Don't block if no data available, just return with zero read
-		// bytes of data.
+		// Set timeouts for read operations:
 		// See tcsetattr(4) ("man 4 tcsetattr") and termios(4) ("man 4 termios") for details.		
 		if ((1!=sscanf(p, "ReceiveTimeout=%f", &infloat)) || (infloat < 0)) {
 			printf("Invalid parameter for ReceiveTimeout set! Typo, or negative value provided.\n");
@@ -319,6 +322,13 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		else {
 			// Set timeout: It is in granularity of 1/10th seconds, so we need to quantize to 10th of seconds:
 			options.c_cc[VTIME] = (int) (infloat * 10 + 0.5);
+			// Clamp to a minimum of 0.1 secs if a non-zero timeout is requested:
+			if ((options.c_cc[VTIME] == 0) && (infloat > 0)) {
+				if (verbosity > 1) printf("IOPort: Warning: Requested per-byte 'ReceiveTimeout' value %f secs is positive but smaller than supported minimum of 0.1 secs on Unix. Changed value to 0.1 secs.\n", infloat);
+				infloat = 0.1;
+				options.c_cc[VTIME] = 1;
+			}
+			device->readTimeout = infloat;
 			updatetermios = TRUE;
 		}
 	}
@@ -417,6 +427,26 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		else {
 			// Invalid spec:
 			printf("Invalid setting for data bits %s not accepted! (Valid: 5, 6, 7 or 8 databits)", p);
+			return(PsychError_user);
+		}
+		updatetermios = TRUE;	
+	}
+	
+	// Handling of stop bits:
+	if ((p = strstr(configString, "StopBits="))) {
+		// Clear all stopbit settings:
+		options.c_cflag &= ~CSTOPB;
+		
+		if (strstr(configString, "StopBits=1")) {
+			// Nothing to do, this is already set above.
+		}
+		else 
+		if (strstr(configString, "StopBits=2")) {
+			options.c_cflag |= CSTOPB;
+		}
+		else {
+			// Invalid spec:
+			printf("Invalid setting for stop bits %s not accepted! (Valid: 1 or 2 stopbits)", p);
 			return(PsychError_user);
 		}
 		updatetermios = TRUE;	
@@ -702,8 +732,8 @@ int PsychIOOSWriteSerialPort(PsychSerialDeviceRecord* device, void* writedata, u
 
 int PsychIOOSReadSerialPort(PsychSerialDeviceRecord* device, void** readdata, unsigned int amount, int nonblocking, char* errmsg, double* timestamp)
 {
-    	struct termios	options;
-
+	struct termios	options;
+	double timeout;
 	int nread = 0;	
 	*readdata = NULL;
 
@@ -759,12 +789,12 @@ int PsychIOOSReadSerialPort(PsychSerialDeviceRecord* device, void** readdata, un
 		}
 
 		// Retrieve current termios settings:
-    		if (tcgetattr(device->fileDescriptor, &options) == -1)
-    		{
-        		sprintf(errmsg, "Error getting current serial port device settings for device %s - %s(%d).\n", device->portSpec, strerror(errno), errno);
+		if (tcgetattr(device->fileDescriptor, &options) == -1)
+		{
+			sprintf(errmsg, "Error getting current serial port device settings for device %s - %s(%d).\n", device->portSpec, strerror(errno), errno);
 			return(-1);
-    		}
-
+		}
+		
 		// Change the number of bytes that must be received for blocking read()'s before read() returns.
 		// read() will return if it can fetch at least that many bytes (we want 'amount' bytes at least),
 		// or if the user specified timeout occurs (as set in Open or Configure routine):
@@ -777,6 +807,22 @@ int PsychIOOSReadSerialPort(PsychSerialDeviceRecord* device, void** readdata, un
 			return(-1);
 		}
 		
+		// Need to poll for arrival of first byte, as the timeout timer [VTIME] is only armed after
+		// reception of first byte:
+		PsychGetAdjustedPrecisionTimerSeconds(&timeout);
+		*timestamp = timeout;
+		timeout+=device->readTimeout;
+
+		while((*timestamp < timeout) && (PsychIOOSBytesAvailableSerialPort(device) < 1)) {
+			PsychGetAdjustedPrecisionTimerSeconds(timestamp);
+			PsychWaitIntervalSeconds(0.0005);
+		}
+
+		if (PsychIOOSBytesAvailableSerialPort(device) < 1) {
+			// Ok, first byte didn't arrive within one timeout period:
+			return(0);
+		}
+
 		// Read the data, at most (and at least, unless timeout occurs) 'amount' bytes, blocking:
 		if ((nread = read(device->fileDescriptor, device->readBuffer, amount)) == -1)
 		{
@@ -833,3 +879,5 @@ void PsychIOOSPurgeSerialPort(PsychSerialDeviceRecord* device)
 	
 	return;
 }
+
+#endif

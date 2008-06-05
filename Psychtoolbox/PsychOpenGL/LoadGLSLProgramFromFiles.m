@@ -88,13 +88,14 @@ if ischar(filenames)
     
     shaderobjs=dir([filenames '*']);
     shaderobjpath = [fileparts([filenames '*']) '/'];
-    filenames=[];
     numshaders=size(shaderobjs,1)*size(shaderobjs,2);
     
     if numshaders == 0
-        fprintf('In LoadGLSLProgramFromFiles: When trying to load shaders matching %s ...\n', filenames);
+        fprintf('\n\n\nIn LoadGLSLProgramFromFiles: When trying to load shaders matching %s ...\n', filenames);
         error('Could not find any shader definition files matching that name. Check spelling.');
     end
+
+    filenames=[];
     
     for i=1:numshaders
         [dummy1 curname curext curver] = fileparts(shaderobjs(i).name);
@@ -102,6 +103,24 @@ if ischar(filenames)
         filenames{i} = [shaderobjpath shadername]; %#ok<AGROW>
     end;
 end;
+
+% Any additional shader handles provided? If so, we attach them first,
+% before the shaders specified via files. Normally attachment order
+% shouldn't matter, but due to a driver bug in many 169.x and 175.x NVidia
+% drivers for Windows, it does. This is a known GLSL linker bug, cfe.
+%
+% http://www.stevestreeting.com/2007/12/27/nvidia-16921-driver-bug-in-glsl/
+%
+% The workaround is to attach shaders that define subfunctions (are part of
+% a library of common functions) first, before the shaders utilizing them.
+% Our color correction shaders are passed as extraShaders, so it is crucial
+% to attach extraShaders first to workaround this driver bug.
+if ~isempty(extraShaders)
+    % Attach all of them as well:
+    for i=1:length(extraShaders)
+       glAttachShader(handle, extraShaders(i));
+    end
+end
 
 % Load, compile and attach each single shader of each single file:
 for i=1:length(filenames)
@@ -114,14 +133,6 @@ for i=1:length(filenames)
        glAttachShader(handle, shader);
     end;
 end;
-
-% Any additional shader handles provided?
-if ~isempty(extraShaders)
-    % Attach all of them as well:
-    for i=1:length(extraShaders)
-       glAttachShader(handle, extraShaders(i));
-    end
-end
 
 % Link the program:
 glLinkProgram(handle);

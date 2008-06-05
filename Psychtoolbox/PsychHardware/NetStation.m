@@ -1,10 +1,11 @@
 function [status error] = NetStation(varargin)
 %
-% NetStation - Basic control of the EGI/Netstation EEG recording system via
-% TCP/IP network connection.
+% NetStation - Basic control of the EGI/NetStation EEG recording system via
+% TCP/IP network connection. (See http://www.egi.com)
 %
-% This function was developed and contributed to Psychtoolbox by Gergely Csibra, 2006-2007
-% based on Rick Gilmore's routines, 2005. Thanks!
+% This function was developed and contributed to Psychtoolbox by Gergely Csibra, 2006-2008.
+% Code is based on Rick Gilmore's routines, 2005. Thanks!
+% Code adapted to PCs (and Macs with Intel architecture) by Zhao Fan, 2008.
 %
 %
 % General syntax
@@ -24,7 +25,7 @@ function [status error] = NetStation(varargin)
 %
 % 	NetStation('Disconnect')
 %
-%           Disconnects fron NetStation host.
+%           Disconnects from NetStation host.
 %
 % 	NetStation('Synchronize' [, SynchLimit])
 %
@@ -42,6 +43,7 @@ function [status error] = NetStation(varargin)
 % 	NetStation('Event' [,code] [,starttime] [,duration] [,keycode1] [,keyvalue1] [...])
 %
 %           Send an event to the NetStation host.
+%
 % 			"code"		The 4-char event code (e.g., 'STIM')
 % 						Default: 'EVEN'
 % 			"starttime"	The time IN SECONDS when the event started. The VBL time
@@ -53,18 +55,21 @@ function [status error] = NetStation(varargin)
 % 			"keyvalue"	The integer value of the key (>=-32767 <=32767)
 % 			The keycode-keyvalue pairs can be repeated arbitrary times.
 %
-%   Uses TCP/UDP/IP Toolbox 2.0.5, a third party GPL'ed
+%   Uses a modified version of the TCP/UDP/IP Toolbox 2.0.5, a third party GPL'ed
 %   open source toolbox, which is included in Psychtoolbox,
 %   but also available from the Mathworks website:
 %   http://www.mathworks.com/matlabcentral/fileexchange/loadFile.do?objectId=345
 %
-%   Created by Gergely Csibra, 2006-2007
-%   based on Rick Gilmore's routines, 2005
+%   The toolbox has been modified for lower communication latency.
+%
+%   Created by Gergely Csibra, 2006-2008
+%   Based on Rick Gilmore's routines, 2005
+%   Adapted to PC by Zhao Fan, 2008
 %
 
 
 persistent NSIDENTIFIER;
-persistent NSSTATUS;
+persistent NSSTATUS; %#ok<USENS>
 persistent NSRECORDING;
 
 DefaultSynchLimit=2.5;		% The accuracy of synchronization in milliseconds
@@ -81,24 +86,25 @@ else
             if(nargin<2)
                 status = 2;
             else
-                netStationHostName = varargin{2};
+                NetStationHostName = varargin{2};
                 if (~isempty(NSIDENTIFIER)) && (NSIDENTIFIER > 0)
                     send(NSIDENTIFIER,'X');
-                    rep=receive(NSIDENTIFIER,1);
+                    rep=receive(NSIDENTIFIER,1); %#ok<NASGU>
                     pnet( NSIDENTIFIER, 'close' );
                     NSIDENTIFIER = 0;
                 end
                 port=55513;
                 if nargin > 2
-                    port =  = varargin{3};
+                    port = varargin{3};
                 end
-                c = pnet( 'tcpconnect', netStationHostName, port );
+                c = pnet( 'tcpconnect', NetStationHostName, port )
                 if(c < 0)
                     status = 3;
                 else
                     NSIDENTIFIER = c;
                     NSRECORDING=0;
-                    send(NSIDENTIFIER,'QMAC-');
+                    ECCType='QMAC-';
+                    send(NSIDENTIFIER,ECCType);
                     rep=receive(NSIDENTIFIER,1);
                     switch char(rep)
                         case 'F'
@@ -124,12 +130,12 @@ else
                 if NSRECORDING
                     WaitSecs(.5);
                     send(NSIDENTIFIER,'E');
-                    rep=receive(NSIDENTIFIER,1);
+                    rep=receive(NSIDENTIFIER,1); %#ok<NASGU>
                     NSRECORDING=0;
                 end
                 WaitSecs(1.);
                 send( NSIDENTIFIER,'X');
-                rep=receive(NSIDENTIFIER,1);
+                rep=receive(NSIDENTIFIER,1); %#ok<NASGU>
                 WaitSecs(.5);
                 pnet( NSIDENTIFIER, 'close' );
                 NSIDENTIFIER = -1;
@@ -159,7 +165,7 @@ else
                     status=0;
                     n=n+1;
                 end
-                if n>=100 warning('\nNetstation synchronization did not succeed within %.1f ms\nSynchronizatoin accuracy is %.1f ms\n',NSSynchLimit,df); end
+                if n>=100 warning('\nNetStation synchronization did not succeed within %.1f ms\nSynchronizatoin accuracy is %.1f ms\n',NSSynchLimit,df); end
                 %fprintf('synch: %.1f ms at the %ith attempt\n',df,n-1);
             end
         case 'startrecording'
@@ -168,7 +174,7 @@ else
             else
                 if ~NSRECORDING
                     send(NSIDENTIFIER,'B');
-                    rep=receive(NSIDENTIFIER,1);
+                    rep=receive(NSIDENTIFIER,1); %#ok<NASGU>
                     NSRECORDING=1;
                 end
                 status=0;
@@ -180,7 +186,7 @@ else
                 if NSRECORDING
                     WaitSecs(.5);
                     send(NSIDENTIFIER,'E');
-                    rep=receive(NSIDENTIFIER,1);
+                    rep=receive(NSIDENTIFIER,1); %#ok<NASGU>
                     NSRECORDING=0;
                 end
                 status=0;
@@ -214,7 +220,11 @@ else
                 end
 
                 karg=nargin-4;
-                keyn=floor(karg/2);
+                if karg >0
+                    keyn=floor(karg/2);
+                else
+                    keyn=0;
+                end
                 send(NSIDENTIFIER,'D',uint16(15+keyn*12),int32(start*1000),uint32(duration*1000),event(1:4),int16(0),uint8(keyn));
                 for k=1:keyn
                     id=[char(varargin{(k-1)*2+5}) '    '];
@@ -222,7 +232,7 @@ else
                     send(NSIDENTIFIER,id(1:4),'shor',uint16(2),val(1));
                 end
 
-                rep=receive(NSIDENTIFIER,1);
+                rep=receive(NSIDENTIFIER,1); %#ok<NASGU>
                 status=0;
             end
         otherwise
@@ -238,7 +248,7 @@ return
 function send(con,varargin)
 i=1;
 while i <= nargin-1
-    pnet(con,'write',varargin{i});
+    pnet(con,'write',varargin{i},'network');
     i = i+1;
 end
 return
@@ -271,7 +281,7 @@ switch status
     case 5
         errstr='NS connect: Unknown ECI version';
     case 6
-        errstr='NS event: Unsuccesful';
+        errstr='NS event: Unsuccessful';
     case 7
         errstr='Unknown NetStation command'
     otherwise

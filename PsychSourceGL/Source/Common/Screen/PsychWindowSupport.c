@@ -3883,7 +3883,12 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	glGetIntegerv(GL_MAX_PROGRAM_NATIVE_ALU_INSTRUCTIONS_ARB, &maxaluinst);
 	while (glGetError());
 	
-	if (verbose) printf("PTB-DEBUG: Interrogating Low-level renderer capabilities for onscreen window with handle %i:\n", windowRecord->windowIndex);
+	if (verbose) {
+		printf("PTB-DEBUG: Interrogating Low-level renderer capabilities for onscreen window with handle %i:\n", windowRecord->windowIndex);
+		printf("Indicator variables: FBO's %i, ATI_texture_float %i, ARB_texture_float %i, Vendor %s.\n",
+				glewIsSupported("GL_EXT_framebuffer_object"),glewIsSupported("GL_ATI_texture_float"), glewIsSupported("GL_ARB_texture_float"), glGetString(GL_VENDOR));
+		printf("Indicator variables: maxcolorattachments = %i, maxrectangletexturesize = %i, maxnativealuinstructions = %i.\n", maxcolattachments, maxtexsize, maxaluinst);
+	}
 	
 	// Support for basic FBO's? Needed for any operation of the imaging pipeline, e.g.,
 	// full imaging pipe, fast offscreen windows, Screen('TransformTexture')...
@@ -3964,10 +3969,10 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 				windowRecord->gfxcaps |= kPsychGfxCapFP32Shading;
 			}
 			
-			// The Geforce 8xxx/9xxx series and later (G70 cores and later) do support full 32 bpc float filtering and blending:
+			// The Geforce 8xxx/9xxx series and later (G80 cores and later) do support full 32 bpc float filtering and blending:
 			// They also support a max texture size of > 4096 texels --> 8192 texels, so we use that as detector:
 			if (maxtexsize > 4100) {
-				if (verbose) printf("Assuming G70 core or later (maxtexsize=%i): Hardware supports full floating point blending and filtering on 16bpc and 32bpc float format.\n", maxtexsize);
+				if (verbose) printf("Assuming G80 core or later (maxtexsize=%i): Hardware supports full floating point blending and filtering on 16bpc and 32bpc float format.\n", maxtexsize);
 				windowRecord->gfxcaps |= kPsychGfxCapFPBlend32;
 				windowRecord->gfxcaps |= kPsychGfxCapFPFilter32;
 				windowRecord->gfxcaps |= kPsychGfxCapFPFilter16;

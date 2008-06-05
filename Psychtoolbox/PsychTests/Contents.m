@@ -27,9 +27,12 @@
 %   GetCharTest                     - Tests of GetChar.
 %   GetSecsTest                     - Timing test of clock used by Psychtoolbox, e.g., GetSecs, WaitSecs, Screen...
 %   GraphicsDisplaySyncAcrossDualHeadsTest - Test synchronization of refresh cycles of different display heads.
+%   HighColorPrecisionDrawingTest   - Test drawing precision of a variety of Screen() functions, esp. wrt. high precision framebuffers.
+%   HighPrecisionLuminanceOutputDriversImagingPipelineTest - Test precision of a variety of high precision luminance device output drivers.
 %   JavaClockTest                   - Timing test of clock used by Java functions (e.g. GetChar)
 %   LabLuvTest                      - Test routines that convert to CIELAB and CIELUV.
 %   MakeTextureTimingTest           - Time memory allocation by MakeTexture
+%   MakeTextureTimingTest2          - Time texture creation -> upload -> destruction for given texture by MakeTexture et al.
 %   MatlabTimingTest                - Test for MATLAB timing glitch caused by sigsetjmp().
 %   MexTimingLoopTest               - Test for MATLAB timing glitch without return to MATLAB.
 %   OSAUCSTest                      - Test OSA UCS <-> XYZ conversion routines.
