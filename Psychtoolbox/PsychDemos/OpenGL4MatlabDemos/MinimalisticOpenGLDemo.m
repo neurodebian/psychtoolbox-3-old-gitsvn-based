@@ -1,5 +1,5 @@
-function MinimalisticOpenGLDemo(multiSample)
-% MinimalisticOpenGLDemo - Demonstrate use of MATLAB-OpenGL toolbox
+function MinimalisticOpenGLDemo(multiSample, imagingPipeline)
+% MinimalisticOpenGLDemo([multiSample][, imagingPipeline])
 %
 % This demo demonstrates use of OpenGL commands in a Matlab script to
 % perform some very boring 3D rendering in Psychtoolbox.
@@ -21,6 +21,15 @@ function MinimalisticOpenGLDemo(multiSample)
 % loop. --> You'll see a rotating earth.
 %
 % Stop the demo by pressing any key and it will finish.
+%
+% The optional parameter 'multiSample' allows to enable anti-aliased
+% drawing with 'multiSample' samples per pixel on hardware that supports
+% this.
+%
+% The optional parameter 'imagingPipeline' allows (if set to non-zero
+% value) to enable the PTB image processing pipeline, just to test that as
+% well.
+%
 %
 % Notable implementation details regarding use of OpenGL:
 %
@@ -87,7 +96,21 @@ function MinimalisticOpenGLDemo(multiSample)
 % 05-May-2006 -- Added some demo code for basic texture mapping (MK)
 
 if nargin < 1
-    multiSample = 0
+    multiSample = 0;
+end
+
+if isempty(multiSample)
+    multiSample = 0;
+end
+
+if nargin < 2
+    imagingPipeline = 0;
+end
+
+if imagingPipeline > 0
+    imagingPipeline = kPsychNeedFastBackingStore;
+else
+    imagingPipeline = 0;
 end
 
 % Is the script running in OpenGL Psychtoolbox? Abort, if not.
@@ -101,7 +124,7 @@ screenid=max(Screen('Screens'));
 InitializeMatlabOpenGL;
 
 % Open a double-buffered full-screen window on the main displays screen.
-[win , winRect] = Screen('OpenWindow', screenid, [],[],[],[],[],multiSample);
+[win , winRect] = Screen('OpenWindow', screenid, [],[],[],[],0,multiSample, imagingPipeline);
 
 % Setup the OpenGL rendering context of the onscreen window for use by
 % OpenGL wrapper. After this command, all following OpenGL commands will

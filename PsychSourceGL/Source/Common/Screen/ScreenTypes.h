@@ -182,6 +182,16 @@ typedef struct {
 // usermode OpenGL contexts -- The skipped commands are non-essential... 
 #define kPsychUseWindowsContextSharingWorkaround1 256
 
+// Hint to PTB that any calls should be avoided that can cause a CPU-GPU synchronization, e.g.,
+// error checking and handling calls. This is a hint: May be overriden at high debug levels etc.
+#define kPsychAvoidCPUGPUSync 512
+
+// Tell PTB to use the opposite texture format of what its auto-detection thinks is optimal:
+#define kPsychTextureUploadFormatOverride 1024
+
+// Tell PTB to avoid EXT_framebuffer_blit if possible, e.g., in SCREENCopyWindow():
+#define kPsychAvoidFramebufferBlitIfPossible 2048
+
 //function protoptypes
 
 //Accessors for PsychDepthType 

@@ -96,6 +96,25 @@
 % hardware, driver and operating system. It may give a large speedup, or no
 % speedup at all, but it will always reduce robustness!
 %
+% 1024 == kPsychTextureUploadFormatOverride
+% Tell PTB to use the opposite texture format of what its auto-detection
+% thinks is optimal. Screen contains code to auto-detect certain type of
+% graphics chips with broken drivers and tries to work-around them by
+% chosing different parameters for fast texture creation in certains
+% circumstances. In case those vendors should ever fix their drivers and
+% thereby the built-in workaround becoming invalid, this allows to override
+% PTB's choice. This is mostly to work around broken ATI drivers on
+% MS-Windows which cause miserable texture creation performance with the
+% standard optimized settings.
+%
+% 2048 == kPsychAvoidFramebufferBlitIfPossible
+% Tell PTB to not use the EXT_framebuffer_blit extension if a lower-speed
+% workaround solution exists. This will mostly affect the operation of
+% Screen('CopyWindow') when the imaging pipeline is active. Normally a more
+% flexible, capable, faster method would be used, unless you set this flag
+% to fall back to the old solution.
+%
+%
 % --> It's always better to update your graphics drivers with fixed
 % versions or buy proper hardware than using these workarounds. They are
 % meant as a last ressort, e.g., if you need to get something going quickly
