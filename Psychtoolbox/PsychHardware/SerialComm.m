@@ -15,6 +15,10 @@ function y = SerialComm(op, port, data)
 %  DATA = SerialComm( 'read', PORT, N ) reads upto N bytes from PORT and returns 
 %    the uint8 array in DATA. If no data is available, DATA is empty. If N is
 %    not specified, all available bytes are returned. Non-blocking.
+%
+%  PORT = SerialComm( 'name2number', PORTNAME) converts a port in string
+%    form, eg. /dev/cu.KeySerial1, to an actual port number for use in the
+%    other functinos.
 %   
 %  SerialComm( 'write', PORT, DATA ) writes contents of the matrix DATA to PORT. 
 %    The matrix DATA can be of class "double" or "char".

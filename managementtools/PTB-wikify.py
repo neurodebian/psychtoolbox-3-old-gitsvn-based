@@ -28,27 +28,27 @@ Options:
  -U ..., --URL            root URL of the Wiki in the form
                             http://doc.psychtoolbox.org/ (w/ terminal slash)
  -r,  --recursive         recursive mode: use only with a single directory
- -m,  --mexmode           mex mode: also look for .mexglx files and post their help-
-                            strings by calling MATLAB and running them
+ -m,  --mexmode           mex mode: also look for .mexmaci files and post their
+                            help strings by calling MATLAB and running them
                             In recursive mode both M and Mex files are posted.
-                            (edit the source to change _mexext into one of 
+                            (edit the source to change _mexext into one of
                              .mexglx, .mexmaci, or .dll)
  -v                       be verbose (massive text output)
                             this prints out:
                               - which files were skipped
                               - a diff of the text before submission
- -f   --full-diff         output full ndiff (defaults to terse unified)
-                          ndiff contains all text but is easier 
-                          to parse visually for differences.
-                          (only in combination with -v)
+ -f   --full-diff         output full ndiff (default is a terse unified diff).
+                            The ndiff contains all text but is easier
+                            to parse visually for differences.
+                            (only in combination with -v)
 
 Examples:
-  PTB-wikify.py -u DocBot -p dokkbot -U http://wiki/ PsychBasic/*.m 
+  PTB-wikify.py -u DocBot -p dokkbot -U http://wiki/ PsychBasic/*.m
   PTB-wikify.py -r -m -U http://wiki/ PsychBasic/
 
 IMPORTANT!!:
-  Always change your working directory to the root of the 
-  tree before running the script, e.g., 
+  Always change your working directory to the root of the
+  tree before running the script, e.g.,
     cd Psychtoolbox
     ~/PTB-wikify.py -r PsychDemos/PsychExampleExperiments
 
@@ -117,6 +117,9 @@ def beackern(mkstring):
             + r'\bGestalt\b|' \
             + r'\bClose\b|' \
             + r'\bSnd\b|' \
+            + r'\bBeeper\b|' \
+            + r'\bAsk\b|' \
+            + r'\bsca\b|' \
             + r'\bPsychometric\b|' \
             + r'\bPreference\b)'
     mkstring = re.sub(match,r'[[\1]]',mkstring)
@@ -132,7 +135,7 @@ def login(baseurl,username,password):
         mech.open(baseurl + "UserSettings")
     except HTTPError, e:
         sys.exit("%d: %s" % (e.code, e.msg))
-    
+
     # important: use correct form number in the HTML page
     mech.select_form(nr=1)
     mech["name"] = username
@@ -146,7 +149,7 @@ def makediff(old,new):
     import difflib, time
     if not _fulldiff:
         dm = difflib.unified_diff
-    else: 
+    else:
         dm = difflib.ndiff
     old = re.sub('\015\012',r'\n',old).expandtabs(4)
     diff = dm(old.splitlines(1), new.splitlines(1))
@@ -161,7 +164,7 @@ def post(title,text):
         resp = mech.open(baseurl+title+"/edit")
     except HTTPError, e:
         sys.exit("post failed: %d: %s" % (e.code, e.msg))
-    
+
     mech.select_form(nr=1)
     try:
         oldbody = mech["body"]
@@ -199,7 +202,7 @@ def post(title,text):
         sys.exit("post failed: %d: %s" % (e.code, e.msg))
 
 def postsinglefiles(files):
-    ''' create pages for all files in there and link to the category '''
+    ''' create pages for all files in there and link to the category'''
     for name in files:
         # single out some names
         head, basename = os.path.split(name)
@@ -214,7 +217,7 @@ def postsinglefiles(files):
                 mexhelpextract([funcname])
             elif _debug: print 'skipping ' + name
             continue
-        if basename=='Contents.m':
+        if basename=='Contents.m' or basename=='contents.m':
             funcname = category
             path = os.path.dirname(path)
             if len(path) < 3:
@@ -231,21 +234,34 @@ def postsinglefiles(files):
         # scrub the text real good, to get us some nice wiki formatting
         if docstring:
             body = beackern(docstring)
-        else: 
+        else:
             body = 'Adrian, this function is not yet documented.\n\n\n MissingDocs'
+
+        pathlinks = """
+                    ""
+                    <div class="code_header" style="text-align:right;">
+                      <span style="float:left;">Path&nbsp;&nbsp;</span> <span class="counter">Retrieve current version of %s from berliOS: <a href=
+                      "http://svn.berlios.de/svnroot/repos/osxptb/beta/%s">beta</a> | view in <a href=
+                      "http://svn.berlios.de/viewcvs/osxptb/beta/%s?view=markup">WebSVN with changelog</a></span>
+                    </div>
+                    <div class="code">
+                      <code>%s</code>
+                    </div>
+                    ""
+                    """ % tuple([basename]+3*[os.path.join(path,basename)])
 
         text = headline \
                 + breadcrumb \
                 + body \
-                + '\n\n\n%%(php;Path)' \
-                + os.path.join(path,basename) \
-                + '%%\n' \
+                + '\n\n\n' \
+                + textwrap.dedent(pathlinks) \
+                + '\n' \
                 + cattext
 
         post(funcname,text)
 
 def mexhelpextract(mexnames):
-    print 'processing mex files: ' + mexnames.__repr__()
+    #print 'processing mex files: ' + mexnames.__repr__()
     from ConfigParser import RawConfigParser as ConfigParser, Error as error
     for mexname in mexnames:
         # ConfigParser for the three elements per subfunctions written to tmpdir
@@ -260,7 +276,7 @@ def mexhelpextract(mexnames):
              os.path.splitext(os.path.basename(_mexscript))[0], \
              mexname, \
              _tmpdir)
-        cmd = 'matlab -nodisplay -r "%s" > /dev/null' % matlabcmd
+        cmd = 'matlab -nojvm -nodisplay -r "%s" > /dev/null' % matlabcmd
         # and execute matlab w/ the temporary script we wrote earlier
         try:
             print 'running MATLAB for %s in %s' % (mexname,_tmpdir)
@@ -301,7 +317,7 @@ def mexhelpextract(mexnames):
             text =  '""' + headline \
                     + breadcrumb \
                     + docstring + '""'
-            
+
             # retrieve old body text, to update or concatenate with synonymous subfunctions
             #
             # browse the page
@@ -333,9 +349,6 @@ def mexhelpextract(mexnames):
                 subfctDIV = Tag(soup, "div")
                 subfctDIV['class'] = 'subfct'
                 subfctDIV['id'] = mexname
-                subfctDIV['style'] = 'background-color:#eee; padding:1em; border-width:1px; ' \
-                        + 'border-style:solid; border-color:#ddd; margin-bottom: 2em;' \
-                        + 'border-top: 5px solid #999999;'
                 subfctDIV.insert(0,NavigableString(text))
 
                 # insert the new div
@@ -349,12 +362,12 @@ def mexhelpextract(mexnames):
 
             # drop good divs into the soup, one by one
             for div in divs:
+                # remove the unneeded style attribute, we finally
+                # have this stuff defined in the ptbdocs.css now.
+                del(div['style'])
                 # escape the HTML tags for wiki parser
                 cheesesoup.append(NavigableString('\n""'))
                 cheesesoup.append(div)
-                div['style'] = 'background-color:#eee; padding:1em; border-width:1px; ' \
-                        + 'border-style:solid; border-color:#ddd; margin-bottom: 2em;' \
-                        + 'border-top: 5px solid #999999;'
                 cheesesoup.append(NavigableString('""\n'))
 
             post(subfunction,cheesesoup.renderContents())
@@ -437,7 +450,7 @@ def main(argv):
             catch
                 return;
             end
-            
+
             fid = fopen(fullfile(tmpdir,mexname),'wt');
             if fid == -1
                 return;
@@ -449,23 +462,28 @@ def main(argv):
                     docs = eval([mexname '(''DescribeModulefunctionshelper'',1,subfunctions{i})']);
                     fprintf(fid,'usage: %s\\n\\n',docs{1});
                     fprintf(fid,'help: %s\\n\\n',regexprep(docs{2},'\\n','\\n  '));
-                    fprintf(fid,'seealso: %s\\n\\n',docs{3});    
+                    fprintf(fid,'seealso: %s\\n\\n',docs{3});
                 end
             catch
                 % Nothing to do.
             end
-            
+
             fclose(fid);
             return
             '''
             fid.write(textwrap.dedent(script))
             fid.close()
-            
+
         elif opt == '-v':
             global _debug
             _debug = 1
 
-    login(baseurl,username,password)
+    if len(password) == 0:
+        usage()
+        print 'Error: No default password set. Please specify one with -p MyPassword.\n\n'
+        sys.exit(1)
+    else:
+        login(baseurl,username,password)
 
     if args:
         if _recursive:

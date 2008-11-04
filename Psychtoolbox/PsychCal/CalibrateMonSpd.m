@@ -18,6 +18,7 @@
 % 2/27/02 dhb  Various small fixes, including Radeon support.
 %         dhb  Change noMeterAvail to whichMeterType.
 % 11/08/06 cgb, dhb  OS/X.
+% 9/27/08 dhb  Default primary bases is 1 now.  Use RefitCalLinMod to change later if desired.
 
 % Create calibration structure;
 cal = [];
@@ -33,7 +34,7 @@ cal.describe.nAverage = 2;
 cal.describe.nMeas = 30;
 cal.describe.boxSize = 400;
 cal.nDevices = 3;
-cal.nPrimaryBases = 2;
+cal.nPrimaryBases = 1;
 switch whichMeterType
 	case {0,1}
 		cal.describe.S = [380 4 101];
@@ -113,19 +114,12 @@ cal.describe.program = sprintf('CalibrateMonSpd, background set to [%g,%g,%g]',.
                                cal.bgColor(1), cal.bgColor(2), cal.bgColor(3));
 cal.describe.comment = input('Describe the calibration: ','s');
 
-% Enter save code
-fprintf(1, '\nSave codes:\n\t0 - screenX.mat\n\t1 - string.mat\n\t2 - default.mat\n');
-saveCode = input('	Enter save code [0]: ');
-if isempty(saveCode)
-	saveCode = 0;
-end
-if saveCode == 1
-	defaultFileName = 'monitor';
-	thePrompt = sprintf('Enter calibration filename [%s]: ',defaultFileName);
-	newFileName = input(thePrompt,'s');
-	if isempty(newFileName)
-        newFileName = defaultFileName;
-	end
+% Get name
+defaultFileName = 'monitor';
+thePrompt = sprintf('Enter calibration filename [%s]: ',defaultFileName);
+newFileName = input(thePrompt,'s');
+if isempty(newFileName)
+    newFileName = defaultFileName;
 end
 
 % Fitting parameters
@@ -158,19 +152,8 @@ cal = CalibrateAmbDrvr(cal, USERPROMPT, whichMeterType, blankOtherScreen);
 Snd('Play', sin(0:10000)); WaitSecs(.75); Snd('Play', sin(0:10000)); WaitSecs(.75); Snd('Play', sin(0:20000));
 
 % Save the structure
-if saveCode == 0
-	screenNumber = cal.describe.whichScreen;
-	fprintf(1, '\nSaving to screen%g.mat\n', screenNumber);
-	SaveCalFile(cal, screenNumber);
-elseif saveCode == 1
-	fprintf(1, '\nSaving to %s.mat\n', newFileName);
-	SaveCalFile(cal, newFileName);
-elseif saveCode == 2
-	fprintf(1, '\nSaving to default.mat\n');
-	SaveCalFile(cal);
-else
-	error('Illegal value for save code entered');
-end
+fprintf(1, '\nSaving to %s.mat\n', newFileName);
+SaveCalFile(cal, newFileName);
 
 % Put up a plot of the essential data
 figure(1); clf;

@@ -278,8 +278,13 @@ PsychError SCREENDrawText(void)
     cgContext= CGBitmapContextCreate(textureMemory, textureWidth, textureHeight, 8, memoryRowSizeBytes, cgColorSpace, kCGImageAlphaPremultipliedFirst);
     if(!cgContext){
         free((void *)textureMemory);
-		sprintf(errmsg, "Failed to allocate CG Bitmap Context for: texWidth=%i, texHeight=%i, memRowSize=%i, textCString=%s\n", textureWidth, textureHeight, memoryRowSizeBytes, textCString);
-        PsychErrorExitMsg(PsychError_system, errmsg);
+		printf("PTB-ERROR: In Screen('DrawText'): Failed to allocate CG Bitmap Context for: texWidth=%i, texHeight=%i, memRowSize=%i, textCString=%s\n", textureWidth, textureHeight, memoryRowSizeBytes, textCString);
+		printf("PTB-ERROR: In Screen('DrawText'): xPos=%lf yPos=%lf StringLength=%i\nDecoded Unicode-String:\n", winRec->textAttributes.textPositionX, winRec->textAttributes.textPositionY, stringLengthChars);
+		for (ix=0; ix < stringLengthChars; ix++) printf("%i, ", (int) textUniString[ix]);
+		printf("\nPTB-ERROR: In Screen('DrawText'): Text corrupt?!?\n");
+		
+		free((void*)textUniString);
+        goto drawtext_skipped;
     }
     CGContextSetFillColorSpace (cgContext,cgColorSpace);
     
@@ -846,6 +851,7 @@ static BYTE*				pBits = NULL;	// Pointer to dc's DIB bitmap memory.
 static HBITMAP				hbmBuffer;		// DIB.
 static int					oldWidth=-1;	// Size of last target window for drawtext.
 static int					oldHeight=-1;	// dto.
+static PsychWindowRecordType* oldWin = NULL; // Last window to which text was drawn to.
 
 void CleanupDrawTextGDI(void)
 {
@@ -862,6 +868,8 @@ void CleanupDrawTextGDI(void)
 	
 	oldWidth = -1;
 	oldHeight = -1;
+	
+	oldWin = NULL;
 	
 	return;
 }
@@ -999,9 +1007,13 @@ PsychError SCREENDrawTextGDI(PsychRectType* boundingbox)
 	}
 	
     // Does the font (better, its display list) need to be build or rebuild, because
-    // font name, size or settings have changed?
+    // font name, size or settings have changed? Or is the current window
+	// winRec not identical to the last target window oldWin? In that case,
+	// we'll need to reassign the font as well, as fonts are not cached
+	// on a per windowRecord basis.
+	//
     // This routine will check it and perform all necessary ops if so...
-	if (winRec->textAttributes.needsRebuild) {
+	if ((winRec->textAttributes.needsRebuild) || (oldWin != winRec)) {
 		// Delete the old font object, if any:
 		if (font) DeleteObject(font);
 		font = NULL; 
@@ -1045,6 +1057,9 @@ PsychError SCREENDrawTextGDI(PsychRectType* boundingbox)
 		// Clear rebuild flag:
 		winRec->textAttributes.needsRebuild = FALSE;
 	}
+	
+	// Update last target window:
+	oldWin = winRec;
 	
 	// Select the font we created:
 	SelectObject(dc, font);

@@ -46,6 +46,8 @@ function cal = CalibrateMonDrvr(cal, USERPROMPT, whichMeterType, blankOtherScree
 % 10/23/06  cgb     OS/X, etc.
 % 11/08/06  dhb, cgb Living in the 0-1 world ....
 % 11/10/06  dhb     Get rid of round() around production of input levels.
+% 9/26/08   cgb, dhb Fix dacsize when Bits++ is used.  Fit gamma with full number of levels. 
+
 global g_usebitspp;
 
 % If the global flag for using Bits++ is empty, then it hasn't been
@@ -85,7 +87,6 @@ if USERPROMPT
 end
 
 % Blank other screen
-
 if blankOtherScreen
 	[window1, screenRect1] = Screen('OpenWindow', cal.describe.whichBlankScreen, 0);
     if g_usebitspp
@@ -130,6 +131,7 @@ end
 % Wait for user
 if USERPROMPT == 1
     FlushEvents;
+    fprintf('Set up radiometer and hit any key when ready\n');
     GetChar;
     fprintf('Pausing for %d seconds ...', cal.describe.leaveRoomTime);
     %WaitSecs(cal.describe.leaveRoomTime);
@@ -201,7 +203,7 @@ cal = CalibrateFitLinMod(cal);
 
 % Fit gamma functions.
 cal.rawdata.rawGammaInput = mGammaInputRaw;
-cal = CalibrateFitGamma(cal);
+cal = CalibrateFitGamma(cal, 2^cal.describe.dacsize);
 
 % Blank other screen
 if blankOtherScreen

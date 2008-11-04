@@ -231,6 +231,10 @@ function DownloadPsychtoolbox(flavor,targetdirectory,downloadmethod,targetRevisi
 %
 % 06/16/08 mk  Change default initial download protcol from svn: to https:,
 %              as Berlios seems to have disabled svnserve protocol :-(
+%
+% 10/01/08 mk  Add interactive output/query for svn client on the Unices.
+%              This to work-around questions of the client about accepting
+%              security certificates...
 
 % Flush all MEX files: This is needed at least on M$-Windows for SVN to
 % work if Screen et al. are still loaded.
@@ -560,27 +564,14 @@ end
 
 fprintf('The following CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
 fprintf('%s\n',checkoutcommand);
-fprintf('Downloading. It''s nearly 100 MB, which can take many minutes. \nAlas there is no output to this window to indicate progress until the download is complete. \nPlease be patient ...\n');
+fprintf('Downloading. It''s nearly 100 MB, which can take many minutes. \nAlas there may be no output to this window to indicate progress until the download is complete. \nPlease be patient ...\n');
+fprintf('If you see some message asking something like "accept certificate (p)ermanently, (t)emporarily? etc."\n');
+fprintf('then please press the p key on your keyboard, possibly followed by pressing the ENTER key.\n\n');
 if isOSX | isLinux
-    [err,result]=system(checkoutcommand);
+    [err]=system(checkoutcommand);
+    result = 'For reason, see output above.';
 else
     [err,result]=dos(checkoutcommand, '-echo');
-end
-
-if err
-    % Failed! Let's retry it via https protocol. This may work-around overly
-    % restrictive firewalls or otherwise screwed network proxies:
-    fprintf('Command "CHECKOUT" failed with error code %d: \n',err);
-    fprintf('%s\n\n',result);
-    fprintf('Will retry now by use of alternative https protocol...\n');
-    checkoutcommand=[svnpath 'svn checkout ' targetRevision ' https://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' pt];
-    fprintf('The following alternative CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
-    fprintf('%s\n\n',checkoutcommand);
-    if isOSX | isLinux
-        [err,result]=system(checkoutcommand);
-    else
-        [err,result]=dos(checkoutcommand, '-echo');
-    end    
 end
 
 if err
@@ -593,7 +584,25 @@ if err
     fprintf('The following alternative CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
     fprintf('%s\n\n',checkoutcommand);
     if isOSX | isLinux
-        [err,result]=system(checkoutcommand);
+        [err]=system(checkoutcommand);
+        result = 'For reason, see output above.';
+    else
+        [err,result]=dos(checkoutcommand, '-echo');
+    end    
+end
+
+if err
+    % Failed! Let's retry it via https protocol. This may work-around overly
+    % restrictive firewalls or otherwise screwed network proxies:
+    fprintf('Command "CHECKOUT" failed with error code %d: \n',err);
+    fprintf('%s\n\n',result);
+    fprintf('Will retry now by use of alternative https protocol...\n');
+    checkoutcommand=[svnpath 'svn checkout ' targetRevision ' https://svn.berlios.de/svnroot/repos/osxptb/' flavor '/Psychtoolbox/ ' pt];
+    fprintf('The following alternative CHECKOUT command asks the Subversion client to \ndownload the Psychtoolbox:\n');
+    fprintf('%s\n\n',checkoutcommand);
+    if isOSX | isLinux
+        [err]=system(checkoutcommand);
+        result = 'For reason, see output above.';
     else
         [err,result]=dos(checkoutcommand, '-echo');
     end    

@@ -237,6 +237,10 @@ persistent multishadermorphcount;
 persistent multimorphOperator;
 persistent multimorphOperatorNoNormals;
 
+persistent weighttex;
+persistent weighttexgl;
+persistent oldWeightLength;
+
 persistent isbuggyatidriver;
 
 
@@ -303,10 +307,18 @@ end
 % the buggy renderer flag to take some bug of that gpu or its driver on
 % OS/X into account...
 if isempty(isbuggyatidriver)
+    % Prior assumption: No buggy driver...
+    isbuggyatidriver = 0;
+    
+    % ATI X1000 series on OS/X?
     if ~isempty(findstr(glGetString(GL.RENDERER), 'Radeon X1600')) & IsOSX
-        isbuggyatidriver = 1;
-    else
-        isbuggyatidriver = 0;
+        % OS/X 10.4.x ATI driver is buggy, but not 10.5.5s...
+        compinfo = Screen('Computer');
+        osrelease = sscanf(compinfo.system, '%*s %*s %*i.%i.%i');
+        if osrelease(1) < 5 || osrelease(2) < 5
+            % Buggy 10.4.x or a 10.5.4 or earlier: Enable workaround.
+            isbuggyatidriver = 1;
+        end
     end
 end
 
@@ -314,7 +326,9 @@ if isempty(gpubasedmorphing)
     % Test if fully GPU based morphing via FBO's VBO's PBO's and shaders is
     % possible. Use it, if so:
     gpubasedmorphing = 0;
-    
+
+    oldWeightLength = -1;
+
     % Check if all OpenGL extensions for GPU based morphing are available:
     if ~isempty(findstr(glGetString(GL.EXTENSIONS), '_vertex_buffer_object')) && ...
             ~isempty(findstr(glGetString(GL.EXTENSIONS), '_pixel_buffer_object')) && ...
@@ -429,7 +443,6 @@ if strcmp(cmd, 'reset')
        morphbuffer = [];
        
        % Release shader:
-       shadermorphweights = [];
        Screen('Close', morphOperator);
        Screen('Close', morphOperatorNoNormals);
        morphOperatorNoNormals = [];
@@ -459,6 +472,10 @@ if strcmp(cmd, 'reset')
        
        glDeleteBuffers(1, ibo);
        ibo = [];
+       
+       weighttex = [];
+       weighttexgl = [];
+       oldWeightLength = -1;
        
        gpubasedmorphing = [];
    end
@@ -910,6 +927,16 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
             Screen('EndOpenGL', targetwindow);
         end
 
+        % Targetwindow active?
+        if targetwindow == 0
+            % Nope! We are without targetwindow, e.g., due to return from
+            % an async flip operation. That means that no OpenGL context is
+            % active for this thread and all OpenGL ops would be no-ops or
+            % crashes. We perform a dummy call for the sole purpose to get
+            % our window bound and an OpenGL context activated:
+            dummyWinfo = Screen('GetWindowInfo', win); %#ok<NASGU>
+        end
+        
         % Switch to OpenGL mode and copy morphbuffer into our VBO:
         [w, h] = Screen('WindowSize', morphbuffer(1));
 
@@ -986,9 +1013,29 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
             % Perform whole morph in one single blit-operation:
             currentsrcbuffer = 1;
 
+            if length(arg1) ~= oldWeightLength
+                oldWeightLength = length(arg1);
+                
+                if ~isempty(weighttex)
+                    % Release weight texture:
+                    Screen('Close', weighttex);
+                    weighttex = [];
+                end
+            end
+            
             % Convert weight-vector into float texture:
-            weighttex = Screen('MakeTexture', win, arg1, [], [], 2, 2);
-
+            if isempty(weighttex)
+                % Doesn't exist yet: Create it:
+                weighttex = Screen('MakeTexture', win, arg1, [], [], 2, 2);
+                weighttexgl = Screen('GetOpenGLTexture', win, weighttex);
+            else
+                % weighttex exists already and can be recycled. Just bind
+                % it and set new weights in it:
+                glBindTexture(GL.TEXTURE_RECTANGLE_EXT, weighttexgl);
+                glTexSubImage2D(GL.TEXTURE_RECTANGLE_EXT, 0, 0, 0, oldWeightLength, 1, GL.LUMINANCE, GL.FLOAT, moglsingle(arg1));
+                glBindTexture(GL.TEXTURE_RECTANGLE_EXT, 0);
+            end
+            
             % xform pass: Blit all subsections of masterkeyshapetex into
             % the destination buffer, applying the multimorph-shader:
             if morphnormals
@@ -998,9 +1045,6 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
                 % No normal morphing: Run restricted operator...
                 morphbuffer(currentsrcbuffer) = Screen('TransformTexture', masterkeyshapetex, multimorphOperatorNoNormals, weighttex, morphbuffer(currentsrcbuffer));
             end
-
-            % Release weight texture:
-            Screen('Close', weighttex);
         end
 
         % Ok, morphbuffer(currentsrcbuffer) should contain the final morph
@@ -1357,4 +1401,4 @@ if strcmp(cmd, 'getVertexPositions')
 end;
 
 error('Invalid subcommand specified!');
-return;
+return; %#ok<UNRCH>
