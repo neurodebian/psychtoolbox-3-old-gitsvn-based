@@ -50,6 +50,8 @@ PsychError PSYCHPORTAUDIOOpen(void);
 PsychError PSYCHPORTAUDIOClose(void);
 // Fill audio output buffer with data:
 PsychError PSYCHPORTAUDIOFillAudioBuffer(void);
+// Refill audio output buffer with data:
+PsychError PSYCHPORTAUDIORefillBuffer(void);
 // Start or schedule start of device:
 PsychError PSYCHPORTAUDIOStartAudioDevice(void);
 // Reschedule start of audio device:
@@ -64,5 +66,18 @@ PsychError PSYCHPORTAUDIOGetStatus(void);
 PsychError PSYCHPORTAUDIOLatencyBias(void);
 // Retrieve buffer with captured audio data:
 PsychError PSYCHPORTAUDIOGetAudioData(void);
+// Select general run mode for audio device:
+PsychError PSYCHPORTAUDIORunMode(void);
+// Select sample loop for audio device:
+PsychError PSYCHPORTAUDIOSetLoop(void); 
+// Set tuneable low-level engine parameters:
+PsychError PSYCHPORTAUDIOEngineTunables(void);
+// Get count of open audio devices:
+PsychError PSYCHPORTAUDIOGetOpenDeviceCount(void);
+// Alloc/Dealloc Enable/Disable playback schedules:
+PsychError PSYCHPORTAUDIOUseSchedule(void);
+// Add sot to playback schedule:
+PsychError PSYCHPORTAUDIOAddToSchedule(void);
+
 //end include once
 #endif

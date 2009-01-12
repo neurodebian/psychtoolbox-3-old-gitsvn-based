@@ -294,9 +294,14 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
     DCB				options;
 	char*			p;
 	float			infloat;
-	int				inint;
+	int				inint, inint2;
 	bool			updatetermios = FALSE;
 
+	// Init DCBlength field to size of structure! Fixed as of 31.12.2008 -- May have caused
+	// trouble in some setups with earlier releases!
+	memset(&options, 0, sizeof(DCB));
+	options.DCBlength = sizeof(DCB);
+	
 	// Retrieve current settings:
     if (GetCommState(device->fileDescriptor, &options) == 0)
     {
@@ -375,17 +380,17 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		options.fParity = 0;
 		options.Parity  = NOPARITY;
 		
-		if (strstr(configString, "Parity=Even")) {
+		if (strstr(p, "Parity=Even")) {
 			options.fParity = 1;
 			options.Parity  = EVENPARITY;
 		}
 		else 
-		if (strstr(configString, "Parity=Odd")) {
+		if (strstr(p, "Parity=Odd")) {
 			options.fParity = 1;
 			options.Parity  = ODDPARITY;
 		}
 		else
-		if (strstr(configString, "Parity=None")) {
+		if (strstr(p, "Parity=None")) {
 			// Nothing to do.
 			options.fParity = 0;
 			options.Parity  = NOPARITY;
@@ -431,23 +436,23 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		// Clear all databit settings:
 		options.ByteSize = 0;
 		
-		if (strstr(configString, "DataBits=5")) {
+		if (strstr(p, "DataBits=5")) {
 			options.ByteSize = 5;
 		}
 		else 
-		if (strstr(configString, "DataBits=6")) {
+		if (strstr(p, "DataBits=6")) {
 			options.ByteSize = 6;
 		}
 		else
-		if (strstr(configString, "DataBits=7")) {
+		if (strstr(p, "DataBits=7")) {
 			options.ByteSize = 7;
 		}
 		else
-		if (strstr(configString, "DataBits=8")) {
+		if (strstr(p, "DataBits=8")) {
 			options.ByteSize = 8;
 		}
 		else
-		if (strstr(configString, "DataBits=16")) {
+		if (strstr(p, "DataBits=16")) {
 			options.ByteSize = 16;
 		}
 		else {
@@ -463,11 +468,11 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		// Clear all stopbit settings:
 		options.StopBits = 0;
 		
-		if (strstr(configString, "StopBits=1")) {
+		if (strstr(p, "StopBits=1")) {
 			options.StopBits = ONESTOPBIT;
 		}
 		else 
-		if (strstr(configString, "StopBits=2")) {
+		if (strstr(p, "StopBits=2")) {
 			options.StopBits = TWOSTOPBITS;
 		}
 		else {
@@ -488,16 +493,16 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		options.fOutxCtsFlow = 0;
 		options.fOutxDsrFlow = 0;
 
-		if (strstr(configString, "FlowControl=None")) {
+		if (strstr(p, "FlowControl=None")) {
 			// Set above already...
 		}
 		else 
-		if (strstr(configString, "FlowControl=Software")) {
+		if (strstr(p, "FlowControl=Software")) {
 			options.fOutX = 1;
 			options.fInX = 1;
 		}
 		else
-		if (strstr(configString, "FlowControl=Hardware")) {
+		if (strstr(p, "FlowControl=Hardware")) {
 			options.fRtsControl = RTS_CONTROL_HANDSHAKE;
 			options.fOutxCtsFlow = 1;
 		}
@@ -517,11 +522,11 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
     
 	// Handling of DTR :
 	if ((p = strstr(configString, "DTR="))) {
-		if (strstr(configString, "DTR=0")) {
+		if (strstr(p, "DTR=0")) {
 			options.fDtrControl = DTR_CONTROL_DISABLE;
 		}
 		else
-		if (strstr(configString, "DTR=1")) {
+		if (strstr(p, "DTR=1")) {
 			options.fDtrControl = DTR_CONTROL_ENABLE;
 		}
 		else {
@@ -534,11 +539,11 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 	
 	// Handling of RTS :
 	if ((p = strstr(configString, "RTS="))) {
-		if (strstr(configString, "RTS=0")) {
+		if (strstr(p, "RTS=0")) {
 			options.fRtsControl = RTS_CONTROL_DISABLE;
 		}
 		else
-		if (strstr(configString, "RTS=1")) {
+		if (strstr(p, "RTS=1")) {
 			options.fRtsControl = RTS_CONTROL_ENABLE;
 		}
 		else {
@@ -588,6 +593,24 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 				// Worked. Assign new values:
 				device->readBuffer = (unsigned char*) p;
 				device->readBufferSize = (unsigned int) inint;
+			}
+		}
+	}
+
+	// Set buffer sizes of the hardware itself, ie., the driver-internal buffers:
+	if ((p = strstr(configString, "HardwareBufferSizes="))) {
+		if ((2!=sscanf(p, "HardwareBufferSizes=%i,%i", &inint, &inint2)) || (inint < 1) || (inint2 < 1)) {
+			if (verbosity > 0) printf("Invalid parameter for HardwareBufferSizes set! Typo or at least one of the requested buffer sizes smaller than 1 byte.\n");
+			return(PsychError_invalidIntegerArg);
+		}
+		else {
+			// Set HardwareBufferSizes: This functionality is only available on the Windows platform.
+			// It is only a hint or polite request to the underlying driver. The driver is free to
+			// ignore the request and choose whatever size or buffering strategy it finds appropriate:
+			if (!SetupComm(device->fileDescriptor, inint, inint2)) {
+				// Failed:
+				if (verbosity > 0) printf("Setup of explicit HardwareBufferSizes for device %s of inputsize %i and outputsize %i failed with error code %d!\n", device->portSpec, inint, inint2, GetLastError());
+				return(PsychError_system);
 			}
 		}
 	}
