@@ -465,6 +465,20 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 					// First eat up any pending GL errors to make sure our shutdown path doesn't fail:
 					while(glGetError());
 					
+					// Free all ressources already allocated for this failed texture creation request:
+					glBindTexture(texturetarget, 0);
+					glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+					glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+					glDeleteTextures(1, &win->textureNumber);
+					win->textureNumber = 0;
+					if (!clientstorage) {
+						if (win->textureMemory && (win->textureMemorySizeBytes > 0)) free(win->textureMemory);
+						win->textureMemory=NULL;
+						win->textureMemorySizeBytes=0;
+					}
+
+					while(glGetError());
+					
 					if (glerr == GL_INVALID_VALUE || (gl_rbits + gl_gbits + gl_bbits + gl_abits + gl_lbits == 0)) {
 						// Most likely texture too big for implementation or out of memory condition in VRAM or unsupported format:
 						printf("\n\nPTB-ERROR: Texture creation failed or malfunctioned for a texture of requested size w x h = %i x %i texels\n", twidth, theight);
@@ -501,12 +515,12 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 								printf("PTB-ERROR: consumed for textures, offscreen windows and similar objects.\n");
 								if (texcount > 100) {
 									printf("PTB-ERROR: The count is above one hundred objects. Could it be that you forgot to dispose no longer\n");
-									printf("PTB-ERROR: needed objects from previous experiment trials (missing Screen('Close' [, texturePtr]) or Screen('CloseMovie', moviePtr))??");
+									printf("PTB-ERROR: needed objects from previous experiment trials (missing Screen('Close' [, texturePtr]) or Screen('CloseMovie', moviePtr))??\n");
 								}
 
 								if (texmemguesstimate > 100 * 1024 * 1024) {
 									printf("PTB-ERROR: At least 100 MB memory consumed for textures, probably much more. Could it be that you forgot to dispose no longer\n");
-									printf("PTB-ERROR: needed textures from previous experiment trials (missing Screen('Close' [, texturePtr]))??");
+									printf("PTB-ERROR: needed textures from previous experiment trials (missing Screen('Close' [, texturePtr]))??\n");
 								}
 								
 								printf("PTB-ERROR: Another cause of failure could be that your graphics hardware doesn't have sufficient amounts of\n");

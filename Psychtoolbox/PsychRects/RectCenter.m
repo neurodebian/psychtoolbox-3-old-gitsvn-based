@@ -1,4 +1,4 @@
-function [x, y] = RectCenter(r);
+function [x, y] = RectCenter(r)
 %   [x,y] = RectCenter(rect);
 %
 %	RectCenter returns the integer x,y point closest to the center of a rect.  
@@ -12,7 +12,7 @@ if nargout~=2
 	error('Usage: [x, y] = RectCenter(rect);');
 end
 
-if length(r) == 4
+if PsychNumel(r) == 4
     % Single rect:
     x = round(0.5*(r(1)+r(3)));
     y = round(0.5*(r(2)+r(4)));
