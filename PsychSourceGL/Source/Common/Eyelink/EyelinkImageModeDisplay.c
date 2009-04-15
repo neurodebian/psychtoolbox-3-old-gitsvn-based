@@ -14,6 +14,7 @@
 	HISTORY:
 
 		11/23/05  cdb		Created.
+		27/03/09  edf       added waiting loop and check that we made it into the mode
 
 	TARGET LOCATION:
 
@@ -23,17 +24,21 @@
 
 #include "PsychEyelink.h"
 
+#define WAIT_MS 10
+#define MAX_LOOPS 1000
+#define ERR_BUFF_LEN 1000
+
 static char useString[] = "[result =] Eyelink('ImageModeDisplay')";
 
 static char synopsisString[] =
 	"This handles display of the EyeLink camera images. "
-	"While in imaging mode, it contiuously requests "
+	"While in imaging mode, it continuously requests "
 	"and displays the current camera image. "
 	"It also displays the camera name and threshold setting. "
 	"Keys on the subject PC keyboard are sent to the tracker "
 	"so the experimenter can use it during setup. "
 	"It will exit when the tracker leaves "
-	"imaging mode or discannects. "
+	"imaging mode or disconnects. "
     "RETURNS: 0 if OK, 32767 (Ox7FFF or TERMINATE_KEY) if pressed, -1 if disconnect";
 
 static char seeAlsoString[] = "";
@@ -57,6 +62,9 @@ PURPOSE:
 PsychError EyelinkImageModeDisplay(void)
 {
 	int		iResult		= 0;
+	int iMode = 0;
+	int loopNum=0;
+	char buff[ERR_BUFF_LEN]="";
 	
 	// Add help strings
 	PsychPushHelp(useString, synopsisString, seeAlsoString);
@@ -76,18 +84,14 @@ PsychError EyelinkImageModeDisplay(void)
 	EyelinkSystemIsConnected();
 	EyelinkSystemIsInitialized();
 	
-	if(0)
-	{
-		// NOTE:  Enno's OSX version added this eyelink call. Not sure if we want it or not.
-		eyelink_start_setup();	
-		iResult = image_mode_display();
-	}
-	else
-	{
-		//mexPrintf("EyelinkImageModeDisplay is not yet implemented.\n");
-		iResult=0;
-	}
+	// Optionally dump the whole hookfunctions struct:
+	if (Verbosity() > 5) { printf("Eyelink-Debug: ImageModeDisplay: PreOp: \n"); PsychEyelink_dumpHookfunctions(); }
 	
+	iResult = image_mode_display();
+	
+	// Optionally dump the whole hookfunctions struct:
+	if (Verbosity() > 5) { printf("Eyelink-Debug: ImageModeDisplay: PostOp: \n"); PsychEyelink_dumpHookfunctions(); }
+
 	// Assign output arg if available
 	PsychCopyOutDoubleArg(1, FALSE, iResult);
 	

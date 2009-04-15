@@ -379,6 +379,28 @@ function [rc, winRect] = PsychImaging(cmd, varargin)
 %   Usage: PsychImaging('AddTask', 'General', 'EnableBits++Color++Output');
 %
 %
+% * 'EnableDualPipeHDROutput' Enable EXPERIMENTAL high-performance driver
+%   for HDR display devices which are composites of two separate displays.
+%
+%   EXPERIMENTAL proof-of-concept code with no real function yet!
+%
+%   This is meant for high-precision luminance or color output. It implies
+%   use of 32 bpc floating point framebuffers unless otherwise specified by
+%   other calls to PsychImaging().
+%
+%   The pair of specially encoded output images that are derived from
+%   content of the onscreen window shall be output to both, the display
+%   associated with the screen given to PsychImaging('OpenWindow',...); and
+%   on the screen with the index 'pipe1Screen', using appropriate encoding
+%   to drive the HDR device or similar composite device.
+%
+%   Usage: PsychImaging('AddTask', 'General', 'EnableDualPipeHDROutput', pipe1Screen [, pipe1Rectangle]);
+%
+%   Optionally you can pass a 'pipe1Rectangle' if the window with the
+%   pipe1 image shall not fill the whole 'pipe1Screen', but only a
+%   subregion 'pipe1Rectangle'.
+%
+%
 % * 'AddOffsetToImage' Add a constant color- or intensity offset to the
 %   drawn image, prior to all following image processing and post
 %   processing operations:
@@ -417,11 +439,15 @@ function [rc, winRect] = PsychImaging(cmd, varargin)
 %   memory and compute ressources, so it is potentially faster or provides
 %   a more reliable overall timing.
 %
-%   Usage: PsychImaging('AddTask', 'General', 'MirrorDisplayTo2ndOutputHead', mirrorscreen);
+%   Usage: PsychImaging('AddTask', 'General', 'MirrorDisplayTo2ndOutputHead', mirrorScreen [, mirrorRectangle]);
 %
 %   The content of the onscreen window shall be shown not only on the
 %   display associated with the screen given to PsychImaging('OpenWindow',
-%   ...); but also (as a copy) on the screen with the index 'mirrorscreen'.
+%   ...); but also (as a copy) on the screen with the index 'mirrorScreen'.
+%
+%   Optionally you can pass a 'mirrorRectangle' if the window with the
+%   mirror image shall not fill the whole 'mirrorScreen', but only a
+%   subregion 'mirrorRectangle'.
 %
 %
 % * 'MirrorDisplayToSingleSplitWindow' Mirror the content of the onscreen
@@ -884,13 +910,14 @@ if strcmp(cmd, 'OpenWindow')
         end
     end
     
-    % Display mirroring in stereomode 10 requested?
+    % Display mirroring requested?
     if ~isempty(find(mystrcmp(reqs, 'MirrorDisplayTo2ndOutputHead')))
         % Yes. Need to open secondary slave window:
         floc = find(mystrcmp(reqs, 'MirrorDisplayTo2ndOutputHead'));
         [rows cols]= ind2sub(size(reqs), floc);
-        % Extract first parameter - This should be the name of a
-        % calibration file:
+
+        % Extract first parameter - This should be the id of the slave
+        % screen to which the display should get mirrored:
         slavescreenid = reqs{rows, 3};
 
         if isempty(slavescreenid)
@@ -903,10 +930,67 @@ if strcmp(cmd, 'OpenWindow')
             error('In PsychImaging MirrorDisplayTo2ndOutputHead: You must provide the index of a valid secondary screen "slavescreen"!');
         end
         
-        Screen('OpenWindow', slavescreenid, [255 0 0], [], [], [], stereomode);
+        if stereomode == 10
+            fprintf('PsychImaging: WARNING! You simultaneously requested display mirroring to 2nd output head and dual display stereomode 10.\n');
+            fprintf('PsychImaging: WARNING! These are mutually exclusive! Will choose stereomode 10 instead of mirroring.\n');
+        end
+        
+        if stereomode == 1
+            Screen('CloseAll');
+            error('In PsychImaging MirrorDisplayTo2ndOutputHead: Tried to simultaneously enable frame-sequential stereomode 1! This is not supported.');
+        end
+        
+        % Extract optional 2nd parameter - The window rectangle of the slave
+        % window on the slave screen to which the display should get mirrored:
+        slavewinrect = reqs{rows, 4};
+        
+        % Open slave window on slave screen: Set the special dual window
+        % output flag, so Screen('OpenWindow') initializes the internal blit
+        % chain properly:
+        Screen('OpenWindow', slavescreenid, [255 0 0], slavewinrect, [], [], [], [], kPsychNeedDualWindowOutput);
     end
 
-    
+    % Dualwindow output requested? [Essentially the same as display
+    % mirroring, but kept separate for now for simplicity]
+    if ~isempty(find(mystrcmp(reqs, 'EnableDualPipeHDROutput')))
+        % Yes. Need to open secondary slave window:
+        floc = find(mystrcmp(reqs, 'EnableDualPipeHDROutput'));
+        [rows cols]= ind2sub(size(reqs), floc);
+
+        % Extract first parameter - This should be the id of the slave
+        % screen to which the pipe 1 display should get displayed:
+        slavescreenid = reqs{rows, 3};
+
+        if isempty(slavescreenid)
+            Screen('CloseAll');
+            error('In PsychImaging EnableDualPipeHDROutput: You must provide the index of the secondary screen "slavescreen"!');
+        end
+        
+        if ~any(ismember(Screen('Screens'), slavescreenid))
+            Screen('CloseAll');
+            error('In PsychImaging EnableDualPipeHDROutput: You must provide the index of a valid secondary screen "slavescreen"!');
+        end
+        
+        if stereomode == 1
+            Screen('CloseAll');
+            error('In PsychImaging EnableDualPipeHDROutput: Tried to simultaneously enable frame-sequential stereomode 1! This is not supported.');
+        end
+        
+        if stereomode == 10
+            Screen('CloseAll');
+            error('In PsychImaging EnableDualPipeHDROutput: Tried to simultaneously enable dual display output stereomode 10! This is not supported.');
+        end
+        
+        % Extract optional 2nd parameter - The window rectangle of the slave
+        % window on the slave screen to which the pipe 1 display should get outputted:
+        slavewinrect = reqs{rows, 4};
+        
+        % Open slave window on slave screen: Set the special dual window
+        % output flag, so Screen('OpenWindow') initializes the internal blit
+        % chain properly:
+        Screen('OpenWindow', slavescreenid, [255 0 0], slavewinrect, [], [], [], [], kPsychNeedDualWindowOutput);
+    end
+
     % Perform double-flip, so both back- and frontbuffer get initialized to
     % background color:
     Screen('Flip', win);
@@ -1103,12 +1187,12 @@ if ~isempty(find(mystrcmp(reqs, 'InterleavedLineStereo')))
     imagingMode = mor(imagingMode, kPsychNeedFastBackingStore, kPsychNeedHalfHeightWindow);    
 end
 
-% Stereomode 10 for display replication needed?
+% Display replication needed?
 if ~isempty(find(mystrcmp(reqs, 'MirrorDisplayTo2ndOutputHead')))
-    % Yes: Must use stereomode 10. This implies kPsychNeedFastBackingStore,
-    % automatically set by Screen('OpenWindow') itself, so no need t do it
-    % here:
-    stereoMode = 10;    
+    % Yes: Must use dual window output mode. This implies
+    % kPsychNeedFastBackingStore, automatically set by Screen('OpenWindow')
+    % itself, so no need to do it here.
+    imagingMode = mor(imagingMode, kPsychNeedDualWindowOutput);
 end
 
 % Custom color correction for display wanted?
@@ -1216,6 +1300,32 @@ if ~isempty(find(mystrcmp(reqs, 'EnableNative10BitFramebuffer')))
     ptb_outputformatter_icmAware = 0;    
 end
 
+% Request for native 10 bit per color component ARGB2101010 framebuffer?
+if ~isempty(find(mystrcmp(reqs, 'EnableDualPipeHDROutput')))
+    % Enable imaging pipeline ...
+    imagingMode = mor(imagingMode, kPsychNeedFastBackingStore);
+    % ... final device output formatter chain(s) ...
+    imagingMode = mor(imagingMode, kPsychNeedOutputConversion);
+    % ... and dual stream processing and output to two displays ...
+    imagingMode = mor(imagingMode, kPsychNeedDualWindowOutput);
+
+    % Request 32bpc float FBO unless already a 16 bpc FBO or similar has
+    % been explicitely requested:
+    if ~bitand(imagingMode, kPsychNeed16BPCFloat) && ~bitand(imagingMode, kPsychUse32BPCFloatAsap)
+        imagingMode = mor(imagingMode, kPsychNeed32BPCFloat);
+    end
+
+    % The dual-pipeline HDR output formatter is not yet icm aware -
+    % Incapable of internal color correction. Well, technically it is, but
+    % that code-path is disabled for now. It is probably computationally
+    % more efficient to perform one generic ICM pass on the input buffer
+    % and then feed into the formatters for the two pipes instead of
+    % letting each pipe's formatter apply the same color correction, ie.,
+    % do the same work twice. This needs to be found out in the future. For
+    % now we go for the simple solution:
+    ptb_outputformatter_icmAware = 0;
+end
+
 if ~isempty(find(mystrcmp(reqs, 'LeftView'))) || ~isempty(find(mystrcmp(reqs, 'RightView')))
     % Specific eye channel requested: Need a stereo display mode.
     stereoMode = -2;
@@ -1298,6 +1408,8 @@ needsUnitUnclampedColorRange = 0;
 leftcount = 0;
 rightcount = 0;
 outputcount = 0;
+outputcount0 = 0;
+outputcount1 = 0;
 
 % Flags for horizontal/vertical flip operations:
 leftUDFlip = 0;
@@ -1518,17 +1630,29 @@ if ~isempty(floc)
                 error('PsychImaging: Parameter for ''GeometryCorrection'' missing!');
             end
             
-            % We accept names of calibration files or calibration structs:
-            if isstruct(calibfilename)
-                % Warpstruct passed: Use it.
-                warpstruct = calibfilename;
+            % Is 'calibfilename' a function handle or a final warpstruct?
+            if (~isstruct(calibfilename) && ~ischar(calibfilename)) || ...
+               (isstruct(calibfilename) && isfield(calibfilename, 'gld') && isfield(calibfilename, 'glsl'))
+                % Functionhandle or final warpstruct passed: This
+                % assignment will either assign the warpstruct, or call the
+                % function referenced by the functionhandle and assign the
+                % returned warpstruct:
+                if ~isstruct(calibfilename)
+                    [warpstruct, filterMode] = calibfilename();
+                else
+                    warpstruct = calibfilename;
+                    filterMode = ':Bilinear';
+                end
             else
-                if ~ischar(calibfilename)
+                % Either calibration input parameter struct, or filename of
+                % calibration file: Just pass it to CreateDisplayWarp(),
+                % after some parameter validation:
+                if ischar(calibfilename) && ~exist(calibfilename, 'file')
                     Screen('CloseAll');
-                    error('PsychImaging: Passed an argument to ''GeometryCorrection'' which is not a valid name of a calibration file!');
+                    error('PsychImaging: Passed an argument to ''GeometryCorrection'' which is not a valid name of an accessible calibration file!');
                 end
             
-                % Filename found. Further (optional) parameters passed?
+                % Filename or calibstruct valid. Further (optional) parameters passed?
                 % 2nd parameter, if any, would be a 'visualize' flag that
                 % asks for plotting of some calibration info and additional
                 % output to the console:
@@ -1542,9 +1666,9 @@ if ~isempty(floc)
                 % defined are up to additional 6 parameters 5 to 10. These
                 % default to empty if not provided by user-code.
                 
-                % Use helper function to read the calibration file and build a
-                % proper warp-function:
-                warpstruct = CreateDisplayWarp(win, calibfilename, showCalibOutput, reqs{row, 5:10});
+                % Use helper function to read the calibration file or
+                % parameter struct and build a proper warp-function:
+                [warpstruct, filterMode] = CreateDisplayWarp(win, calibfilename, showCalibOutput, reqs{row, 5:10});
             end
             
             % Is it a display list handle?
@@ -1574,9 +1698,9 @@ if ~isempty(floc)
                     end
                     
                     if glsl
-                        Screen('HookFunction', win, 'AppendShader', 'StereoLeftCompositingBlit', 'GeometricWarpShader', glsl, sprintf('Blitter:DisplayListBlit:Handle:%i', gld));                        
+                        Screen('HookFunction', win, 'AppendShader', 'StereoLeftCompositingBlit', 'GeometricWarpShader', glsl, sprintf('Blitter:DisplayListBlit:Handle:%i%s', gld, filterMode));  
                     else
-                        Screen('HookFunction', win, 'AppendBuiltin', 'StereoLeftCompositingBlit', 'Builtin:IdentityBlit', sprintf('Blitter:DisplayListBlit:Handle:%i:Bilinear', gld));
+                        Screen('HookFunction', win, 'AppendBuiltin', 'StereoLeftCompositingBlit', 'Builtin:IdentityBlit', sprintf('Blitter:DisplayListBlit:Handle:%i%s', gld, filterMode));
                     end
                     Screen('HookFunction', win, 'Enable', 'StereoLeftCompositingBlit');
                     leftcount = leftcount + 1;
@@ -1590,9 +1714,9 @@ if ~isempty(floc)
                     end
 
                     if glsl
-                        Screen('HookFunction', win, 'AppendShader', 'StereoRightCompositingBlit', 'GeometricWarpShader', glsl, sprintf('Blitter:DisplayListBlit:Handle:%i', gld));
+                        Screen('HookFunction', win, 'AppendShader', 'StereoRightCompositingBlit', 'GeometricWarpShader', glsl, sprintf('Blitter:DisplayListBlit:Handle:%i%s', gld, filterMode));
                     else
-                        Screen('HookFunction', win, 'AppendBuiltin', 'StereoRightCompositingBlit', 'Builtin:IdentityBlit', sprintf('Blitter:DisplayListBlit:Handle:%i:Bilinear', gld));
+                        Screen('HookFunction', win, 'AppendBuiltin', 'StereoRightCompositingBlit', 'Builtin:IdentityBlit', sprintf('Blitter:DisplayListBlit:Handle:%i%s', gld, filterMode));
                     end
                     Screen('HookFunction', win, 'Enable', 'StereoRightCompositingBlit');
                     rightcount = rightcount + 1;
@@ -1606,9 +1730,9 @@ if ~isempty(floc)
                     end
 
                     if glsl
-                        Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit', 'GeometricWarpShader', glsl, sprintf('Blitter:DisplayListBlit:Handle:%i', gld));
+                        Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit', 'GeometricWarpShader', glsl, sprintf('Blitter:DisplayListBlit:Handle:%i%s', gld, filterMode));
                     else
-                        Screen('HookFunction', win, 'AppendBuiltin', 'FinalOutputFormattingBlit', 'Builtin:IdentityBlit', sprintf('Blitter:DisplayListBlit:Handle:%i:Bilinear', gld));
+                        Screen('HookFunction', win, 'AppendBuiltin', 'FinalOutputFormattingBlit', 'Builtin:IdentityBlit', sprintf('Blitter:DisplayListBlit:Handle:%i%s', gld, filterMode));
                     end
                     Screen('HookFunction', win, 'Enable', 'FinalOutputFormattingBlit');
                     outputcount = outputcount + 1;
@@ -2149,6 +2273,54 @@ if ~isempty(find(mystrcmp(reqs, 'EnableNative10BitFramebuffer')))
 end
 % --- End of output formatter for native 10 bpc ARGB2101010 framebuffer ---
 
+% --- Experimental output formatter for Dual-Pipeline HDR display ---
+floc = find(mystrcmp(reqs, 'EnableDualPipeHDROutput'));
+if ~isempty(floc)
+    [row col]= ind2sub(size(reqs), floc);
+    
+    % outputcount should be zero, i.e., the unified output formatting chain
+    % should be disabled, as we use separate per channel chains:
+    if outputcount > 0
+        fprintf('PsychImaging: WARNING! In setup for task "EnableDualPipeHDROutput": Unified output formatting chain was active (count = %i)!\n', outputcount);
+        fprintf('PsychImaging: WARNING! This conflicts with need for separate output formatting chains! Overriding: Unified chain disabled!\n');
+        fprintf('PsychImaging: WARNING! Check your output stimulus carefully for artifacts!\n');
+
+        % Disable unified output formatting chain and hope for the best:
+        Screen('HookFunction', win, 'Disable', 'FinalOutputFormattingBlit');
+        % Screen('HookFunction', win, 'Disable', 'RightFinalizerBlitChain');
+    end
+    
+    % Setup shader for pipe 0:
+    pipe0shader = LoadGLSLProgramFromFiles('DualPipeHDRPipe0_FormattingShader', 1, icmshader);
+
+    if outputcount0 > 0
+        % Need a bufferflip command:
+        Screen('HookFunction', win, 'AppendBuiltin', 'FinalOutputFormattingBlit0', 'Builtin:FlipFBOs', '');
+    end
+    
+    Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit0', 'HDRPipe0 - Output Formatter', pipe0shader, '');
+    Screen('HookFunction', win, 'Enable', 'FinalOutputFormattingBlit0');
+    outputcount0 = outputcount0 + 1;
+    
+    % Setup shader for pipe 1:
+    pipe1shader = LoadGLSLProgramFromFiles('DualPipeHDRPipe1_FormattingShader', 1, icmshader);
+
+    if outputcount1 > 0
+        % Need a bufferflip command:
+        Screen('HookFunction', win, 'AppendBuiltin', 'FinalOutputFormattingBlit1', 'Builtin:FlipFBOs', '');
+    end
+    
+    Screen('HookFunction', win, 'AppendShader', 'FinalOutputFormattingBlit1', 'HDRPipe1 - Output Formatter', pipe1shader, '');
+    Screen('HookFunction', win, 'Enable', 'FinalOutputFormattingBlit1');
+    outputcount1 = outputcount1 + 1;
+    
+    % Device need an identity clut in the GPU gamma tables:
+    needsIdentityCLUT = 1;
+
+    % Use unit color range, without clamping, but in high-precision mode:
+    needsUnitUnclampedColorRange = 1;
+end
+% --- End of experimental output formatter for Dual-Pipeline HDR display ---
 
 % --- END OF ALL OUTPUT FORMATTERS ---
 
@@ -2233,24 +2405,28 @@ end
 
 % --- GPU based mirroring of onscreen window to secondary display head requested? ---
 if ~isempty(find(mystrcmp(reqs, 'MirrorDisplayTo2ndOutputHead')))
-    % Yes: This means that stereomode 10 is active and that we (ab)use it
-    % for the purpose of replicating the framebuffer of the master onscreen
+    % Yes: We need to replicate the framebuffer of the master onscreen
     % window to the slave windows framebuffer.
     
-    % What we do: We use the right finalizer blit chain to copy the contents
-    % of the master window's system backbuffer (which is bound during
-    % execution of the right finalizer blit chain) to the colorbuffer
-    % texture of the special finalizedFBO[1] - the shadow framebuffer FBO
-    % of the slave window. Once we did this, the processing code of
-    % stereomode 10 in Screens PsychPreFlipOperations() routine will take
-    % care of the rest --> Blitting that FBO's and its texture to the system
-    % backbuffer of the slave window, thereby cloning the master windows
-    % framebuffer to the slave windows framebuffer:
-    
+    % What we do: We use the right finalizer blit chain to copy the
+    % contents of the master window's system backbuffer (which is bound
+    % during execution of the right finalizer blit chain) to the
+    % colorbuffer texture of the special finalizedFBO[1] - the shadow
+    % framebuffer FBO of the slave window. Once we did this, the processing
+    % code of kPsychNeedDualWindowOutput in Screens
+    % PsychPreFlipOperations() routine will take care of the rest -->
+    % Blitting that FBO's and its texture to the system backbuffer of the
+    % slave window, thereby cloning the master windows framebuffer to the
+    % slave windows framebuffer:
+    % TODO FIXME: We assume that texture handle '1' denotes the color
+    % attachment exture of finalizedFBO[1]. This is true if this is the
+    % first opened onscreen window (ie., 99% of the time). If that
+    % assumption doesn't hold, we will guess the wrong texture handle and
+    % bad things will happen!
     [w, h] = Screen('WindowSize', win);
     myblitstring = sprintf('glBindTexture(34037, 1); glCopyTexSubImage2D(34037, 0, 0, 0, 0, 0, %i, %i); glBindTexture(34037, 0);', w, h);
     Screen('Hookfunction', win, 'AppendMFunction', 'RightFinalizerBlitChain', 'MirrorMasterToSlaveWindow', myblitstring);
-    Screen('HookFunction', win, 'Enable', 'RightFinalizerBlitChain');    
+    Screen('HookFunction', win, 'Enable', 'RightFinalizerBlitChain');
 end
 % --- End of GPU based mirroring of onscreen window to secondary display head requested? ---
 

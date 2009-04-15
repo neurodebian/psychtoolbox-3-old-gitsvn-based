@@ -1552,6 +1552,9 @@
 		8306696D0D3920D50009C12B /* PsychGraphicsHardwareHALSupport.c in Sources */ = {isa = PBXBuildFile; fileRef = 8306696B0D3920D50009C12B /* PsychGraphicsHardwareHALSupport.c */; };
 		830982E00DB2DF4100E7D371 /* IOPort.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F0B16C307788CC100359736 /* IOPort.c */; };
 		830982E10DB2DF4500E7D371 /* IOPort.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F0B16C307788CC100359736 /* IOPort.c */; };
+		8310AC490F87C222004AAE79 /* PsychHIDCloseUSBDevice.c in Sources */ = {isa = PBXBuildFile; fileRef = F16C715D0F86999500A8BE72 /* PsychHIDCloseUSBDevice.c */; };
+		8310AC4A0F87C237004AAE79 /* PsychHIDOpenUSBDevice.c in Sources */ = {isa = PBXBuildFile; fileRef = F16C715E0F86999500A8BE72 /* PsychHIDOpenUSBDevice.c */; };
+		8310AC4B0F87C24C004AAE79 /* PsychHIDUSBControlTransfer.c in Sources */ = {isa = PBXBuildFile; fileRef = F1BCA5ED0F8676BD00EABA6F /* PsychHIDUSBControlTransfer.c */; };
 		8320C1B60D1F1C3F00B8039D /* PsychVideoCaptureSupportQuickTime.c in Sources */ = {isa = PBXBuildFile; fileRef = 8320C1B50D1F1C3F00B8039D /* PsychVideoCaptureSupportQuickTime.c */; };
 		8320C1B70D1F1C3F00B8039D /* PsychVideoCaptureSupportQuickTime.c in Sources */ = {isa = PBXBuildFile; fileRef = 8320C1B50D1F1C3F00B8039D /* PsychVideoCaptureSupportQuickTime.c */; };
 		8320C1B90D1F1C5F00B8039D /* PsychVideoCaptureSupportLibDC1394.c in Sources */ = {isa = PBXBuildFile; fileRef = 8320C1B80D1F1C5F00B8039D /* PsychVideoCaptureSupportLibDC1394.c */; };
@@ -1716,6 +1719,8 @@
 		8370C71F096A014E00BD4C8C /* PsychTextureSupport.c in Sources */ = {isa = PBXBuildFile; fileRef = 8370C71E096A014E00BD4C8C /* PsychTextureSupport.c */; };
 		837A6DC20BBB106E003AB0BE /* SCREENNull.c in Sources */ = {isa = PBXBuildFile; fileRef = 837A6DC10BBB106E003AB0BE /* SCREENNull.c */; };
 		837A6DC30BBB106E003AB0BE /* SCREENNull.c in Sources */ = {isa = PBXBuildFile; fileRef = 837A6DC10BBB106E003AB0BE /* SCREENNull.c */; };
+		838000260F826D1000234D3F /* EyelinkGetQueuedData.c in Sources */ = {isa = PBXBuildFile; fileRef = 838000250F826D1000234D3F /* EyelinkGetQueuedData.c */; };
+		838000270F826D1000234D3F /* EyelinkGetQueuedData.c in Sources */ = {isa = PBXBuildFile; fileRef = 838000250F826D1000234D3F /* EyelinkGetQueuedData.c */; };
 		83836B030943858F007E4DF5 /* SCREENPreloadTextures.c in Sources */ = {isa = PBXBuildFile; fileRef = 83836B020943858F007E4DF5 /* SCREENPreloadTextures.c */; };
 		838A9BAC0DBBF4A600610117 /* IOPort.cc in Sources */ = {isa = PBXBuildFile; fileRef = 838A9BAB0DBBF4A600610117 /* IOPort.cc */; };
 		838A9BAD0DBBF4A600610117 /* IOPort.cc in Sources */ = {isa = PBXBuildFile; fileRef = 838A9BAB0DBBF4A600610117 /* IOPort.cc */; settings = {COMPILER_FLAGS = "-x c++"; }; };
@@ -1784,6 +1789,7 @@
 		83CBD6840BC02323007CB68C /* moglcore.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD67A0BC02323007CB68C /* moglcore.c */; };
 		83CBD6850BC02323007CB68C /* mogloctaveglue.cc in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD67B0BC02323007CB68C /* mogloctaveglue.cc */; };
 		83CBD6F90BC02F0E007CB68C /* mogl_rebinder.c in Sources */ = {isa = PBXBuildFile; fileRef = 83CBD6F80BC02F0E007CB68C /* mogl_rebinder.c */; settings = {COMPILER_FLAGS = "-x c"; }; };
+		83CC360C0F63046B00EBA5E7 /* PsychHIDGenericUSBSupport.c in Sources */ = {isa = PBXBuildFile; fileRef = F13E934E0F534180007D7EA0 /* PsychHIDGenericUSBSupport.c */; };
 		83D93B2C0A4D03B900B82353 /* SCREENSetOpenGLTextureFromMemPointer.c in Sources */ = {isa = PBXBuildFile; fileRef = 83D93B2B0A4D03B900B82353 /* SCREENSetOpenGLTextureFromMemPointer.c */; };
 		83DBBD000C332374002B3C93 /* AGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83DBBCFF0C332374002B3C93 /* AGL.framework */; };
 		83DBBD010C332374002B3C93 /* AGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83DBBCFF0C332374002B3C93 /* AGL.framework */; };
@@ -2005,6 +2011,7 @@
 		F089BCFD0AD42DF500663D86 /* System.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F9ABA23045F38B7007A7274 /* System.framework */; };
 		F089BCFE0AD42DF500663D86 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2FACA6820766CB0400A159D3 /* SystemConfiguration.framework */; };
 		F111E6580AD4BDD60090A83E /* libHIDUtilities-Intel.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F111E6570AD4BDD60090A83E /* libHIDUtilities-Intel.a */; };
+		F13E93500F53421E007D7EA0 /* PsychHIDGenericUSBSupport.c in Sources */ = {isa = PBXBuildFile; fileRef = F13E934E0F534180007D7EA0 /* PsychHIDGenericUSBSupport.c */; };
 		F14A27AF0AD48A2A00BFB68F /* MachGetPriorityMex.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F95011D04E446B9007A7274 /* MachGetPriorityMex.c */; };
 		F14A27B00AD48A2A00BFB68F /* MachPriorityCommonMex.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F95012904E85245007A7274 /* MachPriorityCommonMex.c */; };
 		F14A27B10AD48A2A00BFB68F /* mexversion.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F26E8BD04343B30007A7274 /* mexversion.c */; };
@@ -2468,6 +2475,9 @@
 		F14A2B730AD4ACE700BFB68F /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69ED03DBFA8E01866A1C /* CoreAudio.framework */; };
 		F14A2B740AD4ACE700BFB68F /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C69FA03DCAC5101866A1C /* CoreServices.framework */; };
 		F14A2B760AD4ACE700BFB68F /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5FCC41A03833708017A7028 /* OpenGL.framework */; };
+		F16C715F0F86999500A8BE72 /* PsychHIDCloseUSBDevice.c in Sources */ = {isa = PBXBuildFile; fileRef = F16C715D0F86999500A8BE72 /* PsychHIDCloseUSBDevice.c */; };
+		F16C71600F86999500A8BE72 /* PsychHIDOpenUSBDevice.c in Sources */ = {isa = PBXBuildFile; fileRef = F16C715E0F86999500A8BE72 /* PsychHIDOpenUSBDevice.c */; };
+		F1BCA5F00F8676BD00EABA6F /* PsychHIDUSBControlTransfer.c in Sources */ = {isa = PBXBuildFile; fileRef = F1BCA5ED0F8676BD00EABA6F /* PsychHIDUSBControlTransfer.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -3105,7 +3115,7 @@
 		};
 		2FEBA66E098862D800F4165F /* PBXBuildRule */ = {
 			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.gcc.3_3;
+			compilerSpec = com.apple.compilers.gcc;
 			fileType = sourcecode.asm;
 			isEditable = 1;
 			outputFiles = (
@@ -3113,7 +3123,7 @@
 		};
 		2FEBA66F098862D800F4165F /* PBXBuildRule */ = {
 			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.gcc.3_3;
+			compilerSpec = com.apple.compilers.gcc;
 			fileType = sourcecode.c;
 			isEditable = 1;
 			outputFiles = (
@@ -3342,7 +3352,7 @@
 /* Begin PBXFileReference section */
 		089C165DFE840E0CC02AAC07 /* English */ = {isa = PBXFileReference; fileEncoding = 10; lastKnownFileType = text.plist.strings; name = English; path = English.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		0E92E896095726FE002687D9 /* Eyelink.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Eyelink.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		0E92E8A2095726FF002687D9 /* Info-DoNothing copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-DoNothing copy.plist"; sourceTree = "<group>"; };
+		0E92E8A2095726FF002687D9 /* Info-DoNothing copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-DoNothing copy.plist"; sourceTree = "<group>"; };
 		0E92E8AE09572831002687D9 /* RegisterProject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = RegisterProject.h; path = ../../../Source/Common/Eyelink/RegisterProject.h; sourceTree = SOURCE_ROOT; };
 		0E92E8AF09572831002687D9 /* RegisterProject.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = RegisterProject.c; path = ../../../Source/Common/Eyelink/RegisterProject.c; sourceTree = SOURCE_ROOT; };
 		0E92E8B009572831002687D9 /* EyelinkCreateDataStructs.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = EyelinkCreateDataStructs.c; path = ../../../Source/Common/Eyelink/EyelinkCreateDataStructs.c; sourceTree = SOURCE_ROOT; };
@@ -3387,7 +3397,7 @@
 		2F19007704A03C39007A7274 /* mex.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = mex.h; path = /Applications/MATLAB71/extern/include/mex.h; sourceTree = "<absolute>"; };
 		2F19007804A03C62007A7274 /* matrix.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = matrix.h; path = /Applications/MATLAB71/extern/include/matrix.h; sourceTree = "<absolute>"; };
 		2F1EB81D05447D4A00A80166 /* ApplicationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ApplicationServices.framework; path = /System/Library/Frameworks/ApplicationServices.framework; sourceTree = "<absolute>"; };
-		2F26E8BD04343B30007A7274 /* mexversion.c */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.c; fileEncoding = 30; name = mexversion.c; path = /Applications/MATLAB73/extern/src/mexversion.c; sourceTree = "<absolute>"; };
+		2F26E8BD04343B30007A7274 /* mexversion.c */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.c; fileEncoding = 30; name = mexversion.c; path = /Applications/MATLAB74/extern/src/mexversion.c; sourceTree = "<absolute>"; };
 		2F29D8F204B90844007A7274 /* RegisterProject.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = RegisterProject.c; path = ../../../Source/Common/SysBeep/RegisterProject.c; sourceTree = SOURCE_ROOT; };
 		2F29D8F304B90844007A7274 /* RegisterProject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = RegisterProject.h; path = ../../../Source/Common/SysBeep/RegisterProject.h; sourceTree = SOURCE_ROOT; };
 		2F29D8F404B90844007A7274 /* SysBeep.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SysBeep.c; path = ../../../Source/Common/SysBeep/SysBeep.c; sourceTree = SOURCE_ROOT; };
@@ -3416,11 +3426,11 @@
 		2F4A2DF0069CBAFA0005EA67 /* FontInfo.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = FontInfo.c; path = ../../../Source/OSX/Fonts/FontInfo.c; sourceTree = SOURCE_ROOT; };
 		2F4A2DF1069CBAFA0005EA67 /* RegisterProject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = RegisterProject.h; path = ../../../Source/OSX/Fonts/RegisterProject.h; sourceTree = SOURCE_ROOT; };
 		2F4A57DD053A94E600A80166 /* SCREENTestTexture.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENTestTexture.c; path = ../../../Source/Common/Screen/SCREENTestTexture.c; sourceTree = SOURCE_ROOT; };
-		2F4D83D907B8282C00CE685A /* PsychAlphaBlending.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychAlphaBlending.c; path = ../../../Source/OSX/Screen/PsychAlphaBlending.c; sourceTree = SOURCE_ROOT; };
-		2F4D83DA07B8282C00CE685A /* PsychAlphaBlending.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = PsychAlphaBlending.h; path = ../../../Source/OSX/Screen/PsychAlphaBlending.h; sourceTree = SOURCE_ROOT; };
-		2F5432B6090415800051D6CC /* Info-DoNothing copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; name = "Info-DoNothing copy.plist"; path = "/Users/ingling/Desktop/1.0.6/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-DoNothing copy.plist"; sourceTree = "<absolute>"; };
+		2F4D83D907B8282C00CE685A /* PsychAlphaBlending.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychAlphaBlending.c; path = ../../../Source/Common/Screen/PsychAlphaBlending.c; sourceTree = SOURCE_ROOT; };
+		2F4D83DA07B8282C00CE685A /* PsychAlphaBlending.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = PsychAlphaBlending.h; path = ../../../Source/Common/Screen/PsychAlphaBlending.h; sourceTree = SOURCE_ROOT; };
+		2F5432B6090415800051D6CC /* Info-DoNothing copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = "Info-DoNothing copy.plist"; path = "/Users/ingling/Desktop/1.0.6/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-DoNothing copy.plist"; sourceTree = "<absolute>"; };
 		2F54335C090431DC0051D6CC /* DoNothing.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DoNothing.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		2F54335E090431DC0051D6CC /* Info-DoNothing copy 2.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; name = "Info-DoNothing copy 2.plist"; path = "/Users/ingling/Desktop/1.0.6/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-DoNothing copy 2.plist"; sourceTree = "<absolute>"; };
+		2F54335E090431DC0051D6CC /* Info-DoNothing copy 2.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = "Info-DoNothing copy 2.plist"; path = "/Users/ingling/Desktop/1.0.6/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-DoNothing copy 2.plist"; sourceTree = "<absolute>"; };
 		2F5434D70904C5DB0051D6CC /* PsychHIDGiveMeReports.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychHIDGiveMeReports.c; path = ../../../Source/Common/PsychHID/PsychHIDGiveMeReports.c; sourceTree = SOURCE_ROOT; };
 		2F5434E40904C61F0051D6CC /* PsychHIDReceiveReports.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychHIDReceiveReports.c; path = ../../../Source/Common/PsychHID/PsychHIDReceiveReports.c; sourceTree = SOURCE_ROOT; };
 		2F5434E60904C6A40051D6CC /* PsychHIDReceiveReportsStop.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychHIDReceiveReportsStop.c; path = ../../../Source/Common/PsychHID/PsychHIDReceiveReportsStop.c; sourceTree = SOURCE_ROOT; };
@@ -3434,7 +3444,7 @@
 		2F550B9E04B7F90A007A7274 /* GetTicks.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = GetTicks.h; path = ../../../Source/Common/GetTicks/GetTicks.h; sourceTree = SOURCE_ROOT; };
 		2F56E1D006095AB300A62EA5 /* SCREENGetFlipInterval.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENGetFlipInterval.c; path = ../../../Source/Common/Screen/SCREENGetFlipInterval.c; sourceTree = SOURCE_ROOT; };
 		2F57E38308CEB64200A5CF85 /* StoreBit.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StoreBit.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		2F57E38508CEB64300A5CF85 /* Info-GetSecs copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; name = "Info-GetSecs copy.plist"; path = "/Development/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-GetSecs copy.plist"; sourceTree = "<absolute>"; };
+		2F57E38508CEB64300A5CF85 /* Info-GetSecs copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = "Info-GetSecs copy.plist"; path = "/Development/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-GetSecs copy.plist"; sourceTree = "<absolute>"; };
 		2F57E38908CEB71400A5CF85 /* StoreBit.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = StoreBit.h; path = ../../../Source/Experiments/StoreBit/StoreBit.h; sourceTree = SOURCE_ROOT; };
 		2F57E38A08CEB71500A5CF85 /* StoreBit.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = StoreBit.c; path = ../../../Source/Experiments/StoreBit/StoreBit.c; sourceTree = SOURCE_ROOT; };
 		2F57E38B08CEB71500A5CF85 /* RegisterProject.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = RegisterProject.c; path = ../../../Source/Experiments/StoreBit/RegisterProject.c; sourceTree = SOURCE_ROOT; };
@@ -3525,8 +3535,8 @@
 		2FD614DD07306666008DA6B4 /* GetBusFrequencyMex.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GetBusFrequencyMex.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FD6151107306666008DA6B4 /* Info-GetBusTicks.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-GetBusTicks.plist"; sourceTree = "<group>"; };
 		2FD6151307306666008DA6B4 /* GetBusTicks.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GetBusTicks.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		2FD6154B07306666008DA6B4 /* Info-GetChar.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-GetChar.plist"; sourceTree = "<group>"; };
-		2FD6154D07306666008DA6B4 /* CocoaEventBridge.mexmac.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CocoaEventBridge.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2FD6154B07306666008DA6B4 /* Info-GetChar.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-GetChar.plist"; sourceTree = "<group>"; };
+		2FD6154D07306666008DA6B4 /* CocoaEventBridge.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CocoaEventBridge.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FD6158307306666008DA6B4 /* Info-GetPID.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-GetPID.plist"; sourceTree = "<group>"; };
 		2FD6158507306666008DA6B4 /* GetPID.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GetPID.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FD615BB07306666008DA6B4 /* Info-GetSecs.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-GetSecs.plist"; sourceTree = "<group>"; };
@@ -3646,7 +3656,7 @@
 		8325CED40CAF15E900B498CD /* PsychHIDKbTriggerWait.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychHIDKbTriggerWait.c; path = ../../../Source/Common/PsychHID/PsychHIDKbTriggerWait.c; sourceTree = SOURCE_ROOT; };
 		832CE4AD094CA6AF00578C09 /* SCREENFillArc.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENFillArc.c; path = ../../../Source/Common/Screen/SCREENFillArc.c; sourceTree = SOURCE_ROOT; };
 		832CE62B094CE8C300578C09 /* PsychSound.mexmac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PsychSound.mexmac.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		832CE62D094CE8C300578C09 /* Info-DoNothing copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-DoNothing copy.plist"; sourceTree = "<group>"; };
+		832CE62D094CE8C300578C09 /* Info-DoNothing copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-DoNothing copy.plist"; sourceTree = "<group>"; };
 		832CE655094CE9F600578C09 /* RegisterProject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = RegisterProject.h; path = ../../../Source/Common/PsychSound/RegisterProject.h; sourceTree = SOURCE_ROOT; };
 		832CE656094CE9F600578C09 /* RegisterProject.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = RegisterProject.c; path = ../../../Source/Common/PsychSound/RegisterProject.c; sourceTree = SOURCE_ROOT; };
 		832CE657094CE9F600578C09 /* PsychSound.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = PsychSound.h; path = ../../../Source/Common/PsychSound/PsychSound.h; sourceTree = SOURCE_ROOT; };
@@ -3708,6 +3718,7 @@
 		8370C71C096A013600BD4C8C /* PsychTextureSupport.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = PsychTextureSupport.h; path = ../../../Source/Common/Screen/PsychTextureSupport.h; sourceTree = SOURCE_ROOT; };
 		8370C71E096A014E00BD4C8C /* PsychTextureSupport.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = PsychTextureSupport.c; path = ../../../Source/Common/Screen/PsychTextureSupport.c; sourceTree = SOURCE_ROOT; };
 		837A6DC10BBB106E003AB0BE /* SCREENNull.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENNull.c; path = ../../../Source/Common/Screen/SCREENNull.c; sourceTree = SOURCE_ROOT; };
+		838000250F826D1000234D3F /* EyelinkGetQueuedData.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = EyelinkGetQueuedData.c; path = ../../../Source/Common/Eyelink/EyelinkGetQueuedData.c; sourceTree = SOURCE_ROOT; };
 		83836B020943858F007E4DF5 /* SCREENPreloadTextures.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENPreloadTextures.c; path = ../../../Source/Common/Screen/SCREENPreloadTextures.c; sourceTree = SOURCE_ROOT; };
 		838A9BAB0DBBF4A600610117 /* IOPort.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOPort.cc; sourceTree = "<group>"; };
 		8395A9B60BBF290900FC482E /* FontInfo.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = FontInfo.cc; path = ../../../Source/Octave/FontInfo.cc; sourceTree = SOURCE_ROOT; };
@@ -3789,6 +3800,7 @@
 		F074321A0AD465B400602397 /* MachSetPriorityMex.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = MachSetPriorityMex.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
 		F089BD090AD42DF500663D86 /* Screen.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = Screen.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
 		F111E6570AD4BDD60090A83E /* libHIDUtilities-Intel.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libHIDUtilities-Intel.a"; sourceTree = "<group>"; };
+		F13E934E0F534180007D7EA0 /* PsychHIDGenericUSBSupport.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PsychHIDGenericUSBSupport.c; path = ../../../Source/OSX/PsychHID/PsychHIDGenericUSBSupport.c; sourceTree = SOURCE_ROOT; };
 		F14A27C20AD48A2A00BFB68F /* MachGetPriorityMex.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = MachGetPriorityMex.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
 		F14A27FD0AD48C1200BFB68F /* PsychHID.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = PsychHID.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
 		F14A28450AD48DDF00BFB68F /* Eyelink.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = Eyelink.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -3812,6 +3824,9 @@
 		F14A2B2E0AD4ABB500BFB68F /* IOPort.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = IOPort.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
 		F14A2B590AD4AC8000BFB68F /* MachPriority.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = MachPriority.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
 		F14A2B800AD4ACE700BFB68F /* MachAbsoluteTimeClockFrequency.mexmaci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.objfile"; includeInIndex = 0; path = MachAbsoluteTimeClockFrequency.mexmaci; sourceTree = BUILT_PRODUCTS_DIR; };
+		F16C715D0F86999500A8BE72 /* PsychHIDCloseUSBDevice.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PsychHIDCloseUSBDevice.c; path = ../../../Source/Common/PsychHID/PsychHIDCloseUSBDevice.c; sourceTree = SOURCE_ROOT; };
+		F16C715E0F86999500A8BE72 /* PsychHIDOpenUSBDevice.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PsychHIDOpenUSBDevice.c; path = ../../../Source/Common/PsychHID/PsychHIDOpenUSBDevice.c; sourceTree = SOURCE_ROOT; };
+		F1BCA5ED0F8676BD00EABA6F /* PsychHIDUSBControlTransfer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PsychHIDUSBControlTransfer.c; path = ../../../Source/Common/PsychHID/PsychHIDUSBControlTransfer.c; sourceTree = SOURCE_ROOT; };
 		F50D529103D4D6F9012326C4 /* SCREENHideCursorHelper.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENHideCursorHelper.c; path = ../../../Source/Common/Screen/SCREENHideCursorHelper.c; sourceTree = SOURCE_ROOT; };
 		F50D529203D4D6F9012326C4 /* SCREENShowCursorHelper.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENShowCursorHelper.c; path = ../../../Source/Common/Screen/SCREENShowCursorHelper.c; sourceTree = SOURCE_ROOT; };
 		F50D529703D4FA79012326C4 /* SCREENSetMouseHelper.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = SCREENSetMouseHelper.c; path = ../../../Source/Common/Screen/SCREENSetMouseHelper.c; sourceTree = SOURCE_ROOT; };
@@ -4898,6 +4913,7 @@
 			children = (
 				806F15D40AF62BBD005949BE /* core_expt.h */,
 				805723350A51DDB900DF6EF6 /* eyelink.h */,
+				838000250F826D1000234D3F /* EyelinkGetQueuedData.c */,
 				80AB76D80A52FE1F00E7FB48 /* EyelinkGetTrackerVersion.c */,
 				80AB76B50A52F83100E7FB48 /* EyelinkReceiveFile.c */,
 				80AB76B10A52F7EE00E7FB48 /* EyelinkReadTime.c */,
@@ -5318,6 +5334,10 @@
 		2F9ABA17045F3596007A7274 /* PsychHID */ = {
 			isa = PBXGroup;
 			children = (
+				F16C715D0F86999500A8BE72 /* PsychHIDCloseUSBDevice.c */,
+				F16C715E0F86999500A8BE72 /* PsychHIDOpenUSBDevice.c */,
+				F1BCA5ED0F8676BD00EABA6F /* PsychHIDUSBControlTransfer.c */,
+				F13E934E0F534180007D7EA0 /* PsychHIDGenericUSBSupport.c */,
 				CF566E6807F7D2FC00D4957A /* RegisterProject.h */,
 				CF566E6907F7D2FC00D4957A /* RegisterProject.c */,
 				CF566E7307F7D2FC00D4957A /* PsychHID.h */,
@@ -5373,6 +5393,7 @@
 				2F742337068A830200D66E0C /* ScreenPreferenceState.c */,
 				F569F256038E2C77017A7028 /* ScreenSynopsis.c */,
 				F569F253038E2C77017A7028 /* ScreenExit.c */,
+				2F4D83D907B8282C00CE685A /* PsychAlphaBlending.c */,
 				F569F24F038E2C77017A7028 /* PsychGLGlue.c */,
 				8306696B0D3920D50009C12B /* PsychGraphicsHardwareHALSupport.c */,
 				0F45C2A30B264AE6004ED5F0 /* PsychImagingPipelineSupport.c */,
@@ -5767,7 +5788,6 @@
 				F5AF1EE603B3C6F5017A7028 /* PsychWindowGlue.h */,
 				F5CC1A0B03948070017A7028 /* PsychVideoGlue.h */,
 				2F588F27056AC650007A711C /* PsychWindowTextGlue.h */,
-				2F4D83DA07B8282C00CE685A /* PsychAlphaBlending.h */,
 				83C94B00092823A80062DB0A /* PsychMovieSupport.h */,
 			);
 			name = Headers;
@@ -5779,7 +5799,6 @@
 				F5CD7AA103B12857017A7028 /* PsychScreenGlue.c */,
 				F5CC19FE0394691F017A7028 /* PsychWindowGlue.c */,
 				2F588F29056AC66D007A711C /* PsychWindowTextGlue.c */,
-				2F4D83D907B8282C00CE685A /* PsychAlphaBlending.c */,
 				83C94B02092823C00062DB0A /* PsychMovieSupport.c */,
 			);
 			name = Source;
@@ -5878,6 +5897,7 @@
 				0F35BB060B23DF9F0083A954 /* glxew.h */,
 				0F35BB070B23DFAD0083A954 /* wglew.h */,
 				F55903740385C81D017A7028 /* RegisterProject.h */,
+				2F4D83DA07B8282C00CE685A /* PsychAlphaBlending.h */,
 				83066A8A0D39AEAF0009C12B /* PsychGraphicsCardRegisterSpecs.h */,
 				8306696E0D3923440009C12B /* PsychGraphicsHardwareHALSupport.h */,
 				0F45C2A20B264AC3004ED5F0 /* PsychImagingPipelineSupport.h */,
@@ -8234,6 +8254,7 @@
 			);
 			mainGroup = 29B97314FDCFA39411CA2CEA /* TestPBMex */;
 			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				2FEBA482098861FB00F4165F /* CocoaEventBridge */,
 				2FEBA43009885B4700F4165F /* DoNothing */,
@@ -10979,6 +11000,7 @@
 			files = (
 				2FEBA8FE098990F500F4165F /* mexversion.c in Sources */,
 				2FEBA8FF098990F600F4165F /* MiniBox.c in Sources */,
+				F13E93500F53421E007D7EA0 /* PsychHIDGenericUSBSupport.c in Sources */,
 				2FEBA900098990F700F4165F /* MODULEVersion.c in Sources */,
 				2FEBA901098990F700F4165F /* ProjectTable.c in Sources */,
 				2FEBA902098990F800F4165F /* PsychAuthors.c in Sources */,
@@ -11019,6 +11041,9 @@
 				8325CED20CAF15DC00B498CD /* PsychHIDKbQueueStop.c in Sources */,
 				8325CED50CAF15E900B498CD /* PsychHIDKbTriggerWait.c in Sources */,
 				83AD4CF00DC5172A002E1DF7 /* PsychCellGlue.c in Sources */,
+				F1BCA5F00F8676BD00EABA6F /* PsychHIDUSBControlTransfer.c in Sources */,
+				F16C715F0F86999500A8BE72 /* PsychHIDCloseUSBDevice.c in Sources */,
+				F16C71600F86999500A8BE72 /* PsychHIDOpenUSBDevice.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -11350,6 +11375,7 @@
 				806E8B220B63F8780096FC7B /* EyelinkTrackerTime.c in Sources */,
 				806E8B250B63F9350096FC7B /* EyeLinkTargetCheck.c in Sources */,
 				806E8B2C0B63FC500096FC7B /* EyelinkTimeOffset.c in Sources */,
+				838000270F826D1000234D3F /* EyelinkGetQueuedData.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -11729,6 +11755,10 @@
 				8325CED30CAF15DC00B498CD /* PsychHIDKbQueueStop.c in Sources */,
 				8325CED60CAF15E900B498CD /* PsychHIDKbTriggerWait.c in Sources */,
 				83AD4CF20DC51739002E1DF7 /* PsychCellGlue.c in Sources */,
+				83CC360C0F63046B00EBA5E7 /* PsychHIDGenericUSBSupport.c in Sources */,
+				8310AC490F87C222004AAE79 /* PsychHIDCloseUSBDevice.c in Sources */,
+				8310AC4A0F87C237004AAE79 /* PsychHIDOpenUSBDevice.c in Sources */,
+				8310AC4B0F87C24C004AAE79 /* PsychHIDUSBControlTransfer.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -11788,6 +11818,7 @@
 				806E8B550B6412800096FC7B /* EyelinkTimeOffset.c in Sources */,
 				806E8B560B6413E80096FC7B /* EyelinkGetNextDataType.c in Sources */,
 				806E8B570B6413FC0096FC7B /* EyelinkGetFloatData.c in Sources */,
+				838000260F826D1000234D3F /* EyelinkGetQueuedData.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -12255,7 +12286,6 @@
 				INFOPLIST_FILE = "/SourceCode/osxptb/trunk/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-Eyelink.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -12390,7 +12420,6 @@
 				INFOPLIST_FILE = "Info-DoNothing.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -12525,7 +12554,6 @@
 				INFOPLIST_FILE = "Info-FontInfo.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -12660,7 +12688,6 @@
 				INFOPLIST_FILE = "Info-Gestalt.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -12795,7 +12822,6 @@
 				INFOPLIST_FILE = "Info-GetBusFrequencyMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -12930,7 +12956,6 @@
 				INFOPLIST_FILE = "Info-GetBusTicks.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13065,7 +13090,6 @@
 				INFOPLIST_FILE = "Info-CocoaEventBridge.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13200,7 +13224,6 @@
 				INFOPLIST_FILE = "Info-GetPID.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13335,7 +13358,6 @@
 				INFOPLIST_FILE = "Info-GetSecs.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13472,7 +13494,6 @@
 				INFOPLIST_FILE = "Info-GetSecsMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13603,7 +13624,6 @@
 				INFOPLIST_FILE = "Info-GetSecsTick.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13738,7 +13758,6 @@
 				INFOPLIST_FILE = "Info-GetTicks.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -13873,7 +13892,6 @@
 				INFOPLIST_FILE = "Info-IOPort.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14008,7 +14026,6 @@
 				INFOPLIST_FILE = "Info-MachGetPriorityMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14143,7 +14160,6 @@
 				INFOPLIST_FILE = "Info-MachPriority.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14278,7 +14294,6 @@
 				INFOPLIST_FILE = "Info-MachSetPriorityMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14413,7 +14428,6 @@
 				INFOPLIST_FILE = "Info-MachAbsoluteTimeClockFrequency.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14554,7 +14568,6 @@
 					"$(SRCROOT)",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14699,7 +14712,6 @@
 				INFOPLIST_FILE = "Info-Rush.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14838,7 +14850,6 @@
 				INFOPLIST_FILE = "Info-Screen.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -14981,7 +14992,6 @@
 				INFOPLIST_FILE = "Info-SysBeep.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -15116,7 +15126,6 @@
 				INFOPLIST_FILE = "Info-TestPriorityMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -15251,7 +15260,6 @@
 				INFOPLIST_FILE = "Info-WaitSecs.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -15388,7 +15396,6 @@
 				INFOPLIST_FILE = "Info-WaitSecsMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -15512,7 +15519,8 @@
 					"$(LIBRARY_SEARCH_PATHS)",
 				);
 				MATLAB_DIR_NAME = MATLAB74;
-				USER_HEADER_SEARCH_PATHS = "$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/src $(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include $(USER_HEADER_SEARCH_PATHS)";
+				SDKROOT = /Developer/SDKs/MacOSX10.4u.sdk;
+				USER_HEADER_SEARCH_PATHS = "/usr/local/include $(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/src $(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/extern/include $(USER_HEADER_SEARCH_PATHS)";
 			};
 			name = Development;
 		};
@@ -15521,6 +15529,7 @@
 			buildSettings = {
 				GCC_INPUT_FILETYPE = sourcecode.c.c;
 				MATLAB_DIR_NAME = MATLAB71;
+				SDKROOT = /Developer/SDKs/MacOSX10.4u.sdk;
 			};
 			name = Deployment;
 		};
@@ -15529,6 +15538,7 @@
 			buildSettings = {
 				GCC_INPUT_FILETYPE = sourcecode.c.c;
 				MATLAB_DIR_NAME = MATLAB71;
+				SDKROOT = /Developer/SDKs/MacOSX10.4u.sdk;
 			};
 			name = Default;
 		};
@@ -15552,7 +15562,6 @@
 				INFOPLIST_FILE = "Info-StoreBit.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -16941,7 +16950,7 @@
 				);
 				LINK_WITH_STANDARD_LIBRARIES = YES;
 				MACH_O_TYPE = mh_bundle;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
+				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19065,7 +19074,6 @@
 				INFOPLIST_FILE = "Info-CocoaEventBridge.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19110,7 +19118,6 @@
 				INFOPLIST_FILE = "Info-DoNothing.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19155,7 +19162,6 @@
 				INFOPLIST_FILE = "Info-FontInfo.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19200,7 +19206,6 @@
 				INFOPLIST_FILE = "Info-Gestalt.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19245,7 +19250,6 @@
 				INFOPLIST_FILE = "Info-GetBusFrequencyMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19290,7 +19294,6 @@
 				INFOPLIST_FILE = "Info-GetBusTicks.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19335,7 +19338,6 @@
 				INFOPLIST_FILE = "Info-GetPID.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19380,7 +19382,6 @@
 				INFOPLIST_FILE = "Info-GetSecs.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19425,7 +19426,6 @@
 				INFOPLIST_FILE = "Info-GetSecsMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19470,7 +19470,6 @@
 				INFOPLIST_FILE = "Info-GetSecsTick.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19515,7 +19514,6 @@
 				INFOPLIST_FILE = "Info-GetTicks.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19560,7 +19558,6 @@
 				INFOPLIST_FILE = "Info-IOPort.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19605,7 +19602,6 @@
 				INFOPLIST_FILE = "Info-MachGetPriorityMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19650,7 +19646,6 @@
 				INFOPLIST_FILE = "Info-MachPriority.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19695,7 +19690,6 @@
 				INFOPLIST_FILE = "Info-MachSetPriorityMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19740,7 +19734,6 @@
 				INFOPLIST_FILE = "Info-MachAbsoluteTimeClockFrequency.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19789,7 +19782,6 @@
 					"$(SRCROOT)",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19840,7 +19832,6 @@
 					"$(SRCROOT)/../../../Source/Common/PsychSound/StaticOpenALLib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19885,7 +19876,6 @@
 				INFOPLIST_FILE = "Info-Rush.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19934,7 +19924,6 @@
 				INFOPLIST_FILE = "Info-Screen.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -19979,7 +19968,6 @@
 				INFOPLIST_FILE = "Info-StoreBit.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20024,7 +20012,6 @@
 				INFOPLIST_FILE = "Info-SysBeep.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20069,7 +20056,6 @@
 				INFOPLIST_FILE = "Info-TestPriorityMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20114,7 +20100,6 @@
 				INFOPLIST_FILE = "Info-WaitSecs.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20159,7 +20144,6 @@
 				INFOPLIST_FILE = "Info-WaitSecsMex.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20204,7 +20188,6 @@
 				INFOPLIST_FILE = "/SourceCode/osxptb/trunk/PsychSourceGL/Projects/MacOSX/PsychToolbox/Info-Eyelink.plist";
 				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20248,7 +20231,10 @@
 					PTBOCTAVE,
 					HAVE_OCTAVE_21,
 				);
-				HEADER_SEARCH_PATHS = "/usr/local/include/octave-2.1.73//**";
+				HEADER_SEARCH_PATHS = (
+					"/usr/local/include//**",
+					"/usr/local/include/octave-2.1.73//**",
+				);
 				INSTALL_PATH = "/$(PSYCHOCTDESTFOLDER)";
 				KEEP_PRIVATE_EXTERNS = NO;
 				LIBRARY_SEARCH_PATHS = "\"/usr/local/lib/octave-2.1.73\"/**";
@@ -20269,6 +20255,7 @@
 					"-lstdc++",
 					"-loctave",
 				);
+				PREBINDING = NO;
 				PRIVATE_HEADERS_FOLDER_PATH = /usr/local/include;
 				PSYCHOCTDESTFOLDER = PsychBasic/OctaveOSXFiles/;
 				PSYCHTOOLBOXROOT = /Users/kleinerm/projects/OpenGLPsychtoolbox/trunk/Psychtoolbox;
@@ -20303,7 +20290,6 @@
 					"$(SRCROOT)/../../../Source/Common/PsychSound/StaticOpenALLib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-fexceptions",
 					"-no-cpp-precomp",
@@ -20476,6 +20462,7 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = PsychPortAudio;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				SDKROOT = "";
 				STRIP_STYLE = all;
 				WARNING_CFLAGS = "-Wno-long-double";
 			};
@@ -20583,6 +20570,7 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = PsychPortAudio;
 				PSYCHTOOLBOX_SUBFOLDER = PsychBasic;
+				SDKROOT = "";
 				STRIP_STYLE = all;
 				WARNING_CFLAGS = "-Wno-long-double";
 			};

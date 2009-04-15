@@ -49,18 +49,20 @@ void InitializeSynopsis()
 
 	// Init or close eyelink
 	synopsis[i++] = "\n% Initialize or shutdown Eyelink connection:";
-	synopsis[i++] = "[status =] Eyelink('Initialize')";
-	synopsis[i++] = "[status =] Eyelink('InitializeDummy')";
+	synopsis[i++] = "[status =] Eyelink('Initialize' [, displayCallbackFunction])";
+	synopsis[i++] = "[status =] Eyelink('InitializeDummy' [, displayCallbackFunction])";
 	synopsis[i++] = "status = Eyelink('IsConnected')";
 	synopsis[i++] = "Eyelink('Shutdown')";
+	synopsis[i++] = "oldlevel = Eyelink('Verbosity' [,level]);";
+	synopsis[i++] = "Eyelink('TestSuite')";
 	synopsis[i++] = "[status =] Eyelink('OpenFile','filename')";
 	synopsis[i++] = "[status =] Eyelink('CloseFile')";
 	synopsis[i++] = "[status =] Eyelink('ReceiveFile',['filename'], ['dest'], ['dest_is_path'])";
 	
 	// Calibration
 	synopsis[i++] = "\n% Calibration:";
-	synopsis[i++] = "[result =] Eyelink('StartSetup')";
-	synopsis[i++] = "[status = ] Eyelink('DriftCorrStart', x, y)";
+	synopsis[i++] = "[result =] Eyelink('StartSetup' [, stype=0])";
+	synopsis[i++] = "[status = ] Eyelink('DriftCorrStart', x, y [,dtype=0][, dodraw=1][, allow_setup=0])";
 	synopsis[i++] = "[result = ] Eyelink('ApplyDriftCorr')";
 	synopsis[i++] = "[result, tx, ty] = Eyelink('TargetCheck')";
 	synopsis[i++] = "[result = ] Eyelink('AcceptTrigger')";
@@ -73,10 +75,12 @@ void InitializeSynopsis()
 	synopsis[i++] =  "eyeused = Eyelink('EyeAvailable')";
 	synopsis[i++] = "NewOrOld = Eyelink('NewFloatSampleAvailable')";
 	synopsis[i++] = "sample = Eyelink('NewestFloatSample')";
-	synopsis[i++] = "[sample, raw] = Eyelink('NewestFloatSampleRaw')";
+	synopsis[i++] = "[sample, raw] = Eyelink('NewestFloatSampleRaw' [, eye])";
 	synopsis[i++] = "type = Eyelink('GetNextDataType')";
 	synopsis[i++]  = "item = Eyelink('GetFloatData', type)";
-
+	synopsis[i++]  = "[item, raw] = Eyelink('GetFloatDataRaw', type [, eye])";
+	synopsis[i++]  = "[samples, events, drained] = Eyelink('GetQueuedData'[, eye])";
+    
 	// Misc eyelink communication:
 	synopsis[i++] = "\n% Miscellaneous functions to communicate with Eyelink:";
 	synopsis[i++] = "result = Eyelink('ButtonStates')";
@@ -106,6 +110,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "\tJohn Palmer";
 	synopsis[i++] = "\tChris Burns";
 	synopsis[i++] = "\tMario Kleiner";
+	synopsis[i++] = "\tErik Flister";
 	
 	synopsis[i++] = NULL;  //this tells PsychDisplayScreenSynopsis where to stop
 	if (i > MAX_SYNOPSIS_STRINGS) {

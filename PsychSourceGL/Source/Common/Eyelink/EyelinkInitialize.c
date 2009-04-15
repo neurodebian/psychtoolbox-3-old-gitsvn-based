@@ -1,50 +1,113 @@
 /*
  
-	/osxptb/trunk/PsychSourceGL/Source/OSX/Eyelink/EyelinkInitialize.c
+	PsychSourceGL/Source/Common/Eyelink/EyelinkInitialize.c
  
 	PROJECTS: Eyelink 
  
 	AUTHORS:
- cburns@berkeley.edu				cdb
- E.Peters@ai.rug.nl				emp
- f.w.cornelissen@med.rug.nl		fwc
+	 cburns@berkeley.edu			cdb
+	 E.Peters@ai.rug.nl				emp
+	 f.w.cornelissen@med.rug.nl		fwc
  
-	PLATFORMS:	Currently only OS X  
+	PLATFORMS:	All.
  
 	HISTORY:
  
- 11/23/05  cdb		Created.
- 28/06/06	fwc		added EyelinkInitializeDummy function. Unlike in the OS9 version, 
-					I decided to make it a seperate function rather than option in EyelinkInitialize.
-					Eyelink manual actually seems to advice to use eyelink_open_connection()
-					rather than the way we do it now.
- 29/06/06	fwc		fixed EyelinkInitializeDummy (didn't set giSystemInitialized)
- 30-10-06	fwc		no longer use PsychErrorExitMsg to report error, otherwise we cannot connect in dummy mode later on
+	 11/23/05  cdb		Created.
+	 28/06/06	fwc		added EyelinkInitializeDummy function. Unlike in the OS9 version, 
+						I decided to make it a seperate function rather than option in EyelinkInitialize.
+						Eyelink manual actually seems to advice to use eyelink_open_connection()
+						rather than the way we do it now.
+	 29/06/06	fwc		fixed EyelinkInitializeDummy (didn't set giSystemInitialized)
+	 30-10-06	fwc		no longer use PsychErrorExitMsg to report error, otherwise we cannot connect in dummy mode later on
+	 4-4-09     mk+edf  added registration of callback
+ 
 	TARGET LOCATION:
  
- Eyelink.mexmac resides in:
- PsychHardware/EyelinkToolbox/EyelinkBasic
+	 Eyelink.mexmac resides in:
+	 PsychHardware/EyelinkToolbox/EyelinkBasic
  
 	NOTES:
- This is a scaled down version compared to the OS9 version that Enno and Frans wrote.
- I hardcode in the buffersize and ignore other params.
- */
+	 This is a scaled down version compared to the OS9 version that Enno and Frans wrote.
+	 I hardcode in the buffersize and ignore other params.
+
+*/
 
 #include "PsychEyelink.h"
 
-char useString[] = "[status =] Eyelink('Initialize')";
-char useDummyString[] = "[status =] Eyelink('InitializeDummy')";
+char useString[] = "[status =] Eyelink('Initialize' [, displayCallbackFunction])";
+char useDummyString[] = "[status =] Eyelink('InitializeDummy' [, displayCallbackFunction])";
+char useTestString[] = "Eyelink('TestSuite')";
 
 static char synopsisString[] = 
-"Initializes SIMLINK and Ethernet system\n"
-"Opens connection, report any problem\n"
+"Initializes Eyelink and Ethernet system.\n"
+"Opens tracker connection, reports any problems.\n"
+"The optional argument 'displayCallbackFunction' registers the name "
+"of an m-file on the path that will handle callbacks from eyelink "
+"(typically 'PsychEyelinkDispatchCallback' to display the camera "
+"image in PTB). No callbacks will be generated if that argument "
+"is omitted.\n"
 "Returns: 0 if OK, -1 if error";
 
 static char synopsisDummyString[] = 
-"Initializes eyelink in dummy mode, useful for debugging\n"
+"Initializes Eyelink in dummy mode, useful for debugging\n"
+"The optional argument 'displayCallbackFunction' registers the name "
+"of an m-file on the path that will handle callbacks from eyelink "
+"(typically 'PsychEyelinkDispatchCallback' to display the camera "
+"image in PTB). No callbacks will be generated if that argument "
+"is omitted.\n"
 "Returns: 0 if OK, -1 if error";
 
+static char synopsisTestString[] = 
+"Perform test routines, e.g., display of synthetic test image, "
+"exercising the callback functions.\n";
+
 static char seeAlsoString[] = "";
+
+#define ERR_BUFF_LEN 1000
+
+// Check if optional callback passed, and if so, if it is valid.
+// If passed and valid, enable callbacks:
+void CheckAndAssignCallback(int argpos)
+{
+	char    errMsg[ERR_BUFF_LEN];
+	char*   callbackString;
+	PsychGenericScriptType	*input[1];
+	PsychGenericScriptType	*output[1];
+	
+	// Initialize graphics callbacks for eye camera et al.:
+	if (PsychAllocInCharArg(argpos, FALSE, &callbackString) && strlen(callbackString) > 0) {
+		// Callback string passed. Check if it corresponds to a valid function on
+		// Matlab's path:
+		input[0] = mxCreateString(callbackString);
+		output[0]=NULL;
+
+		// mexCallMatlab should be safe here, as not called from within eyelink callbacks:
+		if(mexCallMATLAB(1, output, 1, input, "exist")) {
+			mxDestroyArray(input[0]);
+			PsychErrorExitMsg(PsychError_system, "Fatal error calling runtime's 'exist' function!");
+		}
+
+		mxDestroyArray(input[0]);
+		
+		if(mxGetScalar(output[0]) <= 0) {
+			mxDestroyArray(output[0]);
+			snprintf(errMsg, ERR_BUFF_LEN, "Eyelink: The provided callback function '%s' is not a defined function, MEX file or M-File on your path as required!", callbackString);
+			PsychErrorExitMsg(PsychError_user, errMsg);
+		}
+
+		mxDestroyArray(output[0]);
+		
+		// Everything good: Initialize callbacks and enable them:
+		PsychEyelink_init_core_graphics(callbackString);
+	}
+	else {
+		// No callback passed: Disable use of callbacks:
+		PsychEyelink_uninit_core_graphics();
+    }
+	
+	return;
+}
 
 PsychError EyelinkInitialize(void)
 {
@@ -61,7 +124,7 @@ PsychError EyelinkInitialize(void)
 	}
 	
 	// Check arguments
-	PsychErrorExit(PsychCapNumInputArgs(0));
+	PsychErrorExit(PsychCapNumInputArgs(1));
 	PsychErrorExit(PsychRequireNumInputArgs(0));
 	PsychErrorExit(PsychCapNumOutputArgs(1));
 	
@@ -95,7 +158,10 @@ PsychError EyelinkInitialize(void)
 			giSystemInitialized = 1;
 		}
 	}
-	
+
+	// Check for optional callbackString as argument 1, sanity check and enable callbacks, if provided:
+	CheckAndAssignCallback(1);
+
 	// Copy output arg
 	PsychCopyOutDoubleArg(1, FALSE, iStatus);
 	
@@ -107,6 +173,7 @@ PsychError EyelinkInitialize(void)
 PsychError EyelinkInitializeDummy(void)
 {
 	int		iStatus		= -1;
+	
 	// Add help strings
 	PsychPushHelp(useDummyString, synopsisDummyString, seeAlsoString);
 	
@@ -117,7 +184,7 @@ PsychError EyelinkInitializeDummy(void)
 	}
 	
 	// Check arguments
-	PsychErrorExit(PsychCapNumInputArgs(0));
+	PsychErrorExit(PsychCapNumInputArgs(1));
 	PsychErrorExit(PsychRequireNumInputArgs(0));
 	PsychErrorExit(PsychCapNumOutputArgs(1));
 	
@@ -151,10 +218,34 @@ PsychError EyelinkInitializeDummy(void)
 			giSystemInitialized = 1;
 		}				
 	}
-		
+
+	// Check for optional callbackString as argument 1, sanity check and enable callbacks, if provided:
+	CheckAndAssignCallback(1);
+	
 	// Copy output arg
 	PsychCopyOutDoubleArg(1, FALSE, iStatus);
-	
+
 	return(PsychError_none);	
 }
 
+PsychError EyelinkTestSuite(void)
+{
+	// Add help strings
+	PsychPushHelp(useTestString, synopsisTestString, seeAlsoString);
+	
+	// Output help if asked
+	if(PsychIsGiveHelp()) {
+		PsychGiveHelp();
+		return(PsychError_none);
+	}
+	
+	// Check arguments
+	PsychErrorExit(PsychCapNumInputArgs(0));
+	PsychErrorExit(PsychRequireNumInputArgs(0));
+	PsychErrorExit(PsychCapNumOutputArgs(0));
+	
+	// Execute internal tests:
+	PsychEyelink_TestEyeImage();
+	
+	return(PsychError_none);	
+}

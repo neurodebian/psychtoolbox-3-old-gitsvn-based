@@ -132,9 +132,18 @@ void InitPsychAuthorList(void)
 	PsychAddAuthor(
 	// Port to OS-X on Intel-Macs, and misc stuff: 
 		"Christopher",
-		"",
+		"G.",
 		"Broussard",
 		"cb",
+		"chrg@sas.upenn.edu",
+		"http://color.psych.upenn.edu/lab/"
+	);
+	PsychAddAuthor(
+	// Port to OS-X on Intel-Macs, and misc stuff, as well as PsychHID enhancements: 
+		"Christopher",
+		"G.",
+		"Broussard",
+		"cgb",
 		"chrg@sas.upenn.edu",
 		"http://color.psych.upenn.edu/lab/"
 	);
@@ -147,6 +156,42 @@ void InitPsychAuthorList(void)
 		"rpw",
 		"rwoods@ucla.edu",
 		"http://www.ucla.edu"
+	);
+	PsychAddAuthor(
+	// Additions to Eyelink toolbox: 
+		"Erik",
+		"D.",
+		"Flister",
+		"edf",
+		"e_flister@yahoo.com",
+		"http://www.biology.ucsd.edu/labs/reinagel/"
+	);
+	PsychAddAuthor(
+	// Additions to Eyelink toolbox: 
+		"Christopher",
+		"D.",
+		"Burns",
+		"cdb",
+		"cburns@berkeley.edu",
+		"http://bankslab.berkeley.edu/"
+	);
+	PsychAddAuthor(
+	// Eyelink toolbox: 
+		"Frans",
+		"W.",
+		"Cornelissen",
+		"fwc",
+		"f.w.cornelissen@rug.nl",
+		"http://cornelis.med.rug.nl/LEO/people/frans/"
+	);
+	PsychAddAuthor(
+	// Eyelink toolbox: 
+		"Enno",
+		"M.",
+		"Peters",
+		"emp",
+		"E.Peters@ai.rug.nl",
+		""
 	);
 }
 

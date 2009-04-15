@@ -22,8 +22,8 @@ PsychError PsychModuleInit(void)
 {
 	InitializeSynopsis();  //first initialize the list of synopsis strings.
 
-	//register the project function which is called when the module
-	//is invoked with no arguments:
+	// Register the project function which is called when the module
+	// is invoked with no arguments: In this case just print command overview.
 	PsychRegister(NULL,  &PsychDisplayPsychHIDSynopsis);
 
 	//register the module name
@@ -56,11 +56,18 @@ PsychError PsychModuleInit(void)
 	PsychErrorExit(PsychRegister("ReceiveReportsStop",  &PSYCHHIDReceiveReportsStop));
 	PsychErrorExit(PsychRegister("GiveMeReports",  &PSYCHHIDGiveMeReports));
 	PsychErrorExit(PsychRegister("SetReport",  &PSYCHHIDSetReport));
+	PsychErrorExit(PsychRegister("OpenUSBDevice", &PSYCHHIDOpenUSBDevice));
+	PsychErrorExit(PsychRegister("CloseUSBDevice", &PSYCHHIDCloseUSBDevice));
+	PsychErrorExit(PsychRegister("USBControlTransfer", &PSYCHHIDUSBControlTransfer));
 
 	PsychSetModuleAuthorByInitials("awi");
 	PsychSetModuleAuthorByInitials("dgp");
 	PsychSetModuleAuthorByInitials("mk");
 	PsychSetModuleAuthorByInitials("rpw");
+	PsychSetModuleAuthorByInitials("cgb");
+
+	// Initialize PsychHID core functions:
+	PsychInitializePsychHID();
 
 	return(PsychError_none);
 }

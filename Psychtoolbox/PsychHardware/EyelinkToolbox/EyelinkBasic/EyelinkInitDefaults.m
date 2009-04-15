@@ -1,16 +1,15 @@
 function el=EyelinkInitDefaults(window)
-
-% initialize eyelink defaults and control code structure
+% Initialize eyelink defaults and control code structure
 %
 % USAGE: el=EyelinkInitDefaults([window])
 %
 %       window is optional windowPtr.
 %       If set, pixel coordinates are send to eyetracker
-
-% and fill it with some sensible values
-% note that these values are only used by the m-file
-% versions of dotrackersetup and dodriftcorrect.
 %
+% and fill it with some sensible values.
+% Note that these values are only used by the m-file
+% versions of dotrackersetup and dodriftcorrect.
+
 % 02-06-01	fwc created, as suggested by John Palmer.
 %				added also all control codes and defaults
 % 17-10-02	fwc added event types
@@ -18,16 +17,15 @@ function el=EyelinkInitDefaults(window)
 % 11-01-04  fwc OS X changes
 % 22-06-06  fwc further OSX changes
 % 31-10-06  mk  Unified keyname mapping and such...
+% 19-02-09  edf added LOSTDATAEVENT
+% 27-03-09  edf added function and modifier keys.
+% 10-04-09  mk  Deuglified. Add setup code for
+%               PsychEyelinkDispatchCallback.
 
 el=[];
 
 % eyelink computer check
 el.computer = computer;
-%if ~(strcmp(el.computer,'PCWIN')==1 | strcmp(el.computer,'MAC2')==1 | strcmp(el.computer,'MAC')==1)
-if ~(IsOSX | IsWin)
-    disp([el.computer,' is not a supported computer type!']);
-    return;
-end
 
 % Enable unified keyname -> keycode mapping for all operating systems:
 KbName('UnifyKeyNames');
@@ -43,19 +41,21 @@ el.connected=1;
 el.dummyconnected=-1;
 el.broadcastconnected=2;
 
-if exist('window', 'var') & ~isempty(window)
-    el.window=window;
-    el.backgroundcolour = WhiteIndex(el.window);
-    el.foregroundcolour = BlackIndex(el.window);
+if ~exist('window', 'var')
+    window = [];
+end
 
-    % eyelink('initwindow', el.window); % just to make sure something is set
+if ~isempty(window)
+	el.window=window;
+	el.backgroundcolour = WhiteIndex(el.window);
+	el.foregroundcolour = BlackIndex(el.window);
 
-    rect=Screen(el.window,'Rect');
+	rect=Screen(el.window,'Rect');
     if Eyelink('IsConnected') ~= el.notconnected
         Eyelink('Command', 'screen_pixel_coords = %d %d %d %d',rect(1),rect(2),rect(3)-1,rect(4)-1);
     end
 else
-    el.window=[];
+	el.window=[];
 end
 
 % set some more global info parameters
@@ -67,21 +67,10 @@ el.allowlocaltrigger=1; % allow user to trigger him or herself
 el.allowlocalcontrol=1; % allow control from subject-computer
 el.mousetriggersdriftcorr=0; % 1=allow mouse to trigger drift correction (fwc trick)
 el.quitkey=KbName('ESCAPE'); % when pressed in combination with modifier key
-% forces getkeyforeyelink to return 'TERMINATE_KEY' !
-
-%if strcmp(el.computer,'PCWIN')==1
-%    el.modifierkey=KbName('alt');
-%elseif strcmp(el.computer,'MAC2')==1
-%    el.modifierkey=KbName('apple');
-%elseif strcmp(el.computer,'MAC')==1
+                             % forces getkeyforeyelink to return 'TERMINATE_KEY' !
 
 % Modifier key is always LeftGUI due to unified keyname mapping:
 el.modifierkey=KbName('LeftGUI');
-
-%else
-%    disp([el.computer,' not a supported computer type!']);
-%    return;
-%end
 
 el.waitformodereadytime=500;
 el.calibrationtargetsize=2;  % size of calibration target as percentage of screen
@@ -90,38 +79,65 @@ el.calibrationtargetwidth=.75; % width of calibration target's border as percent
 el.getkeyrepeat=1/5; % "sample time" for eyelinkgetkey
 el.getkeytime=-1; % stores last time eyelinkgetkey was used
 
-[keyIsDown,secs,el.lastKeyCodes] = KbCheck;
+% Warm up KbCheck:
+[keyIsDown, secs, el.lastKeyCodes] = KbCheck;
 
-% keyCodes for EyelinkGetKey
-% if strcmp(el.computer,'MAC')==1 % OSX
-    el.uparrow=KbName('UpArrow');
-    el.downarrow=KbName('DownArrow');
-    el.rightarrow=KbName('RightArrow');
-    el.leftarrow=KbName('LeftArrow');
-    el.pageup=KbName('PageUp');
-    el.pagedown=KbName('PageDown');
-    el.return=KbName('Return');
-    el.escape=KbName('ESCAPE');
-    el.space=KbName('space');
-    el.backspace=KbName('DELETE'); % is this delete backspace?
-    if IsOSX
-    % OS-X supports a separate keycode for the Enter key:
-        el.enter=KbName('ENTER');
-    else
-        % M$-Windows and GNU/Linux don't have a separate code for Enter,
-        % so we will map it to the 'Return' key:
-        el.enter=el.return;
-    end
-    el.keysCached=1;
-% else
-%     el.keysCached=0;
-% end
+% keyCodes for EyelinkGetKey:
+el.uparrow=KbName('UpArrow');
+el.downarrow=KbName('DownArrow');
+el.rightarrow=KbName('RightArrow');
+el.leftarrow=KbName('LeftArrow');
+el.pageup=KbName('PageUp');
+el.pagedown=KbName('PageDown');
+el.return=KbName('Return');
+el.escape=KbName('ESCAPE');
+el.space=KbName('space');
+el.backspace=KbName('DELETE'); % is this delete backspace?
 
-% since we do not actually remove keypresses the matlab buffer gets filled
-% up quickly. Hence we type:
-warning off MATLAB:namelengthmaxexceeded
+el.f1=KbName('F1');
+el.f2=KbName('F2');
+el.f3=KbName('F3');
+el.f4=KbName('F4');
+el.f5=KbName('F5');
+el.f6=KbName('F6');
+el.f7=KbName('F7');
+el.f8=KbName('F8');
+el.f9=KbName('F9');
+el.f10=KbName('F10');
 
-% eyelink Tracker state bit: AND with flag word to test functionality
+el.left_shift=KbName('LeftShift');
+el.right_shift=KbName('RightShift');
+el.left_control=KbName('LeftControl');
+el.right_control=KbName('RightControl');
+el.lalt=KbName('LeftAlt');
+el.ralt=KbName('RightAlt');
+%el.lmeta=KbName('');
+%el.rmeta=KbName('');
+el.num=KbName('NumLock');
+el.caps=KbName('CapsLock');
+%el.mode=KbName('');
+
+if IsOSX
+	% OS-X supports a separate keycode for the Enter key:
+	el.enter=KbName('ENTER');
+else
+	% M$-Windows and GNU/Linux don't have a separate code for Enter,
+	% so we will map it to the 'Return' key:
+	el.enter=el.return;
+end
+el.keysCached=1;
+
+% Since we do not actually remove keypresses the Matlab buffer gets filled
+% up quickly. Hence we disable warnings for fillup problems:
+% This is try-catch protected for compatibility to Matlab R11 and Octave...
+try
+	warning off MATLAB:namelengthmaxexceeded
+catch
+    % Nothing to do. We just swallow the error we'd get if that warning
+    % statements wouldn't be supported.
+end
+
+% eyelink Tracker state bit: bitand() with flag word to test functionality
 
 el.IN_DISCONNECT_MODE=16384;   	% disconnected
 el.IN_UNKNOWN_MODE=0;    		% mode fits no class (i.e setup menu)
@@ -147,11 +163,43 @@ el.PAGE_UP=hex2dec('4900');
 el.PAGE_DOWN=hex2dec('5100');
 el.SPACE_BAR=32;
 
+el.F1_KEY=hex2dec('3B00');
+el.F2_KEY=hex2dec('3C00');
+el.F3_KEY=hex2dec('3D00');
+el.F4_KEY=hex2dec('3E00');
+el.F5_KEY=hex2dec('3F00');
+el.F6_KEY=hex2dec('4000');
+el.F7_KEY=hex2dec('4100');
+el.F8_KEY=hex2dec('4200');
+el.F9_KEY=hex2dec('4300');
+el.F10_KEY=hex2dec('4400');
+
+% bitand these into the key if they are also pressed
+el.ELKMOD_NONE=hex2dec('0000');
+el.ELKMOD_LSHIFT=hex2dec('0001');
+el.ELKMOD_RSHIFT=hex2dec('0002');
+el.ELKMOD_LCTRL=hex2dec('0040');
+el.ELKMOD_RCTRL=hex2dec('0080');
+el.ELKMOD_LALT=hex2dec('0100');
+el.ELKMOD_RALT=hex2dec('0200');
+el.ELKMOD_LMETA=hex2dec('0400');
+el.ELKMOD_RMETA=hex2dec('0800');
+el.ELKMOD_NUM=hex2dec('1000');
+el.ELKMOD_CAPS=hex2dec('2000');
+el.ELKMOD_MODE=hex2dec('4000');
+
 % other eyelink values
+
+
+el.ELKEY_DOWN=1;
+el.ELKEY_UP=0;
 
 el.KB_PRESS=10; % Eyelink.h
 el.MISSING=-32768; % eyedata.h
 el.MISSING_DATA=-32768;
+
+el.KEYDOWN=1; %eyelink manual and core_expt.h have these backwards
+el.KEYUP=0;
 
 % LINK RETURN CODES
 el.NO_REPLY=1000; % no reply yet (for polling test)
@@ -190,8 +238,19 @@ el.MESSAGEEVENT=24;  % /* user-definable text or data */
 el.BUTTONEVENT=25;  %/* button state change */
 el.INPUTEVENT=28;  % /* change of input port */
 
+el.LOSTDATAEVENT=hex2dec('3F'); %/*new addition v2.1, returned by eyelink_get_next_data() to flag a gap in the data stream due to queue filling up (need to get data more frequently)
+%/*described in 'EyeLink Programmers Guide.pdf' section 7.2.2, 13.3.2, 18.5.4
 
+if exist('PsychEyelinkDispatchCallback') %#ok<EXIST>
+    el.callback = 'PsychEyelinkDispatchCallback';
+else
+    el.callback = [];
+end
 
-
+% Window assigned?
+if ~isempty(el.window) & ~isempty(el.callback) %#ok<AND2>
+    % Yes. Assign it to our dispatch callback:
+    PsychEyelinkDispatchCallback(el);
+end
 
 % el % uncomment to show contents of this default eyelink structure
