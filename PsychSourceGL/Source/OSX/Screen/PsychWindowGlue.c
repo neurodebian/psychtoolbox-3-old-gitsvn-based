@@ -73,9 +73,9 @@ static struct {
     We switch to RT scheduling during PsychGetMonitorRefreshInterval() and a few other timing tests in
     PsychOpenWindow() to reduce measurement jitter caused by possible interference of other tasks.
 */
-boolean PsychRealtimePriority(boolean enable_realtime)
+psych_bool PsychRealtimePriority(psych_bool enable_realtime)
 {
-    bool				isError;
+    psych_bool				isError;
     thread_policy_flavor_t		flavorConstant;
     int					kernError;
     task_t				threadID;
@@ -85,8 +85,8 @@ boolean PsychRealtimePriority(boolean enable_realtime)
     static mach_msg_type_number_t	old_policyCountFilled;
     boolean_t				isDefault;
     
-    static boolean old_enable_realtime = FALSE;
-    static boolean oldModeWasStandard = FALSE;
+    static psych_bool old_enable_realtime = FALSE;
+    static psych_bool oldModeWasStandard = FALSE;
     
     if (old_enable_realtime == enable_realtime) {
         // No transition with respect to previous state -> Nothing to do.
@@ -197,14 +197,14 @@ boolean PsychRealtimePriority(boolean enable_realtime)
     =2          == Use compressed frame stereo: Put both views into one framebuffer, one in top half, other in lower half.
 
 */
-boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType *windowRecord, int numBuffers, int stereomode, int conserveVRAM)
+psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType *windowRecord, int numBuffers, int stereomode, int conserveVRAM)
 {
     CGLRendererInfoObj				rendererInfo;
     CGOpenGLDisplayMask 			displayMask;
     CGLError						error;
 	OSStatus						err;
     CGDirectDisplayID				cgDisplayID;
-    CGLPixelFormatAttribute			attribs[32];
+    CGLPixelFormatAttribute			attribs[40];
     long							numVirtualScreens;
     GLboolean						isDoubleBuffer, isFloatBuffer;
     GLint bpc;
@@ -212,7 +212,8 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 	PsychRectType					screenrect;
     int attribcount=0;
     int i;
-	boolean							useAGL, AGLForFullscreen;
+	int								windowLevel;
+	psych_bool							useAGL, AGLForFullscreen;
 	WindowRef						carbonWindow = NULL;
 	int								aglbufferid;
 	AGLPixelFormat					pf = NULL;
@@ -223,6 +224,14 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 	
 	// NULL-out Carbon window handle, so this is well-defined in case of error:
 	windowRecord->targetSpecific.windowHandle = NULL;
+
+	// Retrieve windowLevel, an indicator of where non-fullscreen AGL windows should
+	// be located wrt. to other windows. 0 = Behind everything else, occluded by
+	// everything else. 1 - 999 = At layer windowLevel -> Occludes stuff on layers "below" it.
+	// 1000 - 1999 = At highest level, but partially translucent / alpha channel allows to make
+	// regions transparent. 2000 or higher: Above everything, fully opaque, occludes everything.
+	// 2000 is the default.
+	windowLevel = PsychPrefStateGet_WindowShieldingLevel();
 
 	// Use AGL for fullscreen windows?
 	AGLForFullscreen = (PsychPrefStateGet_ConserveVRAM() & kPsychUseAGLForFullscreenWindows) ? TRUE : FALSE;
@@ -271,13 +280,39 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 		winRect.left = (short) windowRecord->rect[kPsychLeft];
 		winRect.bottom = (short) windowRecord->rect[kPsychBottom];
 		winRect.right = (short) windowRecord->rect[kPsychRight];
-		if (noErr !=CreateNewWindow(kOverlayWindowClass, kWindowNoUpdatesAttribute, &winRect, &carbonWindow)) {
+
+		WindowClass wclass;
+		if (windowLevel >= 1000) {
+			wclass = kOverlayWindowClass;
+		}
+		else {
+			wclass = kSimpleWindowClass;
+		}
+
+		// Additional attribs to set:
+		WindowAttributes addAttribs;
+		addAttribs = 0;
+		
+		// For levels 1000 to 1499, where the window is a partially transparent
+		// overlay window with global alpha 0.0 - 1.0, we disable reception of mouse
+		// events. --> Can move and click to windows behind the window!
+		// A range 1500 to 1999 would also allow transparency, but block mouse events:
+		if (windowLevel >= 1000 && windowLevel < 1500) addAttribs += kWindowIgnoreClicksAttribute;
+		
+		if (noErr !=CreateNewWindow(wclass, kWindowNoUpdatesAttribute | kWindowNoActivatesAttribute | addAttribs, &winRect, &carbonWindow)) {
 			printf("\nPTB-ERROR[CreateNewWindow failed]: Failed to open Carbon onscreen window\n\n");
 			return(FALSE);
 		}
 		
-		// Show it!
-		ShowWindow(carbonWindow);
+		// Show it! Unless a windowLevel of -1 requests hiding the window:
+		if (windowLevel != -1) ShowWindow(carbonWindow);
+
+		// Level zero means: Place behind all other windows:
+		if (windowLevel ==  0) SendBehind(carbonWindow, NULL);
+
+		// Levels 1 to 998 define window levels for the group of the window. A level
+		// of 999 would leave this to the system:
+		if (windowLevel > 0 && windowLevel < 999) SetWindowGroupLevel(GetWindowGroup(carbonWindow), (SInt32) windowLevel);
 
 		// Store window handle in windowRecord:
 		windowRecord->targetSpecific.windowHandle = carbonWindow;
@@ -387,6 +422,24 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
         attribs[attribcount++]=24;
         attribs[attribcount++]=kCGLPFAStencilSize;
         attribs[attribcount++]=8;
+		// Alloc an accumulation buffer as well?
+		if (PsychPrefStateGet_3DGfx() & 2) {
+			// Yes: Alloc accum buffer, request 64 bpp, aka 16 bits integer per color component if possible:
+			if (!useAGL && !AGLForFullscreen) {
+				attribs[attribcount++]=kCGLPFAAccumSize;
+				attribs[attribcount++]=64;
+			}
+			else {
+				attribs[attribcount++]=AGL_ACCUM_RED_SIZE;
+				attribs[attribcount++]=16;
+				attribs[attribcount++]=AGL_ACCUM_GREEN_SIZE;
+				attribs[attribcount++]=16;
+				attribs[attribcount++]=AGL_ACCUM_BLUE_SIZE;
+				attribs[attribcount++]=16;
+				attribs[attribcount++]=AGL_ACCUM_ALPHA_SIZE;
+				attribs[attribcount++]=16;
+			}
+		}
     }
     if(numBuffers>=2){
         // Enable double-buffering:
@@ -550,11 +603,14 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 			return(FALSE);
 		}
 
-		if (FALSE) {
-			// This bit of code would make the window background transparent, so standard GUI
-			// would be visible, wherever nothing is drawn -- Cool but currently not useful for us?
+		if ((windowLevel >= 1000) && (windowLevel < 2000)) {
+			// For windowLevels between 1000 and 1999, make the window background transparent, so standard GUI
+			// would be visible, wherever nothing is drawn, i.e., where alpha channel is zero:
 			i = 0;
 			aglSetInteger(glcontext, AGL_SURFACE_OPACITY, &i);
+			
+			// Levels 1000 - 1499 and 1500 to 1999 map to a master opacity level of 0.0 - 1.0:
+			SetWindowAlpha(carbonWindow, ((float) (windowLevel % 500)) / 499.0);
 		}
 		
 		if (AGLForFullscreen) {
@@ -801,7 +857,7 @@ double PsychOSGetVBLTimeAndCount(unsigned int screenid, psych_uint64* vblCount)
 	
 	TO DO:  We need to walk down the screen number and fill in the correct value for the benefit of TexturizeOffscreenWindow
 */
-boolean PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
+psych_bool PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
 {
 
     //PsychTargetSpecificWindowRecordType 	cgStuff;
@@ -906,45 +962,9 @@ void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
 void PsychOSFlipWindowBuffers(PsychWindowRecordType *windowRecord)
 {	
 	CGLError			cglerr;
-    CGDirectDisplayID	cgDisplayID;
-    long				myinterval, vbl_startline, scanline, lastline;
 
-	// Workaround for broken sync-bufferswap-to-VBL support needed?
-	if (PsychPrefStateGet_ConserveVRAM() & kPsychBusyWaitForVBLBeforeBufferSwapRequest) {
-		// Yes: Sync of bufferswaps to VBL requested?
-		cglerr = CGLGetParameter(windowRecord->targetSpecific.contextObject, kCGLCPSwapInterval, &myinterval);
-		if (cglerr) {
-			if (PsychPrefStateGet_Verbosity()>1) printf("\nPTB-WARNING: FAILED to query system if synchronization to vertical retrace is enabled! Operating system or driver bug?!? [Error: %s]\n\n", CGLErrorString(cglerr));
-			// Don't know real setting due to error. Assume the most common setting of sync-to-VBL:
-			myinterval = 1;
-		}
-		
-		if (myinterval > 0) {
-			// Sync of bufferswaps to retrace requested:
-			// We perform a busy-waiting spin-loop and query current beamposition until
-			// beam leaves VBL area:
-			
-			// Retrieve display handle for beamposition queries:
-			PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, windowRecord->screenNumber);
-			
-			// Retrieve final vbl_startline, aka physical height of the display in pixels:
-			PsychGetScreenSize(windowRecord->screenNumber, &scanline, &vbl_startline);
-
-			// Busy-Wait: The special handling of <=0 values makes sure we don't hang here
-			// if beamposition queries are broken as well:
-			lastline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);
-			if (lastline > 0) {
-				// Within video frame. Wait for beamposition wraparound or start of VBL:
-				if (PsychPrefStateGet_Verbosity()>9) printf("\nPTB-DEBUG: Lastline beampos = %i\n", (int) lastline);
-				scanline = lastline;
-				while ((scanline < vbl_startline) && (scanline >= lastline)) {
-					lastline = scanline;
-					scanline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);
-				} 
-				if (PsychPrefStateGet_Verbosity()>9) printf("\nPTB-DEBUG: Scanline beampos = %i\n", (int) scanline);
-			}
-		}
-	}
+	// Execute OS neutral bufferswap code first:
+	PsychExecuteBufferSwapPrefix(windowRecord);
 	
     // Trigger the "Front <-> Back buffer swap (flip) (on next vertical retrace)":
     if ((cglerr = CGLFlushDrawable(windowRecord->targetSpecific.contextObject))) {
@@ -978,7 +998,7 @@ void PsychOSSetGLContext(PsychWindowRecordType *windowRecord)
 /* Same as PsychOSSetGLContext() but for selecting userspace rendering context,
  * optionally copying state from PTBs context.
  */
-void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, Boolean copyfromPTBContext)
+void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, psych_bool copyfromPTBContext)
 {
 	// Child protection:
 	if (windowRecord->targetSpecific.glusercontextObject == NULL) PsychErrorExitMsg(PsychError_user, "GL Userspace context unavailable! Call InitializeMatlabOpenGL *before* Screen('OpenWindow')!");
@@ -1022,6 +1042,10 @@ void PsychOSSetVBLSyncLevel(PsychWindowRecordType *windowRecord, int swapInterva
 {
     CGLError	error;
     long myinterval = (long) swapInterval;
+	
+	// Store new setting also in internal helper variable, e.g., to allow workarounds to work:
+	windowRecord->vSynced = (swapInterval > 0) ? TRUE : FALSE;
+	
     error=CGLSetParameter(windowRecord->targetSpecific.contextObject, kCGLCPSwapInterval, &myinterval);
     if (error) {
         if (PsychPrefStateGet_Verbosity()>1) printf("\nPTB-WARNING: FAILED to %s synchronization to vertical retrace!\n\n", (swapInterval>0) ? "enable" : "disable");

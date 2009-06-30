@@ -172,7 +172,7 @@ int PsychCountOpenWindows(PsychWindowType winType)
         Is this the last open onscreen window for this screen ?
         SCREENClose needs to know this so that it can release the screen 
 */
-boolean PsychIsLastOnscreenWindow(PsychWindowRecordType *windowRecord)
+psych_bool PsychIsLastOnscreenWindow(PsychWindowRecordType *windowRecord)
 {
     int i;
 
@@ -315,6 +315,13 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 	// off with 16 bpc (float/fixed) or 32 bpc float, or get upgraded to such resolutions. Such
 	// upgrades always happen in a maketexture function or FBO creation function...
 	(*winRec)->bpc = 8;
+	
+	// Sync of doublebuffer-swaps to vertical retrace signal starts off as disabled:
+	(*winRec)->vSynced = FALSE;
+	
+	// Default to unknown maximum supported texture size:
+	(*winRec)->maxTextureSize = 0;
+	
 	return;
 }
 
@@ -365,7 +372,7 @@ PsychError FreeWindowRecordFromPntr(PsychWindowRecordType *winRec)
 	Accept a window pointer or a screen number (psychIndex) and return true if its a valid screen
 	number and false otherwise
 */
-boolean IsValidScreenNumber(PsychNumdexType numdex)
+psych_bool IsValidScreenNumber(PsychNumdexType numdex)
 {
 	return((int)((numdex >=PSYCH_FIRST_SCREEN) && (numdex < PsychGetNumDisplays())));
 
@@ -378,7 +385,7 @@ boolean IsValidScreenNumber(PsychNumdexType numdex)
 	Accept a window pointer or a screen number (psychIndex) and return true iff its a valid screen
 	number or is the token indicating an unaffiliated window. 
 */
-boolean IsValidScreenNumberOrUnaffiliated(PsychNumdexType numdex)
+psych_bool IsValidScreenNumberOrUnaffiliated(PsychNumdexType numdex)
 {
 	return(((int)((numdex >=PSYCH_FIRST_SCREEN) && (numdex < PsychGetNumDisplays()))) || numdex == kPsychUnaffiliatedWindow);
 
@@ -389,7 +396,7 @@ boolean IsValidScreenNumberOrUnaffiliated(PsychNumdexType numdex)
 	IsScreenNumberUnaffiliated()
 
 */
-boolean IsScreenNumberUnaffiliated(PsychNumdexType numdex)
+psych_bool IsScreenNumberUnaffiliated(PsychNumdexType numdex)
 {
 	return(numdex == kPsychUnaffiliatedWindow);
 
@@ -401,7 +408,7 @@ boolean IsScreenNumberUnaffiliated(PsychNumdexType numdex)
 	Accept a window pointer or a screen number and return true if its a valid window pointer
 	number and false otherwise
 */
-boolean IsWindowIndex(PsychNumdexType numdex)
+psych_bool IsWindowIndex(PsychNumdexType numdex)
 {
 
 
@@ -523,6 +530,7 @@ void  PsychAssignParentWindow(PsychWindowRecordType *childWin, PsychWindowRecord
 
 	// Inherit capability bits of parents context:
 	childWin->gfxcaps = parentWin->gfxcaps;
+	childWin->maxTextureSize = parentWin->maxTextureSize;
 	
 	return;
 }

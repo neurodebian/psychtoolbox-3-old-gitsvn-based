@@ -31,6 +31,7 @@ function PsychtoolboxPostInstallRoutine(isUpdate, flavor)
 % 23/05/2007 Add Matlab R2007 vs. earlier detection to Windows version (MK).
 % 16/04/2008 Write/Read PTB flavor to/from users PsychtoolboxConfigDir as well for higher robustness (MK).
 % 15/04/2009 Add warning about unsupported OS/X systems older than Tiger (MK).
+% 15/06/2009 Add support for postinstall for Octave-3.2.x, remove Octave-2 support (MK).
 
 fprintf('\n\nRunning post-install routine...\n\n');
 
@@ -119,17 +120,30 @@ end
 
 % Check for operating system minor version on Mac OS/X when running under
 % Matlab:
-if IsOSX & ~IsOctave %#ok<AND2>
-    % Running on Matlab + OS/X. Find the operating system minor version,
-    % i.e., the 'y' in the x.y.z number, e.g., y=3 for 10.3.7:
-    
-    % Get 32-digit binary encoded minor version from Gestalt() MEX file:
-    binminor = Gestalt('sys2');
-    
-    % Decode into decimal digit:
-    minorver = 0;
-    for i=1:32
-        minorver = minorver + binminor(i) * 2^(32-i);
+if IsOSX
+    if ~IsOctave %#ok<AND2>
+        % Running on Matlab + OS/X. Find the operating system minor version,
+        % i.e., the 'y' in the x.y.z number, e.g., y=3 for 10.3.7:
+
+        % Get 32-digit binary encoded minor version from Gestalt() MEX file:
+        binminor = Gestalt('sys2');
+
+        % Decode into decimal digit:
+        minorver = 0;
+        for i=1:32
+            minorver = minorver + binminor(i) * 2^(32-i);
+        end
+    else
+        % Running on Octave + OS/X: Query kernel version via system() call:
+        [s, did]=system('uname -r');
+        if s == 0
+            % Parse string for kernel major number, then translate to OS
+            % minor version by subtracting 4:
+            minorver = sscanf(did, '%i') - 4;
+        else
+            % Failed to query: Assume we're good for now...
+            minorver = inf;
+        end
     end
     
     % Is the operating system minor version 'minorver' < 4?
@@ -166,6 +180,102 @@ if IsOSX & ~IsOctave %#ok<AND2>
         fprintf('Press any key on keyboard to continue with setup...\n');
         pause;
     end
+end
+
+% Special case handling for Octave:
+if IsOctave
+    % OS/X or Linux under Octave. Need to prepend the proper folder with
+    % the pseudo-MEX files to path:
+    rc = 0;
+    rdir = '';
+    
+    try
+        % Remove binary MEX folders from path:
+        rmpath([PsychtoolboxRoot 'PsychBasic' filesep 'Octave3LinuxFiles']);
+        rmpath([PsychtoolboxRoot 'PsychBasic' filesep 'Octave3OSXFiles']);
+        rmpath([PsychtoolboxRoot 'PsychBasic' filesep 'Octave3WindowsFiles']);
+        
+        % Encode prefix and Octave major version of proper folder:
+        octavev = sscanf(version, '%i.%i');
+        octavemajorv = octavev(1);
+        octaveminorv = octavev(2);
+        
+        rdir = [PsychtoolboxRoot 'PsychBasic' filesep 'Octave' num2str(octavemajorv)];
+        
+        % Add proper OS dependent postfix:
+        if IsLinux
+            rdir = [rdir 'LinuxFiles'];
+        end
+        
+        if IsOSX
+            rdir = [rdir 'OSXFiles'];
+        end
+        
+        if IsWin
+            rdir = [rdir 'WindowsFiles'];
+        end
+
+        fprintf('Octave major version %i detected. Will prepend the following folder to your Octave path:\n', octavemajorv);
+        fprintf(' %s ...\n', rdir);
+        addpath(rdir);
+        
+        if exist('savepath')
+            rc = savepath;
+        else
+            rc = path2rc;
+        end
+    catch
+        rc = 2;
+    end
+
+    if rc > 0
+        fprintf('=====================================================================\n');
+        fprintf('ERROR: Failed to prepend folder %s to Octave path!\n', rdir);
+        fprintf('ERROR: This will likely cause complete failure of PTB to work.\n');
+        fprintf('ERROR: Please fix the problem (maybe insufficient permissions?)\n');
+        fprintf('ERROR: If everything else fails, add this folder manually to the\n');
+        fprintf('ERROR: top of your Octave path.\n');
+        fprintf('ERROR: Trying to continue but will likely fail soon.\n');
+        fprintf('=====================================================================\n\n');
+    end
+    
+    if octavemajorv < 3 | octaveminorv < 2
+        fprintf('\n\n=================================================================================\n');
+        fprintf('WARNING: Your version %s of Octave is obsolete. We strongly recommend\n', version);
+        fprintf('WARNING: using the latest stable version of at least Octave 3.2.0 for use with Psychtoolbox.\n');
+        fprintf('WARNING: Stuff may not work at all or only suboptimal with earlier versions and we\n');
+        fprintf('WARNING: don''t provide any support for such old versions.\n');
+        fprintf('\nPress any key to continue with setup.\n');
+        fprintf('=================================================================================\n\n');
+        pause;
+    end
+    
+    try
+        % Rehash the Octave toolbox cache:
+        path(path);
+        rehash;
+        clear WaitSecs;
+    catch
+        fprintf('WARNING: rehashing the Octave toolbox cache failed. I may fail and recommend\n');
+        fprintf('WARNING: Quitting and restarting Octave, then retry.\n');
+    end
+    
+    try
+        % Try if Screen MEX file works...
+        WaitSecs(0.1);
+    catch
+        % Failed! Either screwed setup of path or missing VC++ 2005 runtime
+        % libraries.
+        fprintf('ERROR: WaitSecs-MEX does not work, most likely other MEX files will not work either.\n');
+        fprintf('ERROR: One reason might be that your version %s of Octave is incompatible. We recommend\n', version);        
+        fprintf('ERROR: use of the latest stable version of Octave-3.2.x as announced on www.octave.org website.\n');
+        fprintf('ERROR: Another conceivable reason would be missing or incompatible required system libraries on your system.\n\n');
+        fprintf('ERROR: After fixing the problem, restart this installation/update routine.\n\n');
+        fprintf('\n\nInstallation aborted. Fix the reported problem and retry.\n\n');
+        return;
+    end
+    
+    % End of special Octave setup.
 end
 
 % Special case handling for different Matlab releases on MS-Windoze:
@@ -218,8 +328,8 @@ if IsWin & ~IsOctave
     try
         % Rehash the Matlab toolbox cache:
         path(path);
-        rehash pathreset;
-        rehash toolboxreset;
+        rehash('pathreset');
+        rehash('toolboxreset');
         clear WaitSecs;
     catch
         fprintf('WARNING: rehashing the Matlab toolbox cache failed. I may fail and recommend\n');
@@ -362,13 +472,28 @@ if ~IsOctave
 end % if ~IsOctave
 
 % Some goodbye, copyright and getting started blurb...
-fprintf('\nDone with post-installation. Psychtoolbox is ready for use.\n');
+fprintf('\nDone with post-installation. Psychtoolbox is ready for use.\n\n\n');
+fprintf('GENERAL LICENSING CONDITIONS:\n');
+fprintf('-----------------------------\n\n');
+fprintf('Almost all of the material contained in the Psychtoolbox-3 distribution\n');
+fprintf('is free software. Most material is covered by the GNU General Public license (GPL).\n');
+fprintf('A few internal libraries and components are covered by other free software\n');
+fprintf('licenses which we understand to be compatible with the GPL v2, e.g., the GNU LGPL\n');
+fprintf('license, or the MIT license used by PortAudio, or they are in the public domain.\n\n');
+fprintf('3rd-party components which are freely redistributable due to the authors permissions,\n')
+fprintf('but are not neccessarily licensed as free software, can be found in the "PsychContributed"\n');
+fprintf('subfolder of the Psychtoolbox distribution, accompanied by their respective licenses.\n\n');
+fprintf('Unless otherwise noted for specific components, the GPL license applies:\n');
 fprintf('Psychtoolbox is free software; you can redistribute it and/or modify\n');
 fprintf('it under the terms of the GNU General Public License as published by\n');
 fprintf('the Free Software Foundation; either version 2 of the License, or\n');
 fprintf('(at your option) any later version. See the file ''License.txt'' in\n');
 fprintf('the Psychtoolbox root folder for exact licensing conditions.\n\n');
-
+fprintf('Your standard Psychtoolbox distribution comes without the source code for\n');
+fprintf('the binary plugins (the MEX files). If you want to access the corresponding\n');
+fprintf('source code, please type "help UseTheSource" for download instructions.\n\n');
+fprintf('BEGINNERS READ THIS:\n');
+fprintf('--------------------\n\n');
 fprintf('If you are new to the Psychtoolbox, you might try this: \nhelp Psychtoolbox\n\n');
 fprintf('Psychtoolbox website:\n');
 fprintf('web http://www.psychtoolbox.org -browser\n');
@@ -380,6 +505,8 @@ fprintf('between Psychtoolbox-2 and Psychtoolbox-3.\n\n');
 fprintf('\nEnjoy!\n\n');
 
 % Clear out everything:
-clear all;
+if ~IsOctave & IsWin
+    clear all;
+end
 
 return;

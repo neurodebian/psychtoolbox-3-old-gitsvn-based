@@ -33,56 +33,71 @@ function ListenChar(listenFlag)
 %                in all other configurations.
 % 10/13/06 mk    Support for setting the redispatch-mode of GetChar and
 %                friends.
+% 05/31/09 mk    Add support for Octave and Matlab in noJVM mode.
 
 global OSX_JAVA_GETCHAR;
  
-% ListenChar is only available on Matlab with Java enabled. On Matlab in
-% -nojvm mode and on Octave, it has no function, so this simply becomes a
-% no operation.
-if ~IsOctave
-    % This is Matlab. Is the JVM running?
-    if psychusejava('desktop')
-        % Java enabled. There's work to do.
-        if nargin == 0
-            listenFlag = 1;
-        elseif nargin > 1
-            error('Too many arguments to ListenChar!  See "help ListenChar" for more information');
-        end
+if nargin == 0
+    listenFlag = 1;
+elseif nargin > 1
+    error('Too many arguments to ListenChar!  See "help ListenChar" for more information');
+end
 
-        % Make sure that the GetCharJava class is loaded.
-        if isempty(OSX_JAVA_GETCHAR)
-            try
-                OSX_JAVA_GETCHAR = AssignGetCharJava;
-            catch
-                error('Could not load Java class GetCharJava! Read ''help PsychJavaTrouble'' for help.');
-            end
-        end
+if ~ismember(listenFlag, [0,1,2])
+    error('Invalid listenFlag provided!  See "help ListenChar" for more information');
+end
 
-        if listenFlag
-            % Start listening for characters.
-            OSX_JAVA_GETCHAR.register;
-            
-            % Make sure the Matlab window has keyboard focus:
-            if exist('commandwindow')
-                % Call builtin implementation:
-                commandwindow;
-                drawnow;
-            end
+% This is Matlab. Is the JVM running?
+if psychusejava('desktop')
+    % Java enabled. There's work to do.
 
-            % Should we block output of characters to Matlab?
-            if listenFlag > 1
-                % Disable redispatching:
-                OSX_JAVA_GETCHAR.setRedispatchFlag(1);
-            else
-                % Enable redispatching: This is the startup default.
-                OSX_JAVA_GETCHAR.setRedispatchFlag(0);
-            end
-        else
-            % Stop listening for characters and clear the buffer.
-            OSX_JAVA_GETCHAR.unregister;
-            OSX_JAVA_GETCHAR.clear;
-            % Enable redispatching:
-            OSX_JAVA_GETCHAR.setRedispatchFlag(0);
+    % Make sure that the GetCharJava class is loaded.
+    if isempty(OSX_JAVA_GETCHAR)
+        try
+            OSX_JAVA_GETCHAR = AssignGetCharJava;
+        catch
+            error('Could not load Java class GetCharJava! Read ''help PsychJavaTrouble'' for help.');
         end
     end
+
+    if listenFlag
+        % Start listening for characters.
+        OSX_JAVA_GETCHAR.register;
+
+        % Make sure the Matlab window has keyboard focus:
+        if exist('commandwindow') %#ok<EXIST>
+            % Call builtin implementation:
+            commandwindow;
+            drawnow;
+        end
+
+        % Should we block output of characters to Matlab?
+        if listenFlag > 1
+            % Disable redispatching:
+            OSX_JAVA_GETCHAR.setRedispatchFlag(1);
+        else
+            % Enable redispatching: This is the startup default.
+            OSX_JAVA_GETCHAR.setRedispatchFlag(0);
+        end
+    else
+        % Stop listening for characters and clear the buffer.
+        OSX_JAVA_GETCHAR.unregister;
+        OSX_JAVA_GETCHAR.clear;
+        % Enable redispatching:
+        OSX_JAVA_GETCHAR.setRedispatchFlag(0);
+    end
+
+    return;
 end
+
+% Running either on Octave or on OS/X or Linux with Matlab in No JVM mode:
+switch listenFlag
+    case 0,
+        Screen('GetMouseHelper', -10);
+    case 1,
+        Screen('GetMouseHelper', -11);
+    case 2,
+        Screen('GetMouseHelper', -12);
+end
+
+return;

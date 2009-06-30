@@ -52,7 +52,7 @@ psych_uint64 getpid(void)
 OS 9 Psychtoolbox preferences:
 
 	Supported
-oldBool=Screen('Preference', 'IgnoreCase' [,bool])
+oldBool=Screen('Preference', 'IgnoreCase' [,psych_bool])
 tick0Secs=Screen('Preference', 'Tick0Secs', tick0Secs)
 psychTableVersion=Screen('Preference', 'PsychTableVersion')
 mexFunctionName=Screen('Preference', 'PsychTableCreator')
@@ -60,35 +60,35 @@ proc=Screen('Preference', 'Process', signature)   //returns PID and does not acc
 
 
 	Read supported but will not accept set:
-oldBool=Screen('Preference','Backgrounding',[bool])
+oldBool=Screen('Preference','Backgrounding',[psych_bool])
 oldSecondsMultiplier=Screen('Preference', 'SecondsMultiplier' [,secondsMultiplier])
 	
 	Unsupported and we should
-oldBool=Screen('Preference' ',AllowMirroring' [,bool])
-bool=Screen('Preference' ',MirroringIsOn')
+oldBool=Screen('Preference' ',AllowMirroring' [,psych_bool])
+psych_bool=Screen('Preference' ',MirroringIsOn')
 oldBits=Screen(windowPtrOrScreenNumber, 'Preference', 'DacBits', bits) 
 
 	Unsupported
 available=Screen('Preference','Available')
 nextProc=Screen('Preference','NextProcess',[proc])
-oldBool=Screen('Preference','UseNewHideMenuBar',[bool])
+oldBool=Screen('Preference','UseNewHideMenuBar',[psych_bool])
 
 	Unsupported OS 9 Mac video driver specific 
-bool=Screen(windowPtrOrScreenNumber,'Preference','FixedClut')
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','SetClutDriverWaitsForBlanking',[bool])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','AskSetClutDriverToWaitForBlanking',[bool])
+psych_bool=Screen(windowPtrOrScreenNumber,'Preference','FixedClut')
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','SetClutDriverWaitsForBlanking',[psych_bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','AskSetClutDriverToWaitForBlanking',[psych_bool])
 oldValue=Screen(windowPtrOrScreenNumber,'Preference','SetClutSAI',[value])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','SetClutCallsWaitBlanking',[bool])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','SetClutPunchesBlankingClock',[bool])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','InterruptPunchesBlankingClock',[bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','SetClutCallsWaitBlanking',[psych_bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','SetClutPunchesBlankingClock',[psych_bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','InterruptPunchesBlankingClock',[psych_bool])
 oldPriority=Screen(windowPtrOrScreenNumber,'Preference','MaxPriorityForBlankingInterrupt',[priority])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','WaitBlankingAlwaysCallsSetClut',[bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','WaitBlankingAlwaysCallsSetClut',[psych_bool])
 oldSecs=Screen(windowPtrOrScreenNumber,'Preference','BlankingDuration',[secs])
 oldN=Screen(windowPtrOrScreenNumber,'Preference','MinimumEntriesForSetClutToWaitForBlanking',[n])
 oldPriority=Screen(windowPtrOrScreenNumber,'Preference','MinimumSetClutPriority',[priority])
 oldPriority=Screen(windowPtrOrScreenNumber,'Preference','MaximumSetClutPriority',[priority])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','DipPriorityAfterSetClut',[bool])
-oldBool=Screen(windowPtrOrScreenNumber,'Preference','UsesHighGammaBits',[bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','DipPriorityAfterSetClut',[psych_bool])
+oldBool=Screen(windowPtrOrScreenNumber,'Preference','UsesHighGammaBits',[psych_bool])
 
 */
 
@@ -98,7 +98,7 @@ static char synopsisString[] =
 	"Get or set a Psychtoolbox preference."
 	"Preference settings are global - they affect all operations of a module until changed."
 	""
-	"\noldBool = Screen('Preference', 'IgnoreCase', [bool]);"
+	"\noldBool = Screen('Preference', 'IgnoreCase', [psych_bool]);"
 	"\ntick0Secs = Screen('Preference', 'Tick0Secs', tick0Secs);"
 	"\npsychTableVersion = Screen('Preference', 'PsychTableVersion');"
 	"\nmexFunctionName = Screen('Preference', 'PsychTableCreator');"
@@ -109,17 +109,19 @@ static char synopsisString[] =
 	"\noldEnableFlag = Screen('Preference', 'TextAntiAliasing', [enableFlag=-1 (System setting), 0 = Disable, 1 = Enable, 2 = EnableHighQuality]);"
 	"\noldEnableFlag = Screen('Preference', 'TextRenderer', [enableFlag=0 (Default OS-specific [fast]), 1 = HighQ OS-specific]);"
 	"\noldEnableFlag = Screen('Preference', 'SkipSyncTests', [enableFlag]);"
+	"\noldEnableFlag = Screen('Preference', 'FrameRectCorrection', [enableFlag=1]);"
 	"\noldLevel = Screen('Preference', 'VisualDebugLevel', level);"
 	"\n\nWorkaround flags to work around all kind of deficient drivers and hardware:\n"
 	"See 'help ConserveVRAMSettings' for settings and their effect.\n"
 	"\noldMode = Screen('Preference', 'ConserveVRAM', mode);"
 	"\n\nActivate compatibility mode: Try to behave like the old MacOS-9 Psychtoolbox:"
 	"\noldEnableFlag = Screen('Preference', 'EmulateOldPTB', [enableFlag]);\n"
-	"\noldEnableFlag = Screen('Preference', 'Enable3DGraphics', [enableFlag]);"
+	"\noldEnableFlags = Screen('Preference', 'Enable3DGraphics', [enableFlags]);"
 	"\noldEnableFlag = Screen('Preference', 'SuppressAllWarnings', [enableFlag]);"
 	"\noldMode = Screen('Preference', 'VBLTimestampingMode', [newmode]);"
 	"\noldVTOTAL = Screen('Preference', 'VBLEndlineOverride' [, newVTOTAL]);"
-	"\noldMode = Screen('Preference', 'DefaultVideocaptureEngine', [newmode (0=Quicktime-SequenceGrabbers, 1=LibDC1394-Firewire)]);"
+	"\noldMode = Screen('Preference', 'DefaultVideocaptureEngine', [newmode (0=Quicktime-SequenceGrabbers, 1=LibDC1394-Firewire, 2=LibARVideo)]);"
+	"\noldLevel = Screen('Preference', 'WindowShieldingLevel', [newLevel (0 = Behind all other windows - 2000 = In front of all other windows, the default)]);"
 	"\nresiduals = Screen('Preference', 'SynchronizeDisplays', syncMethod);"
 	"\noldLevel = Screen('Preference', 'Verbosity' [,level]);";
 
@@ -160,7 +162,7 @@ PsychError SCREENPreference(void)
 	PsychArgFormatType		arg1Type;
 	char					*preferenceName, *newFontName;
 	const char				*tableCreator, *oldDefaultFontName;
-	Boolean					preferenceNameArgumentValid, booleanInput, ignoreCase, tempFlag, textAlphaBlendingFlag, suppressAllWarningsFlag;
+	psych_bool					preferenceNameArgumentValid, booleanInput, ignoreCase, tempFlag, textAlphaBlendingFlag, suppressAllWarningsFlag;
 	int						numInputArgs, i, newFontStyleNumber, newFontSize, tempInt, tempInt2, tempInt3;
 	double					returnDoubleValue, inputDoubleValue;
 	
@@ -332,6 +334,14 @@ PsychError SCREENPreference(void)
 					PsychPrefStateSet_VideoCaptureEngine(tempInt);
 				}
 			preferenceNameArgumentValid=TRUE;
+		}else
+			if(PsychMatch(preferenceName, "WindowShieldingLevel")){
+				PsychCopyOutDoubleArg(1, kPsychArgOptional, PsychPrefStateGet_WindowShieldingLevel());
+				if(numInputArgs==2){
+					PsychCopyInIntegerArg(2, kPsychArgRequired, &tempInt);
+					PsychPrefStateSet_WindowShieldingLevel(tempInt);
+				}
+			preferenceNameArgumentValid=TRUE;
 		}else 
 			if(PsychMatch(preferenceName, "ConserveVRAM") || PsychMatch(preferenceName, "Workarounds1")){
 					PsychCopyOutDoubleArg(1, kPsychArgOptional, PsychPrefStateGet_ConserveVRAM());
@@ -349,6 +359,14 @@ PsychError SCREENPreference(void)
 					}
 			preferenceNameArgumentValid=TRUE;
 		}else 
+			if(PsychMatch(preferenceName, "FrameRectCorrection")){
+					PsychCopyOutDoubleArg(1, kPsychArgOptional, PsychPrefStateGet_FrameRectCorrection());
+					if(numInputArgs==2){
+						PsychCopyInDoubleArg(2, kPsychArgRequired, &inputDoubleValue);
+						PsychPrefStateSet_FrameRectCorrection(inputDoubleValue);
+					}
+			preferenceNameArgumentValid=TRUE;
+		}else 
 			if(PsychMatch(preferenceName, "EmulateOldPTB")){
 				PsychCopyOutDoubleArg(1, kPsychArgOptional, PsychPrefStateGet_EmulateOldPTB());
 				if(numInputArgs==2){
@@ -360,8 +378,8 @@ PsychError SCREENPreference(void)
 			if(PsychMatch(preferenceName, "Enable3DGraphics")){
 				PsychCopyOutDoubleArg(1, kPsychArgOptional, PsychPrefStateGet_3DGfx());
 				if(numInputArgs==2){
-					PsychCopyInFlagArg(2, kPsychArgRequired, &tempFlag);
-					PsychPrefStateSet_3DGfx(tempFlag);
+					PsychCopyInIntegerArg(2, kPsychArgRequired, &tempInt);
+					PsychPrefStateSet_3DGfx(tempInt);
 				}
 				preferenceNameArgumentValid=TRUE;
 		}else 

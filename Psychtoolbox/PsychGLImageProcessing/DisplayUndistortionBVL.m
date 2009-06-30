@@ -178,6 +178,13 @@ function [scal] = DisplayUndistortionBVL(caliboutfilename, screenid, xnum, ynum,
 % Running on PTB-3? Abort otherwise:
 AssertOpenGL;
 
+% Need to temporarily add the '/private' subfolder to Octave's path, as
+% Octave as of V3.0.5 doesn't know about private subfolders yet:
+if IsOctave
+    warning('As of Octave version 3.2.0, this function does not always produce correct results, due to insufficient support for the griddata() v3 interpolation method!');
+    addpath([ fileparts(mfilename('fullpath')) '/private' ]);
+end
+
 % Enable unified key mapping for all operating systems:
 KbName('UnifyKeyNames');
 
@@ -398,11 +405,7 @@ try
         % Save intermediate calibration variables to file 'caliboutfilename'. This
         % method should work on both, Matlab 6.x, 7.x, ... and GNU/Octave - create
         % files that are readable by all runtime environments:
-        if ~IsOctave
-            save(caliboutfilename, 'warptype', 'scal', '-mat', '-V6');
-        else
-            save('-mat', caliboutfilename, 'warptype', 'scal');
-        end
+        save(caliboutfilename, 'warptype', 'scal', '-mat', '-V6');
         
         % MK: Superseded by direct call to bvlSelectFitPts above: [scal] = selectcalibrationpoints(scal);
     else
@@ -438,11 +441,7 @@ try
     % Save intermediate calibration variables to file 'caliboutfilename'. This
     % method should work on both, Matlab 6.x, 7.x, ... and GNU/Octave - create
     % files that are readable by all runtime environments:
-    if ~IsOctave
-        save(caliboutfilename, 'warptype', 'scal', '-mat', '-V6');
-    else
-        save('-mat', caliboutfilename, 'warptype', 'scal');
-    end
+    save(caliboutfilename, 'warptype', 'scal', '-mat', '-V6');
 
     % Interactive calibration finished, 'scal' is ready for numeric
     % polynomial fit to create the final useable calibration:
@@ -491,11 +490,7 @@ Screen('Preference', 'Verbosity', oldverbosity);
 % Save all relevant calibration variables to file 'caliboutfilename'. This
 % method should work on both, Matlab 6.x, 7.x, ... and GNU/Octave - create
 % files that are readable by all runtime environments:
-if ~IsOctave
-    save(caliboutfilename, 'warptype', 'scal', '-mat', '-V6');
-else
-    save('-mat', caliboutfilename, 'warptype', 'scal');
-end
+save(caliboutfilename, 'warptype', 'scal', '-mat', '-V6');
 
 if success
     fprintf('Calibration finished :-)\n\n');

@@ -19,6 +19,7 @@ function ThePath=PsychtoolboxConfigDir(subDir)
 %                         PsychPrefsfolder.m file anymore.
 %          4/28/08    mk  Made compatible with Octave, added 'subDir'
 %                         option.
+%          6/14/09    mk  Remove Octave code -> Not needed anymore.
 
 persistent PTBPrefPath %#ok<REDEF>
 
@@ -49,11 +50,13 @@ if isempty(ThePath)
     elseif IsWindows
         [ErrMsg,StringStart] = dos('echo %AppData%');
         % end-1 to trim trailing carriage return
-        StringStart = StringStart(1:(end-1));
+        %StringStart = StringStart(1:(end-1));
+		StringStart = deblank(StringStart);
         if strcmp(StringStart,'%AppData%')
             FoundHomeDir = 0;
             [ErrMsg,HomeDir] = dos('echo %UserProfile%');
-            HomeDir = HomeDir(1:(end-1));
+            %HomeDir = HomeDir(1:(end-1));
+			HomeDir = deblank(HomeDir);
             if strcmp(HomeDir,'%UserProfile%')
                 HomeDir = uigetdir('','Please find your home folder for me');
                 if ischar(HomeDir)
@@ -104,7 +107,7 @@ if isempty(ThePath)
         % recent Matlabs:
         [DirMade, DirMessage] = mkdir(TheDir);
         
-        if ~((IsOctave & DirMade~=0) | (~IsOctave & DirMade==0))
+        if DirMade
             TheDir = [StringStart 'Psychtoolbox'];
             ThePath=TheDir; %#ok<NASGU>
         else % if exist(TheDir,'dir')
@@ -131,7 +134,7 @@ if exist('subDir', 'var')
     % Create subDir on first use:
     if ~exist(ThePath, 'dir')
         [DirMade, DirMessage] = mkdir(ThePath);
-        if (IsOctave & DirMade~=0) | (~IsOctave & DirMade==0)
+        if DirMade == 0
             error(sprintf('I could not create a folder to store your preferences in\n\n%s [%s]\n\nWhat are the permissions on that folder?',StringStart, DirMessage)); %#ok<SPERR>
         end
     end

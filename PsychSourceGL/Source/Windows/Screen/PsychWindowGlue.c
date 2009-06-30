@@ -53,9 +53,9 @@ static HINSTANCE hInstance = 0;
 static int win32_windowcount = 0;
 
 // Mouse button states:
-static boolean mousebutton_l=FALSE;
-static boolean mousebutton_m=FALSE;
-static boolean mousebutton_r=FALSE;
+static psych_bool mousebutton_l=FALSE;
+static psych_bool mousebutton_m=FALSE;
+static psych_bool mousebutton_r=FALSE;
 
 // Definitions for dynamic binding of VSYNC extension:
 //typedef void (APIENTRY *PFNWGLEXTSWAPCONTROLPROC) (int);
@@ -73,10 +73,10 @@ static boolean mousebutton_r=FALSE;
     We switch to RT scheduling during PsychGetMonitorRefreshInterval() and a few other timing tests in
     PsychOpenWindow() to reduce measurement jitter caused by possible interference of other tasks.
 */
-boolean PsychRealtimePriority(boolean enable_realtime)
+psych_bool PsychRealtimePriority(psych_bool enable_realtime)
 {
     HANDLE	   currentProcess;
-    static boolean old_enable_realtime = FALSE;
+    static psych_bool old_enable_realtime = FALSE;
     static DWORD   oldPriority = NORMAL_PRIORITY_CLASS;
     const  DWORD   realtime_class = REALTIME_PRIORITY_CLASS;
 
@@ -257,7 +257,7 @@ void PsychGetMouseButtonState(double* buttonArray)
 	return;
 }
 
-boolean ChangeScreenResolution (int screenNumber, int width, int height, int bitsPerPixel, int fps)	// Change The Screen Resolution
+psych_bool ChangeScreenResolution (int screenNumber, int width, int height, int bitsPerPixel, int fps)	// Change The Screen Resolution
 {
   DEVMODE dmScreenSettings; // Device mode structure
 
@@ -305,7 +305,7 @@ boolean ChangeScreenResolution (int screenNumber, int width, int height, int bit
     would be better to just issue an PsychErrorExit() and have that clean up everything allocated outside of
     PsychOpenOnscreenWindow().
 */
-boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType *windowRecord, int numBuffers, int stereomode, int conserveVRAM)
+psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType *windowRecord, int numBuffers, int stereomode, int conserveVRAM)
 {
   char winname[100];
   RECT winRec;
@@ -317,13 +317,13 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
   HWND        hWnd;
   WNDCLASS    wc;
   PIXELFORMATDESCRIPTOR pfd;
-  int         attribs[48];
+  int         attribs[58];
   int         attribcount;
   float       fattribs[2]={0,0};
   int x, y, width, height, i, bpc;
   GLenum      glerr;
   DWORD flags;
-  boolean fullscreen = FALSE;
+  psych_bool fullscreen = FALSE;
   DWORD windowStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
   // The WS_EX_NOACTIVATE flag prevents the window from grabbing keyboard focus. That way,
   // the new Java-GetChar can do its job.
@@ -527,8 +527,8 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     pfd.dwFlags      = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_SWAP_EXCHANGE |flags;  // Want OpenGL capable window with bufferswap via page-flipping...
     pfd.iPixelType   = PFD_TYPE_RGBA; // Want a RGBA pixel format.
     pfd.cColorBits   = 32;            // 32 bpp at least...
-    pfd.cAlphaBits   = 8;             // Want a 8 bit alpha-buffer.
-    
+    pfd.cAlphaBits   = (bpc == 10) ? 2 : 8;	// Want a 8 bit alpha-buffer, unless R10G10B10A2 pixelformat requested for native 10 bpc support.
+
     // Support for OpenGL 3D rendering requested?
     if (PsychPrefStateGet_3DGfx()) {
       // Yes. Allocate and attach a 24bit depth buffer and 8 bit stencil buffer:
@@ -538,6 +538,25 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
       attribs[attribcount++]=24;
       attribs[attribcount++]=0x2023; // WGL_STENCIL_BITS_ARB
       attribs[attribcount++]=8;
+	  // Alloc an accumulation buffer as well?
+	  if (PsychPrefStateGet_3DGfx() & 2) {
+		  // Yes: Alloc accum buffer, request 64 bpp, aka 16 bits integer per color component if possible:
+		  attribs[attribcount++] = WGL_ACCUM_BITS_EXT;
+		  attribs[attribcount++] = 64;
+		  attribs[attribcount++] = WGL_ACCUM_RED_BITS_EXT;
+		  attribs[attribcount++] = 16;
+		  attribs[attribcount++] = WGL_ACCUM_GREEN_BITS_EXT;
+		  attribs[attribcount++] = 16;
+		  attribs[attribcount++] = WGL_ACCUM_BLUE_BITS_EXT;
+		  attribs[attribcount++] = 16;
+		  attribs[attribcount++] = WGL_ACCUM_ALPHA_BITS_EXT;
+		  attribs[attribcount++] = 16;
+		  pfd.cAccumBits      = 64;
+		  pfd.cAccumRedBits   = 16;
+		  pfd.cAccumGreenBits = 16;
+		  pfd.cAccumBlueBits  = 16;
+		  pfd.cAccumAlphaBits = 16;
+	  }	  
     }
     
     // Multisampled Anti-Aliasing requested?
@@ -1065,7 +1084,7 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 	
 	TO DO:  We need to walk down the screen number and fill in the correct value for the benefit of TexturizeOffscreenWindow
 */
-boolean PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
+psych_bool PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
 {
   /*
     //PsychTargetSpecificWindowRecordType 	cgStuff;
@@ -1165,14 +1184,54 @@ void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
 }
 
 /*
+    PsychOSGetVBLTimeAndCount()
+
+    Returns absolute system time of last VBL and current total count of VBL interrupts since
+    startup of gfx-system for the given screen. Returns a time of -1 and a count of 0 if this
+    feature is unavailable on the given OS/Hardware configuration.
+*/
+double PsychOSGetVBLTimeAndCount(unsigned int screenid, psych_uint64* vblCount)
+{
+	psych_uint64 ust, msc, sbc;
+	CGDirectDisplayID displayID;
+
+	// Retrieve displayID, aka HDC for this screenid:
+	PsychGetCGDisplayIDFromScreenNumber(&displayID, screenid);
+	
+	// Ok, this will return VBL count and last VBL time via the OML GetSyncValuesOML call
+	// if that extension is supported on this setup. As of mid 2009 i'm not aware of any
+	// affordable graphics card that would support this extension, but who knows??
+	if ((NULL != wglGetSyncValuesOML) && (wglGetSyncValuesOML((HDC) displayID, (INT64*) &ust, (INT64*) &msc, (INT64*) &sbc))) {
+		*vblCount = msc;
+		if (!(PsychGetTimeBaseHealthiness() & 1) && (PsychGetKernelTimebaseFrequencyHz() > 10000)) {
+			// Convert ust into regular GetSecs timestamp:
+			// At least we hope this conversion is correct...
+			return( ((double) ust) / PsychGetKernelTimebaseFrequencyHz() );
+		}
+		else {
+			// Last VBL timestamp unavailable:
+			return(-1);
+		}
+	}
+	else {
+		// Unsupported on Windows so far :(
+		*vblCount = 0;
+		return(-1);
+	}
+}
+
+/*
     PsychOSFlipWindowBuffers()
     
     Performs OS specific double buffer swap call.
 */
 void PsychOSFlipWindowBuffers(PsychWindowRecordType *windowRecord)
 {
-  // Trigger the "Front <-> Back buffer swap (flip) (on next vertical retrace)":
-  SwapBuffers(windowRecord->targetSpecific.deviceContext);
+	// Execute OS neutral bufferswap code first:
+	PsychExecuteBufferSwapPrefix(windowRecord);
+
+	// Trigger the "Front <-> Back buffer swap (flip) (on next vertical retrace)":
+	SwapBuffers(windowRecord->targetSpecific.deviceContext);
 }
 
 /* Enable/disable syncing of buffer-swaps to vertical retrace. */
@@ -1182,6 +1241,10 @@ void PsychOSSetVBLSyncLevel(PsychWindowRecordType *windowRecord, int swapInterva
   
   // Enable rendering context of window:
   PsychSetGLContext(windowRecord);
+  
+  // Store new setting also in internal helper variable, e.g., to allow workarounds to work:
+  windowRecord->vSynced = (swapInterval > 0) ? TRUE : FALSE;
+
   // Try to set requested swapInterval if swap-control extension is supported on
   // this windows machine. Otherwise this will be a no-op...
   if (wglSwapIntervalEXT) {
@@ -1244,7 +1307,7 @@ void PsychOSUnsetGLContext(PsychWindowRecordType* windowRecord)
 /* Same as PsychOSSetGLContext() but for selecting userspace rendering context,
  * optionally copying state from PTBs context.
  */
-void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, Boolean copyfromPTBContext)
+void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, psych_bool copyfromPTBContext)
 {
 	// Child protection:
 	if (windowRecord->targetSpecific.glusercontextObject == NULL) PsychErrorExitMsg(PsychError_user, "GL Userspace context unavailable! Call InitializeMatlabOpenGL *before* Screen('OpenWindow')!");

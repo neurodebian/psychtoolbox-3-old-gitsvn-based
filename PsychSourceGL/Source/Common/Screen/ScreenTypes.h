@@ -210,6 +210,11 @@ typedef struct {
 // certain conditions.
 #define kPsychBusyWaitForVBLBeforeBufferSwapRequest 32768
 
+// Don't use native beamposition query mechanism but either our own
+// homegrown solution, or no beampos query at all:
+// Currently used to work around bugs in Leopard 10.5.7 + ATI gfx:
+#define kPsychDontUseNativeBeamposQuery 65536
+
 //function protoptypes
 
 //Accessors for PsychDepthType 
@@ -217,7 +222,7 @@ void				PsychInitDepthStruct(PsychDepthType *depth);
 int					PsychGetNumDepthsFromStruct(PsychDepthType *depth);
 int					PsychGetValueFromDepthStruct(int index, PsychDepthType *depth);
 void				PsychAddValueToDepthStruct(int value, PsychDepthType *depth);
-boolean				PsychIsMemberDepthStruct(PsychDepthType *depth, PsychDepthType *depthSet);
+psych_bool				PsychIsMemberDepthStruct(PsychDepthType *depth, PsychDepthType *depthSet);
 void				PsychCopyDepthStruct(PsychDepthType *toDepth, PsychDepthType *fromDepth);
 
 // Useless function, always returns RGBA mode, the only one we support.

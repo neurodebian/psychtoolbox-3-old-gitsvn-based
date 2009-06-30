@@ -55,10 +55,16 @@ static char synopsisString[] =
 "recording: 0 (default) = Only record video. 2 = Record audio track as well. The value 1 (or 1+2) asks "
 "PTB to first record into system memory, and only write the movie file after capture has been stopped. "
 "This allows for higher capture framerates, but is limited in recording time by installed memory. Also, "
-"this mode currently can cause hangs and crashes of PTB for unknown reasons, so better avoid!\n"
+"this mode currently can sometimes cause hangs and crashes of PTB for unknown reasons, so better avoid!\n"
+"A setting of 4 will only enable recording, but no return of captured data, i.e., just record to disk. "
+"A setting of 8 will avoid some calls that are supposed to provide better realtime behaviour, but may "
+"cause some problems with some video codecs when recording to disk. A setting of 16 will perform most "
+"of the heavy work on a separate parallel background thread, utilizing multi-core machines better.\n"
+"A setting of 32 will try to select the highest quality codec for texture creation from captured video, "
+"instead of the normal quality codec.\n"
 "\n"
 "'captureEngineType' This optional parameter allows selection of the video capture engine to use for this "
-"video source. Allowable values are currently 0 and 1. Zero selects Apples Quicktime Sequence-Grabber API "
+"video source. Allowable values are currently 0, 1 and 2. Zero selects Apples Quicktime Sequence-Grabber API "
 "as capture engine, which is supported on MacOS/X and MS-Windows (for Windows you'll need to install a "
 "Quicktime Video digitizer component VDIG). The Quicktime engine allows movie recording and sound recording "
 "as well (see above). A value of 1 selects Firewire video capture via the free software library libdc1394-V2. "
@@ -67,7 +73,14 @@ static char synopsisString[] =
 "cams allows for much higher flexibility and performance than use of video capture via Quicktime, "
 "however, video recording to harddisk or sound recording isn't yet supported with firewire capture, ie., "
 "the 'targetmoviename' is simply ignored. The firewire capture engine is supported on Linux, MacOS/X and "
-"- with quite a few limitations and bugs - on Windows. If you don't specify 'captureEngineType', the global "
+"- maybe in the future, with quite a few limitations and bugs - on Windows. \n"
+"A value of 2 selects the ARVideo video capture engine from the ARToolkit. This engine doesn't allow for "
+"video recording or sound recording and has limited performance and flexibility, so it combines the "
+"disadvantages of the Quicktime- and Firewire engine. However it is the only engine that allows for "
+"video capture from checp non-IIDC cameras on Linux, and on Windows it should have a higher performance "
+"than the Quicktime engine. This engine is supported on all systems. On Linux it uses the GStreamer media "
+"framework, on Windows it uses the DirectShow framework, on OS/X it uses Quicktime.\n\n"
+"If you don't specify 'captureEngineType', the global "
 "setting from Screen('Preference', 'DefaultVideoCaptureEngine') will be used. If you don't specify that either "
 "then engine selection will default to Quicktime for MacOS/X and MS-Windows, and Firewire libdc1394 on Linux.\n\n"
 "To summarize: \n"
@@ -89,7 +102,7 @@ PsychError SCREENOpenVideoCapture(void)
 	int                                     width;
 	int                                     height;
 	PsychRectType                           roirectangle;
-	Boolean                                 roiassigned;
+	psych_bool                                 roiassigned;
 	int                                     reqdepth = 0;
 	int                                     num_dmabuffers = 0;
 	int                                     allow_lowperf_fallback = 1;
@@ -146,7 +159,7 @@ PsychError SCREENOpenVideoCapture(void)
 	// setting, which by itself defaults to LibDC1394 (type 1) on Linux, and Quicktime/SG (type 0) on all other OSs.
 	engineId = PsychPrefStateGet_VideoCaptureEngine();
 	PsychCopyInIntegerArg(9, FALSE, &engineId);
-	if (engineId<0 || engineId>1)  PsychErrorExitMsg(PsychError_user, "OpenVideoCapture called with invalid 'captureEngineType' argument. Valid are zero and one.");
+	if (engineId<0 || engineId>2)  PsychErrorExitMsg(PsychError_user, "OpenVideoCapture called with invalid 'captureEngineType' argument. Valid are zero, one and two.");
 
 	// Try to open the capture device and create & initialize a corresponding capture object.
 	// A MATLAB handle to the video capture object is returned upon successfull operation.
@@ -164,3 +177,34 @@ PsychError SCREENOpenVideoCapture(void)
 	return(PsychError_none);
 }
 
+static char useString2[] = "devices = Screen('VideoCaptureDevices' [, engineId]);";
+static char synopsisString2[] = 
+"Enumerate all available video devices for a given videocapture engine id 'engineId', or "
+"for the default engine, if none is given. Returns a struct array with one slot per available "
+"device. Entries of each struct in the array are specific to the selected capture engine, "
+"except for the entry 'DeviceIndex' which provides a handle that you could pass to "
+"Screen('OpenVideoCapture', windowPtr, deviceIndex, ...); as the 'deviceIndex' argument "
+"to select the video device corresponding to a given slot.\n"
+"The function may return an empty array if no video capture devices could be detected.\n";
+
+PsychError SCREENVideoCaptureDevices(void) 
+{
+	int engineId;
+	
+	// All sub functions should have these two lines
+	PsychPushHelp(useString2, synopsisString2, seeAlsoString);
+	if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none);};
+
+	PsychErrorExit(PsychCapNumInputArgs(1));            // Max. 1 input args.
+	PsychErrorExit(PsychRequireNumInputArgs(0));        // Min. 1 input args required.
+	PsychErrorExit(PsychCapNumOutputArgs(1));           // Max. 1 output args.
+	
+	engineId = PsychPrefStateGet_VideoCaptureEngine();
+	PsychCopyInIntegerArg(1, FALSE, &engineId);
+	
+	// Do actual enumeration for the given engineId:
+	PsychEnumerateVideoSources(engineId, 1);
+
+	// Ready!
+	return(PsychError_none);	
+}

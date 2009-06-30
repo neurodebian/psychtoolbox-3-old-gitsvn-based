@@ -24,6 +24,7 @@
 
 #include "Psych.h"
 #include "PsychCV.h"
+#include "PsychCVARToolkit.h"
 
 PsychError PsychModuleInit(void)
 {
@@ -44,18 +45,23 @@ PsychError PsychModuleInit(void)
 	
 	// Register synopsis and named subfunctions.
 	PsychErrorExit(PsychRegister("Verbosity", &PSYCHCVVerbosity));
+	#ifdef PSYCHCV_USE_OPENCV
 	PsychErrorExit(PsychRegister("OpenEyesInitialize", &PSYCHCVOpenEyesInitialize));
 	PsychErrorExit(PsychRegister("OpenEyesShutdown", &PSYCHCVOpenEyesShutdown));
 	PsychErrorExit(PsychRegister("OpenEyesParameters", &PSYCHCVOpenEyesParameters));
 	PsychErrorExit(PsychRegister("OpenEyesTrackEyePosition", &PSYCHCVOpenEyesTrackEyePosition));
-
-	PsychErrorExit(PsychRegister("CopyMatrixToMemBuffer", &PSYCHCVCopyMatrixToMemBuffer));
-//	PsychErrorExit(PsychRegister("FillBuffer", &PSYCHPORTAUDIOFillAudioBuffer));
-//	PsychErrorExit(PsychRegister("GetDevices", &PSYCHPORTAUDIOGetDevices));
-//	PsychErrorExit(PsychRegister("GetStatus", &PSYCHPORTAUDIOGetStatus));
-//	PsychErrorExit(PsychRegister("LatencyBias", &PSYCHPORTAUDIOLatencyBias));
-//	PsychErrorExit(PsychRegister("GetAudioData", &PSYCHPORTAUDIOGetAudioData));
+	#endif
 	
+	PsychErrorExit(PsychRegister("CopyMatrixToMemBuffer", &PSYCHCVCopyMatrixToMemBuffer));
+
+	PsychErrorExit(PsychRegister("ARInitialize", &PSYCHCVARInitialize));
+	PsychErrorExit(PsychRegister("ARShutdown", &PSYCHCVARShutdown));
+	PsychErrorExit(PsychRegister("ARLoadMarker", &PSYCHCVARLoadMarker));
+	PsychErrorExit(PsychRegister("ARDetectMarkers", &PSYCHCVARDetectMarkers));
+	PsychErrorExit(PsychRegister("ARRenderImage", &PSYCHCVARRenderImage));
+	PsychErrorExit(PsychRegister("ARTrackerSettings", &PSYCHCVARTrackerSettings));
+	PsychErrorExit(PsychRegister("ARRenderSettings", &PSYCHCVARRenderSettings));
+
 	// Setup synopsis help strings:
 	InitializeSynopsis();   //Scripting glue won't require this if the function takes no arguments.
 

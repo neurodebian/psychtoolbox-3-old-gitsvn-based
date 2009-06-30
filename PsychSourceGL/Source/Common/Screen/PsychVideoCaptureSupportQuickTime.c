@@ -31,10 +31,6 @@
 // No Quicktime Sequence Grabber support for GNU/Linux:
 #if PSYCH_SYSTEM != PSYCH_LINUX
 
-// Forward declaration of internal helper function:
-void PsychQTDeleteAllCaptureDevices(void);
-
-
 #if PSYCH_SYSTEM == PSYCH_OSX
 #include <Quicktime/QuickTimeComponents.h>
 #endif
@@ -44,14 +40,22 @@ void PsychQTDeleteAllCaptureDevices(void);
 #include <QuickTimeComponents.h>
 #endif
 
+// Forward declaration of internal helper function:
+void PsychQTDeleteAllCaptureDevices(void);
+OSErr PsychQTSelectVideoSource(SeqGrabComponent seqGrab, SGChannel* sgchanptr, int deviceIndex, psych_bool showOutput, char* retDeviceName);
+void* PsychQTVideoCaptureThreadMain(void* vidcapRecordToCast);
+
+
 // Record which defines all state for a capture device:
 typedef struct {
+	psych_mutex			mutex;			// Access mutex to coordinate access between worker thread and masterthread, if any.
 	unsigned int		recordingflags; // Flags specified at device open time.
     GWorldPtr           gworld;       // Offscreen GWorld into which captured frame is decompressed.
     SeqGrabComponent 	seqGrab;	     // Sequence grabber handle.
     SGChannel           sgchanVideo;  // Handle for video channel of sequence grabber.
 	SGChannel			sgchanAudio;  // Handle for audio channel of sequence grabber.
     ImageSequence 	decomSeq;	     // unique identifier for our video decompression sequence
+	ComponentInstance   vdig;		  // Actual VDIG component.
     int nrframes;                     // Total count of decompressed images.
     double fps;                       // Acquisition framerate of capture device.
     int width;                        // Width x height of captured images.
@@ -66,11 +70,14 @@ typedef struct {
     double avg_decompresstime;        // Average time spent in Quicktime/Sequence Grabber decompressor.
     double avg_gfxtime;               // Average time spent in GWorld --> OpenGL texture conversion and statistics.
     int nrgfxframes;                  // Count of fetched textures.
+	char capDeviceName[1000];		  // Camera name string.
+	MatrixRecordPtr	scaleMatrixPtr;	  // Pointer to scaling matrix, if any. NULL otherwise.
+	psych_thread		worker;		  // Handle of worker thread, if any. NULL otherwise.
 } PsychVidcapRecordType;
 
 static PsychVidcapRecordType vidcapRecordBANK[PSYCH_MAX_CAPTUREDEVICES];
 static int numCaptureRecords = 0;
-static Boolean firsttime = TRUE;
+static psych_bool firsttime = TRUE;
 
 /** PsychVideoCaptureDataProc
  *  This callback is called by the SequenceGrabber subsystem whenever a new frame arrives from
@@ -84,11 +91,13 @@ OSErr PsychVideoCaptureDataProc(SGChannel c, Ptr p, long len, long *offset, long
     CodecFlags	ignore;
     TimeScale 	timeScale;
     double tstart, tend;
+	short exph, expw;				
+	Fixed scaleX, scaleY;
 
     PsychGetAdjustedPrecisionTimerSeconds(&tstart);
     
     // Retrieve handle to our capture data structure:
-    handle = (int) chRefCon;
+    handle = (int) refCon;
 
 	// Check if we're called on a video channel. If we're called on a sound channel,
 	// we simply return -- nothing to do in that case.
@@ -109,11 +118,41 @@ OSErr PsychVideoCaptureDataProc(SGChannel c, Ptr p, long len, long *offset, long
         if (vidcapRecordBANK[handle].decomSeq == 0) {
             // Need to do one-time setup of decompression sequence:
             ImageDescriptionHandle imageDesc = (ImageDescriptionHandle) NewHandle(0);
-            
+
             // retrieve a channelÕs current sample description, the channel returns a sample description that is
             // appropriate to the type of data being captured
             err = SGGetChannelSampleDescription(c, (Handle)imageDesc);
-                        
+			if (PsychPrefStateGet_Verbosity() > 4) {
+				printf("PTB-INFO: Video source %i - In proc: Video size is %i x %i pixels.\n", handle, (*imageDesc)->width, (*imageDesc)->height);
+				printf("PTB-INFO: Video source %i - In proc: Video res is  %i x %i pixels.\n", handle, Fix2Long((*imageDesc)->hRes), Fix2Long((*imageDesc)->vRes));
+			}
+
+			// Matching roirect (expected size of image and dimension of target GWorld) and real image size?
+			if ((*imageDesc)->height != (vidcapRecordBANK[handle].roirect.bottom - vidcapRecordBANK[handle].roirect.top) ||
+				(*imageDesc)->width != (vidcapRecordBANK[handle].roirect.right - vidcapRecordBANK[handle].roirect.left)) {
+				exph = (vidcapRecordBANK[handle].roirect.bottom - vidcapRecordBANK[handle].roirect.top);
+				expw = (vidcapRecordBANK[handle].roirect.right - vidcapRecordBANK[handle].roirect.left);
+
+				if (PsychPrefStateGet_Verbosity() > 1) {	
+					printf("PTB-WARNING: Real size of video image from camera %i ['%s'] %i x %i doesn't match expected size %i x %i!\n", handle, vidcapRecordBANK[handle].capDeviceName, (*imageDesc)->width, (*imageDesc)->height, expw, exph);
+					printf("PTB-WARNING: Will perform some software scaling to compensate for this. However this will incur significant performance loss!\n");
+					printf("PTB-WARNING: It is strongly recommended that you specify a roirect of [0, 0, %i, %i] in the Screen('OpenVideocapture')\n", (*imageDesc)->width, (*imageDesc)->height);
+					printf("PTB-WARNING: call to set a proper image resolution, so this compute intense scaling can be avoided in future sessions!\n");
+				}
+				
+				// Build scaling matrix to compensate for mismatch in size of input image and
+				// destination GWorld / roirect:
+				vidcapRecordBANK[handle].scaleMatrixPtr = malloc(sizeof(MatrixRecord));
+				SetIdentityMatrix(vidcapRecordBANK[handle].scaleMatrixPtr);
+				scaleX = FixRatio(expw, (*imageDesc)->width);
+				scaleY = FixRatio(exph, (*imageDesc)->height);
+				ScaleMatrix(vidcapRecordBANK[handle].scaleMatrixPtr, scaleX, scaleY, 0, 0);
+			}
+			else {
+				// No scaling matrix needed: Assign NULL matrix:
+				vidcapRecordBANK[handle].scaleMatrixPtr = NULL;
+			}
+			
             // begin the process of decompressing a sequence of frames
             // this is a set-up call and is only called once for the sequence - the ICM will interrogate different codecs
             // and construct a suitable decompression chain, as this is a time consuming process we don't want to do this
@@ -125,12 +164,12 @@ OSErr PsychVideoCaptureDataProc(SGChannel c, Ptr p, long len, long *offset, long
                                           vidcapRecordBANK[handle].gworld,      // port for the DESTINATION image
                                           NULL,					// graphics device handle, if port is set, set to NULL
                                           &(vidcapRecordBANK[handle].roirect),	// source rectangle defining the portion of the image to decompress 
-                                          NULL,                                 // transformation matrix
+                                          vidcapRecordBANK[handle].scaleMatrixPtr,	// transformation matrix
                                           srcCopy,				// transfer mode specifier
                                           (RgnHandle)NULL,                      // clipping region in dest. coordinate system to use as a mask
                                           0,					// flags
-                                          codecNormalQuality,                   // accuracy in decompression
-                                          bestSpeedCodec);                      // compressor identifier or special identifiers ie. bestSpeedCodec
+                                          ((vidcapRecordBANK[handle].recordingflags & 32) ? codecMaxQuality : codecNormalQuality),  // accuracy in decompression
+                                          ((vidcapRecordBANK[handle].recordingflags & 32) ? bestFidelityCodec : bestSpeedCodec));   // compressor identifier or special identifiers ie. bestSpeedCodec
             if (err!=noErr) {
                 printf("PTB-ERROR: Error in Video capture callback!!!\n");
                 fflush(NULL);
@@ -163,9 +202,64 @@ OSErr PsychVideoCaptureDataProc(SGChannel c, Ptr p, long len, long *offset, long
         // Update framecounter:
         vidcapRecordBANK[handle].nrframes++;
     }
-    
-    
+
     return(noErr);
+}
+
+/* Main routine of video capture background worker thread: */
+void* PsychQTVideoCaptureThreadMain(void* vidcapRecordToCast)
+{
+	double idlesecs;
+	int error;
+	
+	// Cast to our video capture record struct:
+	PsychVidcapRecordType *dev = (PsychVidcapRecordType*) vidcapRecordToCast;
+	
+	#if PSYCH_SYSTEM != PSYCH_WINDOWS
+	// Signal to QuickTime that this is a separate thread.
+	if ((error = EnterMoviesOnThread(0)) != noErr) {
+		printf("PTB-ERROR: In PsychQTVideoCaptureThreadMain(): EnterMoviesOnThread() returns error code %i\n", (int) error);
+
+		// Emergency exit:
+		return (NULL);
+	}
+	#endif
+
+	// Is grabbing logically active? Otherwise we're done:
+	while (dev->grabber_active > 0) {
+		// Grabber active. Wait a quarter capture cycle duration. This is save, even
+		// if grabber should become inactive during this period, as we will recheck below.
+		// We wait imprecisely, as a msecs more or less won't matter here:
+		idlesecs = (1.0 / dev->fps) / 4;
+		PsychYieldIntervalSeconds(idlesecs);
+		
+		// Time for work. Lock the mutex:
+		PsychLockMutex(&(dev->mutex));
+		
+		// Do the SGIdle() call if device still active:
+		if (dev->grabber_active > 0) {
+			if ((error = (int) SGIdle(dev->seqGrab))!= (int) noErr) {
+				// We don't abort on non noErr case, but only (optionally) report it. This is because when in harddisc
+				// movie recording mode with sound recording, we can get intermittent errors in SGIdle() which are
+				// meaningless so they are best ignored and must not lead to interruption of PTB operation.
+				if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-DEBUG: In PsychQTVideoCaptureThreadMain(): SGIdle() returns error code %i\n", (int) error);
+			}
+		}
+
+		// Done. Unlock mutex:
+		PsychUnlockMutex(&(dev->mutex));
+
+		// Next iteration...
+	}
+
+	#if PSYCH_SYSTEM != PSYCH_WINDOWS
+	if ((error = ExitMoviesOnThread()) != noErr) {
+		printf("PTB-ERROR: In PsychQTVideoCaptureThreadMain(): ExitMoviesOnThread() returns error code %i\n", (int) error);
+	}
+	#endif
+	
+	// Done. Return a NULL result:
+	return(NULL);
 }
 
 /*
@@ -183,10 +277,333 @@ void PsychQTVideoCaptureInit(void)
         vidcapRecordBANK[i].seqGrab = (SeqGrabComponent) NULL;
         vidcapRecordBANK[i].decomSeq = 0;
         vidcapRecordBANK[i].grabber_active = 0;
+		vidcapRecordBANK[i].worker = NULL;
     }    
     numCaptureRecords = 0;
     
     return;
+}
+
+void PsychQTEnumerateVideoSources(int outPos)
+{
+	PsychGenericScriptType 	*devs;
+	const char *FieldNames[]={"DeviceIndex", "ClassIndex", "InputIndex", "ClassName", "InputName"};
+
+    SeqGrabComponent	seqGrab;
+	SGChannel			sgchannel;
+    SGChannel			*sgchanptr;
+	OSErr				error;
+	SGDeviceList		sgdeviceList;
+    int					i, j, selectedIndex;
+	char				port_str[64];
+	char				class_str[64];
+    Str63				devPStr;
+	Str255				outDeviceName;
+	Str255				outInputName;
+	Str255				devName;
+    char				msgerr[10000];
+	int					deviceClass, deviceInput;
+	int					n;
+	
+    // We startup the Quicktime subsystem only on first invocation.
+    if (firsttime) {
+#if PSYCH_SYSTEM == PSYCH_WINDOWS
+        // Initialize Quicktime for Windows compatibility layer: This will fail if
+        // QT isn't installed on the Windows machine...
+        error = InitializeQTML(0);
+        if (error!=noErr) {
+            PsychErrorExitMsg(PsychError_internal, "Quicktime Media Layer initialization failed: Quicktime not properly installed?!?");
+        }
+#endif
+
+        // Initialize Quicktime-Subsystem:
+        error = EnterMovies();
+        if (error!=noErr) {
+            PsychErrorExitMsg(PsychError_internal, "Quicktime EnterMovies() failed!!!");
+        }
+        firsttime = FALSE;
+    }
+	
+	// Ok, rather ugly. We create a sequence grabber and associated video channel
+	// for the sole purpose of enumeration:
+    seqGrab = OpenDefaultComponent(SeqGrabComponentType, 0);
+    if (seqGrab == NULL) {
+		printf("PTB-ERROR: Failed to open sequence grabber video capture component for enumeration!");
+        PsychErrorExitMsg(PsychError_internal, "Failed to open requested sequence grabber for video device enumeration!");
+    }
+
+    // Initialize the sequence grabber component:
+    error = SGInitialize(seqGrab);
+    if (error != noErr) {
+        if (seqGrab) CloseComponent(seqGrab);
+        PsychErrorExitMsg(PsychError_internal, "SGInitialize() for capture device enumeration failed!"); 
+    }
+	
+	sgchanptr = &sgchannel;
+	error = SGNewChannel(seqGrab, VideoMediaType, sgchanptr);
+    if (error == noErr) {
+		// Enumerate all available devices:
+		error = SGGetChannelDeviceList(*sgchanptr, sgDeviceListIncludeInputs, &sgdeviceList);
+		if (error == noErr) {
+			// First scan: Find out how many devices there in total:
+			n = 0;
+			for (i = 0; i< (*sgdeviceList)->count; i++) {				
+				if(NULL != (((*sgdeviceList)->entry[i]).inputs)) {
+					n += (*(((*sgdeviceList)->entry[i]).inputs))->count;
+
+					// One extra slot for default input in this class, if any:
+					if ((*(((*sgdeviceList)->entry[i]).inputs))->count > 0) n++;
+				}
+			}
+
+			// One extra slot for the default device, if any:
+			if (n > 0) {
+				n++;
+			}
+
+			// Create output struct array with n output slots:
+			PsychAllocOutStructArray(outPos, TRUE, n, 5, FieldNames, &devs);
+			n = 0;
+
+			// Second scan: Actually create the output entries:
+			for (i = 0; i< (*sgdeviceList)->count; i++) {
+				p2cstrcpy(class_str, (((*sgdeviceList)->entry[i]).name));
+				// printf("Device Nr. %i is: %s\n\n", i, class_str);
+				
+				if(NULL != (((*sgdeviceList)->entry[i]).inputs)) {
+					for (j = 0; j < (*(((*sgdeviceList)->entry[i]).inputs))->count; j++) {
+						p2cstrcpy(port_str, (*(((*sgdeviceList)->entry[i]).inputs))->entry[j].name);
+						// printf("Device [%i -> %i]: %s\n", i, j, port_str);
+						
+						deviceClass = i + 1;
+						deviceInput = j + 1;
+						PsychSetStructArrayDoubleElement("DeviceIndex", n, deviceClass * 10000 + deviceInput, devs);
+						PsychSetStructArrayDoubleElement("ClassIndex", n, deviceClass, devs);
+						PsychSetStructArrayDoubleElement("InputIndex", n, deviceInput, devs);
+						PsychSetStructArrayStringElement("ClassName", n, class_str, devs);
+						PsychSetStructArrayStringElement("InputName", n, port_str, devs);
+
+						// Next slot:
+						n++;
+						
+						if (j == (*(((*sgdeviceList)->entry[i]).inputs))->selectedIndex) {
+							// Special case: Default device input 0 for this class:
+							PsychSetStructArrayDoubleElement("DeviceIndex", n, deviceClass * 10000, devs);
+							PsychSetStructArrayDoubleElement("ClassIndex", n, deviceClass, devs);
+							PsychSetStructArrayDoubleElement("InputIndex", n, deviceInput, devs);
+							PsychSetStructArrayStringElement("ClassName", n, class_str, devs);
+							PsychSetStructArrayStringElement("InputName", n, port_str, devs);
+							
+							// Next slot:
+							n++;
+						}
+					}
+				}
+			}
+			
+			// If at least one device available, then add the default 0 slot for the default device:
+			if (n > 0) {
+				i = (*sgdeviceList)->selectedIndex;
+				deviceClass = i + 1;
+				p2cstrcpy(class_str, (((*sgdeviceList)->entry[i]).name));
+				j = (*(((*sgdeviceList)->entry[i]).inputs))->selectedIndex;
+				deviceInput = j + 1;
+				p2cstrcpy(port_str, (*(((*sgdeviceList)->entry[i]).inputs))->entry[j].name);
+
+				PsychSetStructArrayDoubleElement("DeviceIndex", n, 0, devs);
+				PsychSetStructArrayDoubleElement("ClassIndex", n, deviceClass, devs);
+				PsychSetStructArrayDoubleElement("InputIndex", n, deviceInput, devs);
+				PsychSetStructArrayStringElement("ClassName", n, class_str, devs);
+				PsychSetStructArrayStringElement("InputName", n, port_str, devs);
+				
+				// Next slot:
+				n++;
+			}
+
+			SGDisposeDeviceList(seqGrab, sgdeviceList);
+		}
+	}
+
+releaseQTEnum:
+	// Done with enumeration: Release ressources:
+	SGDisposeChannel(seqGrab, *sgchanptr);
+    CloseComponent(seqGrab);
+
+	return;
+}
+
+OSErr PsychQTSelectVideoSource(SeqGrabComponent seqGrab, SGChannel* sgchanptr, int deviceIndex, psych_bool showOutput, char* retDeviceName)
+{
+	ComponentInstance	vdCompInst;
+	OSErr				error;
+	SGDeviceList		sgdeviceList;
+    int					i, j, selectedIndex;
+	char				port_str[64];
+    Str63				devPStr;
+	Str255				outDeviceName;
+	Str255				outInputName;
+	Str255				devName;
+    char				msgerr[10000];
+	int					deviceClass, deviceInput;
+
+	// Child protection:
+	if (deviceIndex < 0) PsychErrorExitMsg(PsychError_user, "Invalid negative 'deviceIndex' provided. Must be zero or a positive integral number!");
+
+	// Default to no Error:
+	error = noErr;
+
+	// Special case zero? This means "default device" or take whatever's setup by default,
+	// i.e., change absolutely nothing.
+	if (deviceIndex > 0) {
+		// Non-Zero deviceIndex. Split up into device class and subdevice (input):
+		deviceClass = deviceIndex / 10000;
+		deviceInput = deviceIndex % 10000;
+		
+		// Enumerate all available devices:
+		error = SGGetChannelDeviceList(*sgchanptr, sgDeviceListIncludeInputs, &sgdeviceList);
+		if (error == noErr) {
+			if (showOutput && PsychPrefStateGet_Verbosity() > 4) {
+				printf("Number of available input video device classes: %i\n", (*sgdeviceList)->count);
+				for (i = 0; i< (*sgdeviceList)->count; i++) {
+					p2cstrcpy(port_str, (((*sgdeviceList)->entry[i]).name));
+					printf("Device class Nr. %i is: %s\n", i+1, port_str);
+				}
+				printf("\n\n");
+			}
+
+			// deviceClass zero selected? This would mean that we shall accept the default
+			// device class selection as made by the OS or external software, but only select
+			// the subdevice or input channel within that class:
+			if (deviceClass == 0) {
+				// Default device class: Just fetch currently selected class:
+				selectedIndex = (*sgdeviceList)->selectedIndex;				
+			}
+			else {
+				// Specific device class selected: Validate and try to choose it:
+				selectedIndex = deviceClass - 1;
+				if (selectedIndex >= (*sgdeviceList)->count) {
+					printf("Given deviceIndex %i requests device class %i, but no such device class exists! Failed.\n", deviceIndex, deviceClass);
+					PsychErrorExitMsg(PsychError_user, "Invalid 'deviceIndex' for this system setup provided.");
+				}
+				
+				error =	SGSetChannelDevice(*sgchanptr, (StringPtr) &(((*sgdeviceList)->entry[selectedIndex]).name));
+				if (error!=noErr) {
+					p2cstrcpy(port_str, (((*sgdeviceList)->entry[selectedIndex]).name));
+					if (showOutput && PsychPrefStateGet_Verbosity()>2) printf("PTB-ERROR: Failed to select video input device class %i [%s] for some reason!\n", deviceClass, port_str);
+
+					// Revert to default which is still active after failed switch:
+					selectedIndex = (*sgdeviceList)->selectedIndex;					
+				}
+			}
+
+			// At this point we have either the default class selected, or the requested
+			// device class. 'selectedIndex' points to the selected class.
+			p2cstrcpy(port_str, (((*sgdeviceList)->entry[selectedIndex]).name));
+			if (showOutput && PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: Selected input video device class now is %i [Quicktime index %i] aka: %s\n", selectedIndex + 1, selectedIndex, port_str);
+
+			// What about the subclass aka input channel? A zero means - Whatever's the default
+			// in that class. A non-zero value i means: Selected i'th input. For a zero value,
+			// we've got nothing to do:
+			if (deviceInput > 0) {
+				i = selectedIndex;
+
+				// Any inputs for this class?
+				if(NULL != (((*sgdeviceList)->entry[i]).inputs)) {
+					if (showOutput && PsychPrefStateGet_Verbosity() > 4) {
+						printf("\nMapping before device selection:\n");
+						for (j = 0; j < (*(((*sgdeviceList)->entry[i]).inputs))->count; j++) {
+							p2cstrcpy(port_str, (*(((*sgdeviceList)->entry[i]).inputs))->entry[j].name);
+							printf("Device [%i -> %i]: %s\n", i, j, port_str);
+						}
+						printf("\n\n");
+					}
+					
+					// Yep. At least deviceInput's input available?
+					if (deviceInput - 1 < (*(((*sgdeviceList)->entry[i]).inputs))->count) {
+						// Select this input:
+						error = SGSetChannelDeviceInput(*sgchanptr, deviceInput - 1);
+						if (error!=noErr) {
+							// Grabber didn't accept new input video channel:
+							if (showOutput && PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Video digitizer component didn't accept input video channel %i as requested by deviceIndex!\n", deviceInput);
+						}
+						else {
+							if (showOutput && PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Video digitizer component accepted input %i!\n", deviceInput);
+						}						
+					}
+					else {
+						p2cstrcpy(port_str, (((*sgdeviceList)->entry[selectedIndex]).name));
+						if (showOutput && PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Failed to select %i. video input inside device class %i [%s],\nbecause class only has %i inputs!\n", deviceInput, selectedIndex + 1, port_str, (*(((*sgdeviceList)->entry[i]).inputs))->count);
+					}
+
+					if (showOutput && PsychPrefStateGet_Verbosity() > 4) {
+						printf("\nMapping after device selection:\n");
+						for (j = 0; j < (*(((*sgdeviceList)->entry[i]).inputs))->count; j++) {
+							p2cstrcpy(port_str, (*(((*sgdeviceList)->entry[i]).inputs))->entry[j].name);
+							printf("Device [%i -> %i]: %s\n", i, j, port_str);
+						}
+						printf("\n\n");
+					}
+				}
+				else {
+					// Failed because out of range:
+					if (showOutput && PsychPrefStateGet_Verbosity() > 2) printf("PTB-ERROR: Failed to select video input inside device class %i [%s], because class doesn't seem to have inputs available!\n", deviceClass, port_str);
+				}
+			}
+			
+			if (0) {
+				for (i = 0; i< (*sgdeviceList)->count; i++) {
+					p2cstrcpy(port_str, (((*sgdeviceList)->entry[i]).name));
+					printf("Device Nr. %i is: %s\n\n", i, port_str);
+					
+					if(NULL != (((*sgdeviceList)->entry[i]).inputs)) {
+						for (j = 0; j < (*(((*sgdeviceList)->entry[i]).inputs))->count; j++) {
+							p2cstrcpy(port_str, (*(((*sgdeviceList)->entry[i]).inputs))->entry[j].name);
+							printf("Device [%i -> %i]: %s\n", i, j, port_str);
+						}
+					}
+				}
+				
+				memset(devPStr, 0, sizeof(Str63));
+				for (i = 0; i < (*(((*sgdeviceList)->entry[selectedIndex]).inputs))->count; i++) {
+					p2cstrcpy(port_str, (*(((*sgdeviceList)->entry[selectedIndex]).inputs))->entry[i].name);
+					printf("Device [%i -> %i]: %s\n", selectedIndex, i, port_str);
+				}
+				
+				if (PsychPrefStateGet_Verbosity() > 4) {			
+					if ((vdCompInst = SGGetVideoDigitizerComponent(*sgchanptr))) {
+						msgerr[0] = 0;
+						VDGetInputName(vdCompInst, deviceIndex, devName);
+						p2cstrcpy(msgerr, devName);
+						printf("PTB-INFO: Selected Video digitizer component has device name %s!\n", msgerr);
+					}
+				}
+				
+			}
+
+			// Release device list:
+			SGDisposeDeviceList(seqGrab, sgdeviceList);			
+		}
+		else {
+			// Enumeration failure - Game over:
+            if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-ERROR: Failed to enumerate available video devices! Will stick to default video device!\n");
+		}
+	}
+
+	// Retrieve and return capture device name:
+	SGGetChannelDeviceAndInputNames(*sgchanptr, outDeviceName, outInputName, nil);
+	if (retDeviceName) p2cstrcpy(retDeviceName, outDeviceName);
+
+	// Status output about selection requested?
+	if (showOutput && PsychPrefStateGet_Verbosity() > 3) {
+		// Display name of selected video device(-class) and input:
+		p2cstrcpy(msgerr, outDeviceName);
+		printf("PTB-INFO: Selected video input device for deviceIndex %i has outDeviceName: %s\n", deviceIndex, msgerr);
+		p2cstrcpy(msgerr, outInputName);
+		printf("PTB-INFO: Selected video input device for deviceIndex %i has outInputName: %s\n", deviceIndex, msgerr);
+	}
+
+	// Return final status - Should be zero:
+	return(error);
 }
 
 /*
@@ -209,9 +626,12 @@ void PsychQTVideoCaptureInit(void)
  *		// 0 = Record video, stream to disk immediately (slower, but unlimited recording duration).
  *		// 1 = Record video, stream to memory, then at end of recording to disk (limited duration by RAM size, but faster).
  *		// 2 = Record audio as well.
- *
+ *		// 4 = Only record, but don't provide as live feed. This saves callback overhead if provided for pure recording sessions.
+ *		// 8 = Don't call SGPrepare() / SGRelease().
+ *		// 16 = Use background worker thread to call SGIdle() for automatic capture/recording.
+ *		// 32 = Try to select the highest quality codec for texture creation - codecLosslessQuality instead of codecNormalQuality.
  */
-bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle,
+psych_bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle,
 				 int reqdepth, int num_dmabuffers, int allow_lowperf_fallback, char* targetmoviefilename, unsigned int recordingflags)
 {
     int i;
@@ -219,8 +639,6 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
     char msgerr[10000];
     char errdesc[1000];
     Rect movierect, newrect;
-	ComponentDescription desc;
-	Component mydevice;
     SeqGrabComponent seqGrab = NULL;
 
     SGChannel *sgchanptr = NULL;
@@ -263,33 +681,11 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
     vidcapRecordBANK[slotid].gworld=NULL;
     vidcapRecordBANK[slotid].decomSeq=0;    
     vidcapRecordBANK[slotid].grabber_active = 0;
-        
+	vidcapRecordBANK[slotid].scaleMatrixPtr = NULL;
+
     // Open sequence grabber:
     // ======================
-    
-	// Definition of a sequence grabber video input source:
-	desc.componentType = SeqGrabChannelType;
-	desc.componentSubType = 'vide';
-	desc.componentManufacturer = 0; //'appl';
-	desc.componentFlags = 0;
-	desc.componentFlagsMask = 0;
-	
-	// Device index in range?
-	if (deviceIndex < 0 || deviceIndex >= CountComponents(&desc)) {
-		printf("PTB-ERROR: deviceIndex %i of requested video source is not in allowed range 0 to %i.\n", deviceIndex, CountComponents(&desc) - 1);
-		printf("PTB-ERROR: Please make sure that at least %i video sources are connected if you think your setting is correct.\n", deviceIndex + 1);
-        PsychErrorExitMsg(PsychError_user, "Invalid deviceIndex specified. Negative or higher than number of installed video sources - 1.");
-	}
-	
-	// Yes. Iterate over component list to find corresponding device:
-	mydevice = 0;
-	for (i=0; i<= deviceIndex; i++) {
-		mydevice = FindNextComponent(mydevice, &desc);
-		if (mydevice == 0) break;
-	}
-	
-	if (mydevice == 0) PsychErrorExitMsg(PsychError_internal, "Failed to locate associated video capture device for deviceIndex!");
-	
+
     seqGrab = OpenDefaultComponent(SeqGrabComponentType, 0);
     if (seqGrab == NULL) {
 		printf("PTB-ERROR: Failed to open sequence grabber video capture component for deviceIndex %i!", deviceIndex);
@@ -316,17 +712,61 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
         PsychErrorExitMsg(PsychError_internal, "SGSetDataRef for capture device failed!");            
     }
 
-	 // Set dummy GWorld - we need this to prevent SGNewChannel from crashing on Windoze.
-	 SGSetGWorld(seqGrab, 0, 0);
+	// Set dummy GWorld - we need this to prevent SGNewChannel from crashing on Windoze.
+	SGSetGWorld(seqGrab, 0, 0);
 
     // Create and setup video channel on sequence grabber:
     sgchanptr = &(vidcapRecordBANK[slotid].sgchanVideo);
-    error = SGNewChannelFromComponent(seqGrab, sgchanptr, mydevice);
+	error = SGNewChannel(seqGrab, VideoMediaType, sgchanptr);
     if (error == noErr) {
-        // Retrieve size of the capture rectangle - and therefore size of
+		// Select device and input for this video channel: Returned error code is more
+		// informative than important: The function will always select some device if
+		// it returns, even if it isn't according to given spec, which would be apparent
+		// by  a non-zero error:
+		error = PsychQTSelectVideoSource(seqGrab, sgchanptr, deviceIndex, FALSE, &(vidcapRecordBANK[slotid].capDeviceName));
+
+		// Some low-level debug output, if requested:
+        SGGetVideoRect(*sgchanptr, &newrect);
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: VideoRect ROI is %i,%i,%i,%i\n", newrect.left, newrect.top, newrect.right, newrect.bottom);
+
+		SGGetChannelBounds(*sgchanptr, &newrect);
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: ChannelBounds ROI is %i,%i,%i,%i\n", newrect.left, newrect.top, newrect.right, newrect.bottom);
+
+		// Retrieve size of the capture rectangle - and therefore size of
         // our GWorld for offscreen rendering:
-        SGGetSrcVideoBounds(*sgchanptr, &movierect);
-        
+        error = SGGetSrcVideoBounds(*sgchanptr, &movierect);
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: [%i] SrcVideoBounds ROI is %i,%i,%i,%i\n", error, movierect.left, movierect.top, movierect.right, movierect.bottom);
+
+		// Reasonable movierect returned?
+		if ((noErr != error) || ((movierect.right == 1600) && (movierect.bottom == 1200) && (PSYCH_SYSTEM == PSYCH_OSX))) {
+			// Either none returned or the typical 1600 x 1200 default IIDC max rectangle on OS/X.
+			// In both cases we can be quite certain that the values are bogus.
+			if (NULL == capturerectangle) {
+				// Only output warning message about bogus capture area settings and resulting 640 x 480 override
+				// if the device namestring doesn't contain "iSight", as we know the iSight behaves like that on
+				// every Apple computer, so no point of cluttering the screen with warnings about the obvious.
+				// Same goes for the "unibrain Fire-i":
+				if ((NULL == strstr(vidcapRecordBANK[slotid].capDeviceName, "iSight")) && (NULL == strstr(vidcapRecordBANK[slotid].capDeviceName, "unibrain Fire-i")) && (PsychPrefStateGet_Verbosity() > 2)) {
+					printf("\nPTB-INFO: In Screen('OpenVideoCapture',...) for video capture device '%s' with deviceIndex %i:\n", vidcapRecordBANK[slotid].capDeviceName, deviceIndex);
+					printf("PTB-INFO: Your code doesn't specify an explicit 'roirectangle' for requested camera resolution, but wants me to\n");
+					printf("PTB-INFO: auto-detect the optimal image size. The operating system recommends a size of 1600 x 1200 pixels for your\n");
+					printf("PTB-INFO: camera, which is almost always a wrong and bogus setting! I'll therefore default to the most commonly found\n");
+					printf("PTB-INFO: reasonable default of 640 x 480 pixels and hope that this is ok. If this doesn't work or if you have indeed\n");
+					printf("PTB-INFO: a high-end camera with 1600 x 1200 pixels resolution connected, then please specify the proper settings via\n");
+					printf("PTB-INFO: the 'roirectangle' parameter in Screen('OpenVideoCapture', ...);\n\n");
+				}
+				
+				// Assign more reasonable default: Works with most entry level and intermediate level
+				// IIDC cameras, most NTSC video sources and with the Apple iSight:
+				movierect.left = 0;
+				movierect.top = 0;
+				movierect.right = 640;
+				movierect.bottom = 480;
+			}
+		}
+
+        error = noErr;
+		
         // Capture-Rectangle (ROI) specified?
         if (capturerectangle) {
             // Yes. Try to set it up...
@@ -348,20 +788,23 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
             }
             
             // Try to set our own custom video capture rectangle for the digitizer hardware:
-            error=SGSetVideoRect(*sgchanptr, &newrect);
-            if (error!=noErr) {
-                // Grabber didn't accept new rectangle :(
-                if (PsychPrefStateGet_Verbosity()>1) printf("PTB-WARNING: Video capture device didn't accept new capture area. Reverting to full hardware capture area,\n");
-                if (PsychPrefStateGet_Verbosity()>1) printf("PTB-WARNING: Trying to only process specified ROI by restricting conversion to ROI in software...\n");
+			// Disabled: Does more harm than good! Instead just assign our override movierect:
+//            error=SGSetVideoRect(*sgchanptr, &newrect);
+//            if (error!=noErr) {
+//                // Grabber didn't accept new rectangle :(
+//                if (PsychPrefStateGet_Verbosity()>1) printf("PTB-WARNING: Video capture device didn't accept new capture area. Reverting to full hardware capture area,\n");
+//                if (PsychPrefStateGet_Verbosity()>1) printf("PTB-WARNING: Trying to only process specified ROI by restricting conversion to ROI in software...\n");
+
                 movierect.left=(int) capturerectangle[kPsychLeft];
                 movierect.top=(int) capturerectangle[kPsychTop];
                 movierect.right=(int) capturerectangle[kPsychRight];
                 movierect.bottom=(int) capturerectangle[kPsychBottom];
-            }
-            else {
-                // Retrieve new capture rectangle settings:
-                error = SGGetVideoRect(*sgchanptr, &movierect);
-            }
+
+//            }
+//            else {
+//                // Retrieve new capture rectangle settings:
+//                error = SGGetVideoRect(*sgchanptr, &movierect);
+//            }
         }
         
         // Store our roirect in structure:
@@ -425,7 +868,7 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
         }
 
         // Create and setup video channel on sequence grabber:
-        error = SGNewChannelFromComponent(seqGrab, sgchanptr, mydevice);
+		error = SGNewChannel(seqGrab, VideoMediaType, sgchanptr);
         if (error !=noErr) {
           DisposeGWorld(vidcapRecordBANK[slotid].gworld);
           vidcapRecordBANK[slotid].gworld = NULL;
@@ -433,8 +876,27 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
           PsychErrorExitMsg(PsychError_internal, "Assignment of GWorld to capture device failed!");            
         }
 
+		// Select device and input for this video channel:
+		error = PsychQTSelectVideoSource(seqGrab, sgchanptr, deviceIndex, TRUE, &(vidcapRecordBANK[slotid].capDeviceName));
+        if (error!=noErr) {
+            // Grabber didn't accept new rectangle :(
+            if (PsychPrefStateGet_Verbosity()>1) printf("PTB-WARNING: Failed to select video capture device according to requested deviceIndex %i\n", deviceIndex);
+        }
+
+		// Assign VDIG handle:
+		vidcapRecordBANK[slotid].vdig = SGGetVideoDigitizerComponent(*sgchanptr);
+
+		// More debug output:
+		VDGetMaxSrcRect(vidcapRecordBANK[slotid].vdig, currentIn, &newrect);
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: VDGetMaxSrcRect ROI is %i,%i,%i,%i\n", newrect.left, newrect.top, newrect.right, newrect.bottom);
+
+		VDGetDigitizerRect(vidcapRecordBANK[slotid].vdig, &newrect);
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: VDGetDigitizerRect ROI is %i,%i,%i,%i\n", newrect.left, newrect.top, newrect.right, newrect.bottom);
+		
         // Try to set our own custom video capture rectangle:
-        error=SGSetVideoRect(*sgchanptr, &movierect);
+		error = noErr;
+
+        // Disabled: Does more harm than good: error=SGSetVideoRect(*sgchanptr, &newrect);
         if (error!=noErr) {
             // Grabber didn't accept new rectangle :(
             if (PsychPrefStateGet_Verbosity()>1) printf("PTB-WARNING: Video capture device didn't accept new capture area. Reverting to full area...\n"); fflush(NULL);
@@ -446,8 +908,6 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
             // note we don't set seqGrabPlayDuringRecord
             error = SGSetChannelUsage(*sgchanptr, seqGrabRecord | seqGrabLowLatencyCapture | seqGrabAlwaysUseTimeBase);
         }
-        
-        //if (error==noErr) error = SGGetChannelBounds(*sgchanptr, &movierect);
 
         if (error != noErr) {
             // clean up on failure
@@ -458,6 +918,9 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
             if (seqGrab) CloseComponent(seqGrab);
             PsychErrorExitMsg(PsychError_internal, "SGSetChannelBounds() or SGSetChannelUsage() for capture device failed!");            
         }
+
+        SGGetVideoRect(*sgchanptr, &newrect);
+		if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: VideoRect ROI is %i,%i,%i,%i\n", newrect.left, newrect.top, newrect.right, newrect.bottom);
     }
     else {
         // clean up on failure
@@ -484,7 +947,7 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
 	// us this is "recording only". The callback is needed for video processing by
 	// Matlab+PTB but it comes at a bit of extra overhead:
 	if ((targetmoviefilename == NULL) || !(recordingflags & 4)) {
-		error = SGSetDataProc(seqGrab, NewSGDataUPP(PsychVideoCaptureDataProc), 0);
+		error = SGSetDataProc(seqGrab, NewSGDataUPP(PsychVideoCaptureDataProc), slotid);
 		if (error !=noErr) {
 			DisposeGWorld(vidcapRecordBANK[slotid].gworld);
 			vidcapRecordBANK[slotid].gworld = NULL;
@@ -524,15 +987,15 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
 	}
 	else {
 		// Yes. Set it up:
+        char* codecstr;
 		FSSpec recfile;
 		CodecType codectypeid;
-		char* codecstr = strstr(targetmoviefilename, ":CodecType="); 
+		CompressorComponent codeccomp;
+		codectypeid = 0;
+		codecstr = strstr(targetmoviefilename, ":CodecType="); 
 		if (codecstr) {
 			sscanf(codecstr, ":CodecType= %i", &codectypeid);
 			*codecstr = 0;
-		}
-		else {
-			codectypeid = 0;
 		}
 		
 		if (PsychPrefStateGet_Verbosity() > 3) {
@@ -566,8 +1029,10 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
 		
 		// This call would select a specific video compressor, if we had any except the default one ;)
 		if (error==noErr && codectypeid!=0) {
-			// MK: Does not work well up to now: error = SGSetVideoCompressor(vidcapRecordBANK[slotid].sgchanVideo, 32, kH264kCodecType, codecHighQuality, codecHighQuality, 24);
-			// MK: Example of a symbolic spec:	error = SGSetVideoCompressorType(vidcapRecordBANK[slotid].sgchanVideo, kH264CodecType);
+			// MK: Could do this to change compression settings, but don't:
+			//			error = SGSetVideoCompressorType(vidcapRecordBANK[slotid].sgchanVideo, codectypeid);
+			//			error = SGGetVideoCompressor(vidcapRecordBANK[slotid].sgchanVideo, NULL, &codeccomp, NULL, NULL, NULL);
+			//			error = SGSetVideoCompressor(vidcapRecordBANK[slotid].sgchanVideo, 0, codeccomp, codecHighQuality, 0, 1);
 			error = SGSetVideoCompressorType(vidcapRecordBANK[slotid].sgchanVideo, codectypeid);
 			if (error != noErr && PsychPrefStateGet_Verbosity() > 1) {
 				printf("PTB-WARNING: Video recording engine could not enable requested codec of type id %i: QT Error code %i.\n", (int) codectypeid, (int) error);
@@ -586,8 +1051,22 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
         PsychErrorExitMsg(PsychError_internal, "Assignment of SGSetDataOutput() to capture device failed!");            
     }
 
+    // Get ready! Unless recordingflags set to 8, in which case we won't SGPrepare():
+	error = noErr;
+    if (!(recordingflags & 8)) error = SGPrepare(seqGrab, false, true);
+    if (error !=noErr) {
+        DisposeGWorld(vidcapRecordBANK[slotid].gworld);
+        vidcapRecordBANK[slotid].gworld = NULL;
+        SGDisposeChannel(seqGrab, *sgchanptr);
+        *sgchanptr = NULL;
+        CloseComponent(seqGrab);
+        PsychErrorExitMsg(PsychError_internal, "SGPrepare() for capture device failed!");            
+    }
+
 	// Setup of timebase for sequence grabber: This only works on OS/X, not
-	// with Quicktime SDK for Windows, at least not with the brain-damaged MS-Compiler:
+	// with Quicktime SDK for Windows, at least not with the brain-damaged MS-Compiler. Also,
+	// SGPrepare() must have been called beforehand if audio clock is requested, because otherwise
+	// audio timebase won't be available yet:
 
 #if PSYCH_SYSTEM != PSYCH_WINDOWS
 	
@@ -596,22 +1075,27 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
 		if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Video capture engine could not retrieve timebase. Capture timestamps and/or audio-video sync may be inaccurate!\n");
 	}
 	else {
+		// Set error: This will trigger assignment of system clock below if
+		// no sound recording requested:
+		error = 1;
+		
 		// Sound recording requested?
 		if (recordingflags & 2) {
 			// Sound recording: We assign the masterclock of the sound timebase as master for sequence grabber.
 			// This should give best possible audio-video sync:
-			if (noErr != GetComponentInfo((Component)GetTimeBaseMasterClock(sgTimeBase), &looking, NULL, NULL, NULL)) {
-				if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: (I) Video recording engine could not assign sound timebase as master timebase: Audio-video sync may be inaccurate!\n");
-			}
 			
-			if (noErr != (error = SGGetChannelTimeBase(vidcapRecordBANK[slotid].sgchanAudio, &soundTimeBase))) {
-				if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: (II) Video recording engine could not assign sound timebase as master timebase: Audio-video sync may be inaccurate! [QT-Error %i]\n", error);
+			if ((noErr != (error = SGGetChannelTimeBase(vidcapRecordBANK[slotid].sgchanAudio, &soundTimeBase))) || (NULL == soundTimeBase)) {
+				if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: (I) Video recording engine could not assign sound timebase as master timebase: Audio-video sync may be inaccurate! [QT-Error %i]\n", error);
 			}
 			else {
 				SetTimeBaseMasterClock(sgTimeBase, (Component) GetTimeBaseMasterClock(soundTimeBase), NULL);
+				error = GetMoviesError();
 			}
 		}
-		else {
+		
+		// No sound recording requested (error == 1) or error during audio clock assignment?
+		// If so, error != noErr and we assign the system clock as timebase:
+		if (noErr != error) {
 			// Only video recording/capture: We assign the system clock as masterclock for sequence grabber.
 			// This provides capturetimestamps that are in sync with all other PTB clocks:
 			looking.componentType = clockComponentType;
@@ -625,25 +1109,20 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
 			}
 			else {
 				SetTimeBaseMasterClock(sgTimeBase, clockComponent, NULL);
+				error = GetMoviesError();
 			}
 		}
+
+		if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: Video recording engine could not assign new timebase: Capture timestamps may be inaccurate! [QT-Error %i]\n", error);
 	}
 
 #endif
-
-    // Get ready!
-    error = SGPrepare(seqGrab, false, true);
-    if (error !=noErr) {
-        DisposeGWorld(vidcapRecordBANK[slotid].gworld);
-        vidcapRecordBANK[slotid].gworld = NULL;
-        SGDisposeChannel(seqGrab, *sgchanptr);
-        *sgchanptr = NULL;
-        CloseComponent(seqGrab);
-        PsychErrorExitMsg(PsychError_internal, "SGPrepare() for capture device failed!");            
-    }
     
     // Grabber should be ready now.
     
+	// Create and initialize Mutex:
+	PsychInitMutex(&(vidcapRecordBANK[slotid].mutex));
+
     // Assign new record:
     vidcapRecordBANK[slotid].seqGrab=seqGrab;    
 
@@ -679,7 +1158,7 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
 	// Store final recordingflags:
 	vidcapRecordBANK[slotid].recordingflags = recordingflags;
 	
-    if (PsychPrefStateGet_Verbosity()>3) printf("W x h = %i x  %i at %lf fps...\n", vidcapRecordBANK[slotid].width, vidcapRecordBANK[slotid].height, vidcapRecordBANK[slotid].fps);
+    if (PsychPrefStateGet_Verbosity()>4) printf("PTB-INFO: Final assigned size of video input image is W x h = %i x  %i.\n", vidcapRecordBANK[slotid].width, vidcapRecordBANK[slotid].height);
 
     return(TRUE);
 }
@@ -689,6 +1168,8 @@ bool PsychQTOpenVideoCaptureDevice(int slotid, PsychWindowRecordType *win, int d
  */
 void PsychQTCloseVideoCaptureDevice(int capturehandle)
 {
+	OSErr err = noErr;
+
     if (capturehandle < 0 || capturehandle >= PSYCH_MAX_CAPTUREDEVICES) {
         PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided!");
     }
@@ -696,13 +1177,49 @@ void PsychQTCloseVideoCaptureDevice(int capturehandle)
     if (vidcapRecordBANK[capturehandle].gworld == NULL) {
         PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided. No capture device associated with this handle !!!");
     }
-        
+
+	// Clear grabber_active flag, also as a signal to potential worker thread to terminate:
+	vidcapRecordBANK[capturehandle].grabber_active = 0;
+
+	// Worker thread still active?
+	if (vidcapRecordBANK[capturehandle].worker) {
+		// Destroy it, wait for destruction, clean it up:
+		PsychDeleteThread(&vidcapRecordBANK[capturehandle].worker);
+	}
+
     // Stop capture immediately:
     SGStop(vidcapRecordBANK[capturehandle].seqGrab);
     
+	// Destroy Mutex:
+	PsychDestroyMutex(&(vidcapRecordBANK[capturehandle].mutex));
+
+	// Release SG if previously prepared:
+    if (!(vidcapRecordBANK[capturehandle].recordingflags & 8)) SGRelease(vidcapRecordBANK[capturehandle].seqGrab);
+
+	// Release decompression sequence, if any:
+	if (vidcapRecordBANK[capturehandle].decomSeq > 0) {
+		err = CDSequenceEnd(vidcapRecordBANK[capturehandle].decomSeq);
+		if ((noErr != err) && PsychPrefStateGet_Verbosity() > 1) {
+			printf("PTB-WARNING: In shutdown of video capture device %i: Release of decompression sequence reports QT error %i. Ressource leakage??\n", capturehandle, (int) err);
+		}
+		vidcapRecordBANK[capturehandle].decomSeq = 0;
+	}
+
+	// Delete scaling matrix, if any:
+	if (vidcapRecordBANK[capturehandle].scaleMatrixPtr) {
+		free(vidcapRecordBANK[capturehandle].scaleMatrixPtr);
+		vidcapRecordBANK[capturehandle].scaleMatrixPtr = NULL;
+	}
+
     // Delete GWorld if any:
     if (vidcapRecordBANK[capturehandle].gworld) DisposeGWorld(vidcapRecordBANK[capturehandle].gworld);
     vidcapRecordBANK[capturehandle].gworld = NULL;
+
+    if (vidcapRecordBANK[capturehandle].sgchanVideo) CloseComponent(vidcapRecordBANK[capturehandle].sgchanVideo);
+	vidcapRecordBANK[capturehandle].sgchanVideo = NULL;
+
+    if (vidcapRecordBANK[capturehandle].sgchanAudio) CloseComponent(vidcapRecordBANK[capturehandle].sgchanAudio);
+	vidcapRecordBANK[capturehandle].sgchanAudio = NULL;
     
     // Release grabber:
     CloseComponent(vidcapRecordBANK[capturehandle].seqGrab);
@@ -753,7 +1270,7 @@ int PsychQTGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, 
     unsigned char* pixptr;
 	unsigned char* outpixptr;
 	unsigned char swapbyte;
-    Boolean newframe = FALSE;
+    psych_bool newframe = FALSE;
     double tstart, tend;
     unsigned int pixval, alphacount;
     int nrdropped;
@@ -791,28 +1308,41 @@ int PsychQTGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, 
 		outrawbuffer->depth = reqdepth;
 	}
     
-    // Grant some processing time to the sequence grabber engine:
-    if ((error=SGIdle(vidcapRecordBANK[capturehandle].seqGrab))!=noErr) {
-		// We don't abort on non noErr case, but only (optionally) report it. This is because when in harddisc
-		// movie recording mode with sound recording, we can get intermittent errors in SGIdle() which are
-		// meaningless so they are best ignored and must not lead to interruption of PTB operation.
-        if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-DEBUG: In PsychGetTextureFromCapture(): SGIdle() returns error code %i\n", (int) error);
+	// Lock device mutex so we have exclusive access:
+	PsychLockMutex(&(vidcapRecordBANK[capturehandle].mutex));
+
+	// Actual capture ops driven by parallel background worker thread, so nothing to do for us?
+	if (NULL == vidcapRecordBANK[capturehandle].worker) {
+		// No, we need to do it: Grant some processing time to the sequence grabber engine:
+		if ((error=SGIdle(vidcapRecordBANK[capturehandle].seqGrab))!=noErr) {
+			// We don't abort on non noErr case, but only (optionally) report it. This is because when in harddisc
+			// movie recording mode with sound recording, we can get intermittent errors in SGIdle() which are
+			// meaningless so they are best ignored and must not lead to interruption of PTB operation.
+			if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-DEBUG: In PsychGetTextureFromCapture(): SGIdle() returns error code %i\n", (int) error);
+			
+			// Unlock mutex:
+			PsychUnlockMutex(&(vidcapRecordBANK[capturehandle].mutex));
+			
+			// Return abort error code:
+			return(-2);
+		}
 	}
-    
+
 	// Ist this device in "recording only" mode? If so then it doesn't have a
 	// callback proc assigned, therefore all the processing below this line would
 	// just cause a deadlock. The only allowed mode is checkForImage == 4 in this
 	// case:
 	if ((vidcapRecordBANK[capturehandle].recordingflags & 4) && (checkForImage!=4)) {
 		// Invalid mode of invocation!
+
+		// Unlock mutex:
+		PsychUnlockMutex(&(vidcapRecordBANK[capturehandle].mutex));
+
 		PsychErrorExitMsg(PsychError_user, "Capturedevice was opened in ''disk recording only'' mode: You must specify a 'waitForImage' flag of 4 in your Screen('GetCapturedImage') call!");
 	}
 	
-	// TODO CHECK FIXME: Race condition here? Not if callback thread is called single-threaded in SGIdle(),
-	// but is this always the case for all digitizers???
-	
     // Check if a new captured frame is ready for retrieval...
-    newframe = (Boolean) vidcapRecordBANK[capturehandle].frame_ready;
+    newframe = (psych_bool) vidcapRecordBANK[capturehandle].frame_ready;
     // ...and clear out the ready flag immediately:
     vidcapRecordBANK[capturehandle].frame_ready = 0;
 
@@ -824,6 +1354,9 @@ int PsychQTGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, 
     
     // Should we just check for new image? If so, just return availability status:
     if (checkForImage) {
+		// Unlock mutex: No further access to shared variables until return():
+		PsychUnlockMutex(&(vidcapRecordBANK[capturehandle].mutex));
+
         if (vidcapRecordBANK[capturehandle].grabber_active == 0) {
             // Grabber stopped. We'll never get a new image:
             return(-2);
@@ -864,6 +1397,7 @@ int PsychQTGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, 
     // Lock GWorld:
     if(!LockPixels(GetGWorldPixMap(vidcapRecordBANK[capturehandle].gworld))) {
         // Locking surface failed! We abort.
+		PsychUnlockMutex(&(vidcapRecordBANK[capturehandle].mutex));
         PsychErrorExitMsg(PsychError_internal, "PsychGetTextureFromCapture(): Locking GWorld pixmap surface failed!!!");
     }
 
@@ -938,6 +1472,10 @@ int PsychQTGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, 
 
         // Let PsychCreateTexture() do the rest of the job of creating, setting up and
         // filling an OpenGL texture with GWorlds content:
+		//
+		// CAUTION: An error abort inside this function could leave us with a locked mutex!
+		// However, error aborts inside this are not likely, and users will hopefully "clear all"
+		// and thereby resolve dangling mutex issues after such a fatal error:
         PsychCreateTexture(out_texture);
 
         // Undo hack from above after texture creation: Now we need the real width of the
@@ -999,6 +1537,9 @@ int PsychQTGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, 
 
     // Record timestamp as reference for next check:    
     vidcapRecordBANK[capturehandle].last_pts = *presentation_timestamp;
+
+	// Unlock mutex:
+	PsychUnlockMutex(&(vidcapRecordBANK[capturehandle].mutex));
     
     // Timestamping:
     PsychGetAdjustedPrecisionTimerSeconds(&tend);
@@ -1025,6 +1566,10 @@ int PsychQTVideoCaptureRate(int capturehandle, double capturerate, int dropframe
     OSErr error = noErr;
     Fixed framerate;
 	long usage;
+	Fixed maxframerate;
+	long milliSecPerFrame, bps;
+	int retrycount = 0;
+	unsigned long storageRem;
 	
     if (capturehandle < 0 || capturehandle >= PSYCH_MAX_CAPTUREDEVICES) {
         PsychErrorExitMsg(PsychError_user, "Invalid capturehandle provided!");
@@ -1040,52 +1585,62 @@ int PsychQTVideoCaptureRate(int capturehandle, double capturerate, int dropframe
         if (vidcapRecordBANK[capturehandle].grabber_active) PsychErrorExitMsg(PsychError_user, "You tried to start video capture, but capture is already started!");
 
 	// Low latency capture disabled?
-	// TODO FIXME: What if lowlat gets disabled here, but user wants to capture lowlat again later??? 
 	if (dropframes == 0) {
 		// Yes. Need to clear the lowlat flag from our channel config:
-		SGRelease(vidcapRecordBANK[capturehandle].seqGrab);
+		if (!(vidcapRecordBANK[capturehandle].recordingflags & 8)) error = SGRelease(vidcapRecordBANK[capturehandle].seqGrab);
+		if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In highlat: SGRelease() reports error %i in start function.\n", (int) error);
 		
-		SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+		error = SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
 		usage&=~seqGrabLowLatencyCapture;
-		SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+		error = SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, usage);
+		if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In highlat: Video SGSetChannelUsage() reports error %i in start function.\n", (int) error);
 		
 		if (vidcapRecordBANK[capturehandle].sgchanAudio) {
-			SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
+			error = SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
 			usage&=~seqGrabLowLatencyCapture;
-			SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
+			error = SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, usage);
+			if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In highlat: Audio SGSetChannelUsage() reports error %i in start function.\n", (int) error);
 		}
 		
-		SGPrepare(vidcapRecordBANK[capturehandle].seqGrab, false, true);
+		if (!(vidcapRecordBANK[capturehandle].recordingflags & 8)) error = SGPrepare(vidcapRecordBANK[capturehandle].seqGrab, false, true);
+		if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In highlat: SGPrepare() reports error %i in start function.\n", (int) error);
 	}
 	else {
 		// dropframes non-null. lowlat flag set?
-		SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+		error = SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
 		if (!(usage & seqGrabLowLatencyCapture)) {
 			// Lowlatency requested, but flag not set. Need to set it:			
-			SGRelease(vidcapRecordBANK[capturehandle].seqGrab);
+			if (!(vidcapRecordBANK[capturehandle].recordingflags & 8)) error = SGRelease(vidcapRecordBANK[capturehandle].seqGrab);
+			if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In lowlat: SGRelease() reports error %i in start function.\n", (int) error);
 			
-			SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+			error = SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
 			usage|= seqGrabLowLatencyCapture;
-			SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, &usage);
+			error = SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanVideo, usage);
+			if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In lowlat: Video SGSetChannelUsage() reports error %i in start function.\n", (int) error);
 			
 			if (vidcapRecordBANK[capturehandle].sgchanAudio) {
-				SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
+				error = SGGetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
 				usage|= seqGrabLowLatencyCapture;
-				SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, &usage);
+				error = SGSetChannelUsage(vidcapRecordBANK[capturehandle].sgchanAudio, usage);
+				if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In lowlat: Audio SGSetChannelUsage() reports error %i in start function.\n", (int) error);
 			}
 			
-			SGPrepare(vidcapRecordBANK[capturehandle].seqGrab, false, true);
+			if (!(vidcapRecordBANK[capturehandle].recordingflags & 8)) error = SGPrepare(vidcapRecordBANK[capturehandle].seqGrab, false, true);
+			if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: In lowlat: SGPrepare() reports error %i in start function.\n", (int) error);
 		}
 	}
 
 	framerate = FloatToFixed((float) capturerate);
-	SGSetFrameRate(vidcapRecordBANK[capturehandle].sgchanVideo, framerate);
+	error = SGSetFrameRate(vidcapRecordBANK[capturehandle].sgchanVideo, framerate);
+	if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: SGSetFrameRate() reports error %i in start function.\n", (int) error);
 
 	// Wait until start deadline reached:
 	if (*startattime != 0) PsychWaitUntilSeconds(*startattime);
 
 	// Start the engine!
+	vidcapRecordBANK[capturehandle].grabber_active = 1;
 	error = SGStartRecord(vidcapRecordBANK[capturehandle].seqGrab);
+	if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: SGStartRecord() reports error %i in start function.\n", (int) error);
 
 	// Record real start time:
 	PsychGetAdjustedPrecisionTimerSeconds(startattime);
@@ -1093,16 +1648,55 @@ int PsychQTVideoCaptureRate(int capturehandle, double capturerate, int dropframe
         vidcapRecordBANK[capturehandle].last_pts = -1.0;
         vidcapRecordBANK[capturehandle].nr_droppedframes = 0;
         vidcapRecordBANK[capturehandle].frame_ready = 0;
-        vidcapRecordBANK[capturehandle].grabber_active = 1;
-        SGGetFrameRate(vidcapRecordBANK[capturehandle].sgchanVideo, &framerate);
+		framerate = (Fixed) 0;
+        error = SGGetFrameRate(vidcapRecordBANK[capturehandle].sgchanVideo, &framerate);
+		if ((noErr != error) && (PsychPrefStateGet_Verbosity() > 1)) printf("PTB-WARNING: SGGetFrameRate() reports error %i in start function.\n", (int) error);
+
         vidcapRecordBANK[capturehandle].fps = (double) FixedToFloat(framerate);
-        if (PsychPrefStateGet_Verbosity()>3) printf("PTB-INFO: Capture framerate is reported as: %lf\n", vidcapRecordBANK[capturehandle].fps);
+		VDGetDataRate(vidcapRecordBANK[capturehandle].vdig, &milliSecPerFrame, &maxframerate, &bps);
+		
+        if (PsychPrefStateGet_Verbosity()>3) printf("PTB-INFO: Capture framerate is reported as: %lf  [max = %f]\n", vidcapRecordBANK[capturehandle].fps, FixedToFloat(maxframerate));
+        if (PsychPrefStateGet_Verbosity()>3) printf("PTB-INFO: Capture latency is reported as: %i msecs\n", milliSecPerFrame);
+		if ((FixedToFloat(maxframerate) > 0) && ((double) FixedToFloat(maxframerate) < vidcapRecordBANK[capturehandle].fps)) {
+			// Maxframerate valid and lower than reported framerate?!? Clamp to maximum:
+			vidcapRecordBANK[capturehandle].fps = (double) FixedToFloat(maxframerate);
+			if (PsychPrefStateGet_Verbosity()>3) printf("PTB-INFO: Maximum framerate overrides reported one! Will assume a capture framerate of: %lf fps for further operation.\n", vidcapRecordBANK[capturehandle].fps);
+		}
+		
+		// Start worker thread for video capture, if requested:
+		if (vidcapRecordBANK[capturehandle].recordingflags & 16) {
+			if ((error = (OSErr) PsychCreateThread(&vidcapRecordBANK[capturehandle].worker, NULL, PsychQTVideoCaptureThreadMain, (void*) &vidcapRecordBANK[capturehandle]))) {
+				if (PsychPrefStateGet_Verbosity() > 0) printf("PTB-ERROR: In start of videocapture for device %i: Failed to start worker thread [%s]!\n", capturehandle, strerror((int) error));
+			}
+			else {
+				if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: Videocapture for device %i uses a parallel background capture thread for operation as requested.\n", capturehandle);
+			}
+		}
     }
     else {
-        // Stop capture:
-        error = SGStop(vidcapRecordBANK[capturehandle].seqGrab);
-        vidcapRecordBANK[capturehandle].frame_ready = 0;
+		if (PsychPrefStateGet_Verbosity() > 3) {
+			SGGetStorageSpaceRemaining(vidcapRecordBANK[capturehandle].seqGrab, &storageRem);
+			printf("PTB-INFO: At stop time, device %i reports %f MB of storage space remaining.\n", capturehandle, ((float) storageRem) / 1024 / 1024);
+		}
+
+		// Clear grabber_active flag, also as a signal to potential worker thread to terminate:
         vidcapRecordBANK[capturehandle].grabber_active = 0;
+
+		// Worker thread active?
+		if (vidcapRecordBANK[capturehandle].worker) {
+			// Destroy it, wait for destruction, clean it up:
+			PsychDeleteThread(&vidcapRecordBANK[capturehandle].worker);
+		}
+
+        // Stop capture:
+		retrycount = 0;
+		while ( (retrycount < 4) && ((error = SGStop(vidcapRecordBANK[capturehandle].seqGrab)) != noErr) ) {
+			retrycount++;
+			if (PsychPrefStateGet_Verbosity() > 0) printf("PTB-ERROR: %i st. invocation of SGStop() reports error %i in stop function.\n", retrycount, (int) error);
+		}
+
+		// Reset frame_ready:
+        vidcapRecordBANK[capturehandle].frame_ready = 0;
 
         // Output count of dropped frames:
         if ((dropped=vidcapRecordBANK[capturehandle].nr_droppedframes) > 0) {

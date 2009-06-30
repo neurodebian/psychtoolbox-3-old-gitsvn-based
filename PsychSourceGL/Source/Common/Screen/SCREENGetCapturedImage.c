@@ -62,9 +62,11 @@ PsychError SCREENGetCapturedImage(void)
     int                         capturehandle = -1;
     int                         waitForImage = TRUE;
     int                         specialmode = 0;
+	double						timeout, tnow;
     double                      presentation_timestamp = 0;
     int							rc=-1;
     double						targetmemptr = 0;
+	double*						tsummed = NULL;
 	psych_uint8					*targetmatrixptr = NULL;
 	static rawcapimgdata		rawCaptureBuffer = {0, 0, 0, NULL};
 
@@ -120,12 +122,18 @@ PsychError SCREENGetCapturedImage(void)
     // Get the optional specialmode flag:
     PsychCopyInIntegerArg(5, FALSE, &specialmode);
 
-    while (rc==-1) {
+	// Set a 10 second maximum timeout for waiting for new frames:
+	PsychGetAdjustedPrecisionTimerSeconds(&timeout);
+	timeout+=10;
+
+    while (rc==-1) {		
       // We pass a checkForImage value of 2 if waitForImage>0. This way we can signal if we are in polling or blocking mode.
       // With the libdc1394 engine this allows to do a real blocking wait in the driver -- much more efficient than the spin-waiting approach!
       rc = PsychGetTextureFromCapture(windowRecord, capturehandle, ((waitForImage>0 && waitForImage<3) ? 2 : 1), 0.0, NULL, &presentation_timestamp, NULL, &rawCaptureBuffer);
-        if (rc==-2) {
-            // No image available and there won't be any in the future, because capture has been stopped.
+		PsychGetAdjustedPrecisionTimerSeconds(&tnow);
+        if (rc==-2 || (tnow > timeout)) {
+            // No image available and there won't be any in the future, because capture has been stopped or there is a timeout:
+			if (tnow > timeout) printf("PTB-WARNING: In Screen('GetCapturedImage') timed out waiting for a new frame. No video data in over 10 seconds!\n");
 
             // No new texture available: Return a negative handle:
             PsychCopyOutDoubleArg(1, TRUE, -1);
@@ -150,7 +158,7 @@ PsychError SCREENGetCapturedImage(void)
         }
         else if (rc==-1 && waitForImage != 0) {
             // No new texture available yet. Just sleep a bit and then retry...
-            PsychWaitIntervalSeconds(0.005);
+            PsychYieldIntervalSeconds(0.002);
         }
     }
 
@@ -207,39 +215,45 @@ PsychError SCREENGetCapturedImage(void)
         textureRecord = NULL;
     }
 
-    // Try to fetch an image from the capture object and return it as texture:
+	// Default to no calculation of summed image intensity:
+	tsummed = NULL;
     if ((PsychGetNumOutputArgs() > 3) && !(specialmode & 0x2)) {
+        // Return sum of pixel intensities for all channels of this image: Need to
+		// assign the output pointer for this to happen:
+		tsummed = &summed_intensity;
+	}
+
+    // Try to fetch an image from the capture object and return it as texture:
+	targetmatrixptr = NULL;
+	
+	// Shall we return a Matlab matrix?
+	if ((PsychGetNumOutputArgs() > 3) && (specialmode & 0x2)) {
+		// We shall return a matrix with raw image data. Allocate a uint8 matrix
+		// of sufficient size:
+		PsychAllocOutUnsignedByteMatArg(4, TRUE, rawCaptureBuffer.depth, rawCaptureBuffer.w, rawCaptureBuffer.h, &targetmatrixptr);
+		tsummed = NULL;
+	}
+	
+	// Shall we return data into preallocated memory buffer?
+	if (specialmode & 0x4) {
+		// Copy in memory address (which itself is encoded in a double value):
+		PsychCopyInDoubleArg(6, TRUE, &targetmemptr);
+		targetmatrixptr = (psych_uint8*) PsychDoubleToPtr(targetmemptr);
+	}
+	
+	if (targetmatrixptr == NULL) {
+		// Standard fetch of a texture and its timestamp:
+		rc = PsychGetTextureFromCapture(windowRecord, capturehandle, 0, 0.0, textureRecord, &presentation_timestamp, tsummed, NULL);
+	}
+	else {
+		// Fetch of a memory raw image buffer + timestamp + possibly a texture:
+		rawCaptureBuffer.data = (void*) targetmatrixptr;
+		rc = PsychGetTextureFromCapture(windowRecord, capturehandle, 0, 0.0, textureRecord, &presentation_timestamp, tsummed, &rawCaptureBuffer);			
+	}
+	
+    if (tsummed) {
         // Return sum of pixel intensities for all channels of this image:
-        rc = PsychGetTextureFromCapture(windowRecord, capturehandle, 0, 0.0, textureRecord, &presentation_timestamp, &summed_intensity, NULL);
         PsychCopyOutDoubleArg(4, FALSE, summed_intensity);
-    }
-    else {
-		// Return either only texture/timestamp and/or raw image:
-		targetmatrixptr = NULL;
-		
-		// Shall we return a Matlab matrix?
-		if ((PsychGetNumOutputArgs() > 3) && (specialmode & 0x2)) {
-			// We shall return a matrix with raw image data. Allocate a uint8 matrix
-			// of sufficient size:
-			PsychAllocOutUnsignedByteMatArg(4, TRUE, rawCaptureBuffer.depth, rawCaptureBuffer.w, rawCaptureBuffer.h, &targetmatrixptr);
-		}
-		
-		// Shall we return data into preallocated memory buffer?
-		if (specialmode & 0x4) {
-			// Copy in memory address (which itself is encoded in a double value):
-			PsychCopyInDoubleArg(6, TRUE, &targetmemptr);
-			targetmatrixptr = (psych_uint8*) PsychDoubleToPtr(targetmemptr);
-		}
-		
-		if (targetmatrixptr == NULL) {
-			// Standard fetch of a texture and its timestamp:
-			rc = PsychGetTextureFromCapture(windowRecord, capturehandle, 0, 0.0, textureRecord, &presentation_timestamp, NULL, NULL);
-		}
-		else {
-			// Fetch of a memory raw image buffer + timestamp + possibly a texture:
-			rawCaptureBuffer.data = (void*) targetmatrixptr;
-			rc = PsychGetTextureFromCapture(windowRecord, capturehandle, 0, 0.0, textureRecord, &presentation_timestamp, NULL, &rawCaptureBuffer);			
-		}
     }
 
     // Real texture requested?

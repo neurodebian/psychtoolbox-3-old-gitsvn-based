@@ -30,13 +30,13 @@ void PsychDeleteAllCaptureDevices(void);
 
 // Record which defines capture engine independent state for a capture device:
 typedef struct {
-	int engineId;		// Type of capture engine: -1 == Free slot, 0 == Quicktime, 1 == LibDC.
+	int engineId;		// Type of capture engine: -1 == Free slot, 0 == Quicktime, 1 == LibDC, 2 == ARVideo.
 } PsychMasterVidcapRecordType;
 
 static PsychMasterVidcapRecordType mastervidcapRecordBANK[PSYCH_MAX_CAPTUREDEVICES];
 static int numCaptureRecords = 0;
 
-static Boolean firsttime = TRUE;
+static psych_bool firsttime = TRUE;
 
 /*
  *     PsychVideoCaptureInit() -- Initialize video capture subsystem.
@@ -63,7 +63,29 @@ void PsychVideoCaptureInit(void)
 	PsychDCVideoCaptureInit();
 	#endif
 	
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	PsychARVideoCaptureInit();
+	#endif
+
     return;
+}
+
+void PsychEnumerateVideoSources(int engineId, int outPos)
+{
+	psych_bool dispatched = FALSE;
+
+	#ifdef PTBVIDEOCAPTURE_QT
+	if (engineId == 0 || (engineId == 2 && PSYCH_SYSTEM == PSYCH_OSX)) {
+		// Quicktime Sequencegrabber, either native via engine 0 or via ARVideo (2) on OS/X:
+		PsychQTEnumerateVideoSources(outPos);
+		dispatched = TRUE;
+	}
+	#endif
+
+	// Unsupported engine requested?
+	if (!dispatched) PsychErrorExitMsg(PsychError_user, "The requested video capture engine is not supported on your system, either not at all, or has been disabled at compile time.");
+
+	return;
 }
 
 /*
@@ -89,11 +111,11 @@ void PsychVideoCaptureInit(void)
  *		// 2 = Record audio as well.
  *
  */
-bool PsychOpenVideoCaptureDevice(int engineId, PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle,
+psych_bool PsychOpenVideoCaptureDevice(int engineId, PsychWindowRecordType *win, int deviceIndex, int* capturehandle, double* capturerectangle,
 				 int reqdepth, int num_dmabuffers, int allow_lowperf_fallback, char* targetmoviefilename, unsigned int recordingflags)
 {
     int i, slotid;
-	bool dispatched = FALSE;
+	psych_bool dispatched = FALSE;
     *capturehandle = -1;
 
 	// Sanity checking:
@@ -141,6 +163,17 @@ bool PsychOpenVideoCaptureDevice(int engineId, PsychWindowRecordType *win, int d
 	}
 	#endif
 	
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	if (engineId == 2) {
+		// ARVideo video capture, based on ARToolkit's video capture engine:
+		if (!PsychAROpenVideoCaptureDevice(slotid, win, deviceIndex, capturehandle, capturerectangle, reqdepth, num_dmabuffers, allow_lowperf_fallback, targetmoviefilename, recordingflags)) {
+			// Probably won't ever reach this point due to error handling triggered in subfunction... anyway...
+			return(FALSE);
+		}
+		dispatched = TRUE;
+	}
+	#endif
+	
 	// Unsupported engine requested?
 	if (!dispatched) PsychErrorExitMsg(PsychError_user, "The requested video capture engine is not supported on your system, either not at all, or has been disabled at compile time.");
 	
@@ -179,6 +212,10 @@ void PsychCloseVideoCaptureDevice(int capturehandle)
 
 	#ifdef PTBVIDEOCAPTURE_LIBDC
 	if (mastervidcapRecordBANK[capturehandle].engineId == 1) PsychDCCloseVideoCaptureDevice(capturehandle);
+	#endif
+	
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	if (mastervidcapRecordBANK[capturehandle].engineId == 2) PsychARCloseVideoCaptureDevice(capturehandle);
 	#endif
 	
     // Release record:
@@ -233,6 +270,12 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
 	#ifdef PTBVIDEOCAPTURE_LIBDC
 	if (mastervidcapRecordBANK[capturehandle].engineId == 1) return(PsychDCGetTextureFromCapture(win, capturehandle, checkForImage, timeindex, out_texture, presentation_timestamp, summed_intensity, outrawbuffer));
 	#endif
+		
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	if (mastervidcapRecordBANK[capturehandle].engineId == 2) return(PsychARGetTextureFromCapture(win, capturehandle, checkForImage, timeindex, out_texture, presentation_timestamp, summed_intensity, outrawbuffer));
+	#endif
+
+    return(-2);
 }
 
 /*
@@ -258,6 +301,12 @@ int PsychVideoCaptureRate(int capturehandle, double capturerate, int dropframes,
 	#ifdef PTBVIDEOCAPTURE_LIBDC
 	if (mastervidcapRecordBANK[capturehandle].engineId == 1) return(PsychDCVideoCaptureRate(capturehandle, capturerate, dropframes, startattime));
 	#endif
+
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	if (mastervidcapRecordBANK[capturehandle].engineId == 2) return(PsychARVideoCaptureRate(capturehandle, capturerate, dropframes, startattime));
+	#endif
+
+    return(0);
 }
 
 /* Set capture device specific parameters:
@@ -279,6 +328,12 @@ double PsychVideoCaptureSetParameter(int capturehandle, const char* pname, doubl
 	#ifdef PTBVIDEOCAPTURE_LIBDC
 	if (mastervidcapRecordBANK[capturehandle].engineId == 1) return(PsychDCVideoCaptureSetParameter(capturehandle, pname, value)); 
 	#endif
+
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	if (mastervidcapRecordBANK[capturehandle].engineId == 2) return(PsychARVideoCaptureSetParameter(capturehandle, pname, value)); 
+	#endif
+
+    return(0);
 }
 
 /*
@@ -300,6 +355,10 @@ void PsychExitVideoCapture(void)
 
 	#ifdef PTBVIDEOCAPTURE_LIBDC
 	PsychDCExitVideoCapture();
+	#endif
+
+    #ifdef PTBVIDEOCAPTURE_ARVIDEO
+	PsychARExitVideoCapture();
 	#endif
 
     firsttime = TRUE;

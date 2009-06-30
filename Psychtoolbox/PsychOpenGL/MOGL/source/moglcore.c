@@ -75,7 +75,7 @@ extern void mogl_rebindARBExtensionsToCore(void);
 #endif
 
 // Automatic checking and handling for glError's and GLSL errors.
-void mogl_checkerrors(const char* cmd, mxArray *prhs[]);
+void mogl_checkerrors(const char* cmd, const mxArray *prhs[]);
 
 void mexExitFunction(void)
 {
@@ -118,7 +118,6 @@ DEFUN_DLD(moglcore, inprhs, nlhs,
     // Start of dispatcher:
     int i;
     GLenum err;
-    bool errorcondition = false;
 
        
 #if PSYCH_LANGUAGE == PSYCH_OCTAVE
@@ -151,7 +150,6 @@ DEFUN_DLD(moglcore, inprhs, nlhs,
       // PsychErrorExit() or friends called! The CPU and stack are restored to a sane state.
       // Call our cleanup-routine to release memory that is PsychMallocTemp()'ed and to other
       // error-handling...
-      errorcondition = true;
       goto moglreturn;
     }
 
@@ -422,6 +420,12 @@ DEFUN_DLD(moglcore, inprhs, nlhs,
         // Perform dynamic rebinding of ARB extensions to core functions, if necessary:
         mogl_rebindARBExtensionsToCore();
         
+	#ifdef FREEGLUT
+	// FreeGlut must be initialized, otherwise it will emergency abort the whole application!
+	int noargs = 0; 
+	glutInit( &noargs, NULL);
+	#endif
+
 	// Register exit-handler: When flushing the mex-file, we free all allocated buffer memory:
 	#if PSYCH_LANGUAGE == PSYCH_MATLAB
 	mexAtExit(&mexExitFunction);
@@ -580,7 +584,7 @@ void mogl_glunsupported(const char* fname)
     mexErrMsgTxt(errtxt);
 }
 
-void mogl_checkerrors(const char* cmd, mxArray *prhs[]) 
+void mogl_checkerrors(const char* cmd, const mxArray *prhs[]) 
 {
     char errtxt[10000];
     GLint err, status, handle;
@@ -728,7 +732,6 @@ void *PsychMallocTemp(unsigned long n, int mlist)
 void PsychFreeTemp(void* ptr, int mlist)
 {
   void* ptrbackup = ptr;
-  unsigned long* psize = NULL;
   unsigned int* next = PsychTempMemHead[mlist];
   unsigned int* prevptr = NULL;
 
@@ -787,7 +790,6 @@ void PsychFreeTemp(void* ptr, int mlist)
 void PsychFreeAllTempMemory(int mlist)
 {
   unsigned int* p = NULL;
-  unsigned long* psize = NULL;
   unsigned int* next = PsychTempMemHead[mlist];
 
   // Walk our whole buffer list and release all buffers on it:

@@ -45,9 +45,9 @@ static int x11_windowcount = 0;
     We switch to RT scheduling during PsychGetMonitorRefreshInterval() and a few other timing tests in
     PsychOpenWindow() to reduce measurement jitter caused by possible interference of other tasks.
 */
-boolean PsychRealtimePriority(boolean enable_realtime)
+psych_bool PsychRealtimePriority(psych_bool enable_realtime)
 {
-    static boolean old_enable_realtime = FALSE;
+    static psych_bool old_enable_realtime = FALSE;
     static int   oldPriority = SCHED_OTHER;
     const  int   realtime_class = SCHED_RR;
     struct sched_param param, oldparam;
@@ -112,7 +112,7 @@ boolean PsychRealtimePriority(boolean enable_realtime)
     would be better to just issue an PsychErrorExit() and have that clean up everything allocated outside of
     PsychOpenOnscreenWindow().
 */
-boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType *windowRecord, int numBuffers, int stereomode, int conserveVRAM)
+psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType *windowRecord, int numBuffers, int stereomode, int conserveVRAM)
 {
   PsychRectType             screenrect;
   CGDirectDisplayID         dpy;
@@ -125,8 +125,8 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
   XVisualInfo *visinfo;
   int i, x, y, width, height;
   GLenum glerr;
-  boolean fullscreen = FALSE;
-  int attrib[30];
+  psych_bool fullscreen = FALSE;
+  int attrib[38];
   int attribcount=0;
   int depth, bpc;
 
@@ -229,6 +229,18 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
     attrib[attribcount++]= GLX_STENCIL_SIZE;
     attrib[attribcount++]= 8;
 
+	// Alloc an accumulation buffer as well?
+	if (PsychPrefStateGet_3DGfx() & 2) {
+		// Yes: Alloc accum buffer, request 64 bpp, aka 16 bits integer per color component if possible:
+		attrib[attribcount++] = GLX_ACCUM_RED_SIZE;
+		attrib[attribcount++] = 16;
+		attrib[attribcount++] = GLX_ACCUM_GREEN_SIZE;
+		attrib[attribcount++] = 16;
+		attrib[attribcount++] = GLX_ACCUM_BLUE_SIZE;
+		attrib[attribcount++] = 16;
+		attrib[attribcount++] = GLX_ACCUM_ALPHA_SIZE;
+		attrib[attribcount++] = 16;
+	}
   }
 
   // Double buffering requested?
@@ -436,13 +448,24 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
   fflush(NULL);
 
   // Check for availability of VSYNC extension:
-  // PTBglXSwapIntervalSGI=(GLXEXTVSYNCCONTROLPROC) glXGetProcAddressARB("glXSwapIntervalSGI");
-  // if (PTBglXSwapIntervalSGI==NULL || strstr(glXQueryExtensionsString(dpy, scrnum), "GLX_SGI_swap_control")==NULL) {
-  if (glXSwapIntervalSGI==NULL || strstr(glXQueryExtensionsString(dpy, scrnum), "GLX_SGI_swap_control")==NULL) {
-    printf("PTB-WARNING: Your graphics driver doesn't allow me to control syncing wrt. vertical retrace!\n");
-    printf("PTB-WARNING: Please update your display graphics driver as soon as possible to fix this.\n");
-    printf("PTB-WARNING: Until then, you can manually enable syncing to VBL somehow in a manner that is\n");
-    printf("PTB-WARNING: dependent on the type of gfx-card and driver. Google is your friend...\n");
+
+  // Special case: Buggy ATI driver: Supports the VSync extension and glXSwapIntervalSGI, but provides the
+  // wrong extension namestring "WGL_EXT_swap_control" (from MS-Windows!), so GLEW doesn't auto-detect and
+  // bind the extension. If this special case is present, we do it here manually ourselves:
+  if ( (glXSwapIntervalSGI == NULL) && (strstr(glGetString(GL_EXTENSIONS), "WGL_EXT_swap_control") != NULL) ) {
+	// Looks so: Bind manually...
+	glXSwapIntervalSGI = glXGetProcAddressARB("glXSwapIntervalSGI");
+  }
+
+  // Extension finally supported?
+  if (glXSwapIntervalSGI==NULL || ( strstr(glXQueryExtensionsString(dpy, scrnum), "GLX_SGI_swap_control")==NULL &&
+	  strstr(glGetString(GL_EXTENSIONS), "WGL_EXT_swap_control")==NULL )) {
+	  // No, total failure to bind extension:
+	  glXSwapIntervalSGI = NULL;
+	  printf("PTB-WARNING: Your graphics driver doesn't allow me to control syncing wrt. vertical retrace!\n");
+	  printf("PTB-WARNING: Please update your display graphics driver as soon as possible to fix this.\n");
+	  printf("PTB-WARNING: Until then, you can manually enable syncing to VBL somehow in a manner that is\n");
+	  printf("PTB-WARNING: dependent on the type of gfx-card and driver. Google is your friend...\n");
   }
   fflush(NULL);
 
@@ -475,7 +498,7 @@ boolean PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psych
 	
 	TO DO:  We need to walk down the screen number and fill in the correct value for the benefit of TexturizeOffscreenWindow
 */
-boolean PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
+psych_bool PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
 {
   // This function is obsolete and does nothing.
   return(FALSE);
@@ -509,7 +532,7 @@ void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
   XSync(dpy, 0);
 
   XDestroyWindow(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle);
-  windowRecord->targetSpecific.windowHandle=NULL;
+  windowRecord->targetSpecific.windowHandle=0;
 
   // Wait for X-Server to settle...
   XSync(dpy, 0);
@@ -538,21 +561,79 @@ void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
 }
 
 /*
+    PsychOSGetVBLTimeAndCount()
+
+    Returns absolute system time of last VBL and current total count of VBL interrupts since
+    startup of gfx-system for the given screen. Returns a time of -1 and a count of 0 if this
+    feature is unavailable on the given OS/Hardware configuration.
+*/
+double PsychOSGetVBLTimeAndCount(unsigned int screenid, psych_uint64* vblCount)
+{
+	unsigned int	vsync_counter = 0;
+	psych_uint64	ust, msc, sbc;
+	CGDirectDisplayID displayID;
+	int scrnum;
+	
+	// Retrieve displayID, aka dpy for this screenid:
+	PsychGetCGDisplayIDFromScreenNumber(&displayID, screenid);
+	scrnum = PsychGetXScreenIdForScreen(screenid);
+
+	#ifdef GLX_OML_sync_control
+	// Ok, this will return VBL count and last VBL time via the OML GetSyncValuesOML call
+	// if that extension is supported on this setup. As of mid 2009 i'm not aware of any
+	// affordable graphics card that would support this extension, but who knows??
+	if ((NULL != glXGetSyncValuesOML) && (glXGetSyncValuesOML((Display*) displayID, (GLXDrawable) RootWindow(displayID, scrnum), (int64_t*) &ust, (int64_t*) &msc, (int64_t*) &sbc))) {
+		*vblCount = msc;
+		if (PsychGetKernelTimebaseFrequencyHz() > 10000) {
+			// Convert ust into regular GetSecs timestamp:
+			// At least we hope this conversion is correct...
+			return( ((double) ust) / PsychGetKernelTimebaseFrequencyHz() );
+		}
+		else {
+			// Last VBL timestamp unavailable:
+			return(-1);
+		}
+	}
+	#else
+	#warning GLX_OML_sync_control unsupported! Compile with -std=gnu99 to enable it!
+	#endif
+
+	// Do we have SGI video sync extensions?
+	if (NULL != glXGetVideoSyncSGI) {
+		// Retrieve absolute count of vbl's since startup:
+		glXGetVideoSyncSGI(&vsync_counter);
+		*vblCount = (psych_uint64) vsync_counter;
+		
+		// Retrieve absolute system time of last retrace, convert into PTB standard time system and return it:
+		// Not yet supported on Linux:
+		return(-1);
+	}
+	else {
+		// Unsupported :(
+		*vblCount = 0;
+		return(-1);
+	}
+}
+
+/*
     PsychOSFlipWindowBuffers()
     
     Performs OS specific double buffer swap call.
 */
 void PsychOSFlipWindowBuffers(PsychWindowRecordType *windowRecord)
 {
-  unsigned int vsync_counter = 0;
+	// unsigned int		vsync_counter = 0;
 
-  //  glXGetVideoSyncSGI(&vsync_counter);
-  //  printf("PREFLIP-VSYNC: %i\n", vsync_counter);
-  //  glXWaitVideoSyncSGI(2000000000, (int) vsync_counter + 10, &vsync_counter);
-  //  printf("POSTFLIP-VSYNC: %i\n", vsync_counter);
-
-  // Trigger the "Front <-> Back buffer swap (flip) (on next vertical retrace)":
-  glXSwapBuffers(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle);
+	// Execute OS neutral bufferswap code first:
+	PsychExecuteBufferSwapPrefix(windowRecord);
+	
+	//  glXGetVideoSyncSGI(&vsync_counter);
+	//  printf("PREFLIP-VSYNC: %i\n", vsync_counter);
+	//  glXWaitVideoSyncSGI(2000000000, (int) vsync_counter + 10, &vsync_counter);
+	//  printf("POSTFLIP-VSYNC: %i\n", vsync_counter);
+	
+	// Trigger the "Front <-> Back buffer swap (flip) (on next vertical retrace)":
+	glXSwapBuffers(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle);
 }
 
 /* Enable/disable syncing of buffer-swaps to vertical retrace. */
@@ -560,6 +641,9 @@ void PsychOSSetVBLSyncLevel(PsychWindowRecordType *windowRecord, int swapInterva
 {
   // Enable rendering context of window:
   PsychSetGLContext(windowRecord);
+
+  // Store new setting also in internal helper variable, e.g., to allow workarounds to work:
+  windowRecord->vSynced = (swapInterval > 0) ? TRUE : FALSE;
 
   // Try to set requested swapInterval if swap-control extension is supported on
   // this Linux machine. Otherwise this will be a no-op...
@@ -612,7 +696,7 @@ void PsychOSUnsetGLContext(PsychWindowRecordType* windowRecord)
 /* Same as PsychOSSetGLContext() but for selecting userspace rendering context,
  * optionally copying state from PTBs context.
  */
-void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, Boolean copyfromPTBContext)
+void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, psych_bool copyfromPTBContext)
 {
   // Child protection:
   if (windowRecord->targetSpecific.glusercontextObject == NULL) PsychErrorExitMsg(PsychError_user,"GL Userspace context unavailable! Call InitializeMatlabOpenGL *before* Screen('OpenWindow')!");

@@ -70,6 +70,15 @@ try
         return;
     end;
     
+    if IsOctave
+        % No registration for GNU/Octave versions older than 3:
+        if sscanf(version, '%i') < 3
+            % Pre Octave-3: Just return -- Noop:
+            fprintf('PsychtoolboxRegistration: Octave version < 3 detected. Skipping registration...\n');
+            return;
+        end
+    end;
+    
     % Default path and name for netcat command:
     nccommand = 'nc';
     
@@ -86,11 +95,21 @@ try
 
     if IsWin
         ostype = 'Windows';
-        try
-            osversion = deblank([system_dependent('getos'),' ',system_dependent('getwinsys')]);
-        catch
-            osversion = 'Unknown';
+        if ~IsOctave
+            try
+                osversion = deblank([system_dependent('getos'),' ',system_dependent('getwinsys')]);
+            catch
+                osversion = 'Unknown';
+            end
+        else
+            try
+                [status, osversion] = system('uname -s');
+                osversion = deblank(osversion);
+            catch
+                osversion = 'Unknown';
+            end            
         end
+        
         
         if isempty(osversion)
            osversion = 'Unknown';
@@ -162,19 +181,25 @@ try
     fprintf('Type ''type PsychtoolboxRegistration'' to see the source code of this routine.\n\n');
     fprintf('Data transfer can take up to 10 seconds... The system reports:\n');
 
-    if IsOctave
+    %if IsOctave
+    % MK: Octave now supports pnet, so we can disable this code branch:
+    if 0
         % pnet not yet supported on Octave. Use netcat as in good ol' days:
 
         % Execute transmission command: We time out after 10 seconds if it does not work.
         ptbserveraddress = [ptbserveraddress ' 2000'];
         syscmd = ['echo "' uniqueID '" | ' nccommand ' -w 10 -v ' ptbserveraddress ' '];
 
+        fflush(stdout);
+        
         if IsWin
             rc = dos(syscmd);
         else
             rc = system(syscmd);
         end
         fprintf('\n');
+        
+        fflush(stdout);
     else
         % pnet supported: Use that...
         % Specifically that means we will always use pnet() on MS-Windows,

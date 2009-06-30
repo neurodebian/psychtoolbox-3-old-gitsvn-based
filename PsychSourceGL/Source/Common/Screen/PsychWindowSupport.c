@@ -71,7 +71,7 @@ static const struct {
 #endif
 
 /* Flag which defines if userspace rendering is active: */
-static boolean inGLUserspace = FALSE;
+static psych_bool inGLUserspace = FALSE;
 
 // We keep track of the current active rendertarget in order to
 // avoid needless state changes:
@@ -176,7 +176,7 @@ void PsychRebindARBExtensionsToCore(void)
         Contains experimental support for flipping multiple displays synchronously, e.g., for dual display stereo setups.
  
 */
-boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType **windowRecord, int numBuffers, int stereomode, double* rect, int multiSample, PsychWindowRecordType* sharedContextWindow)
+psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType **windowRecord, int numBuffers, int stereomode, double* rect, int multiSample, PsychWindowRecordType* sharedContextWindow)
 {
     PsychRectType dummyrect;
     double ifi_nominal=0;    
@@ -197,9 +197,9 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     int ringTheBell=-1;
     long VRAMTotal=0;
     long TexmemTotal=0;
-    bool multidisplay = FALSE;
-    bool sync_trouble = false;
-    bool sync_disaster = false;
+    psych_bool multidisplay = FALSE;
+    psych_bool sync_trouble = false;
+    psych_bool sync_disaster = false;
     int  skip_synctests = PsychPrefStateGet_SkipSyncTests();
     int visual_debuglevel = PsychPrefStateGet_VisualDebugLevel();
     int conserveVRAM = PsychPrefStateGet_ConserveVRAM();
@@ -224,7 +224,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 	// Also init the thread handle to our main thread here:
 	if ((*windowRecord)->windowIndex == PSYCH_FIRST_WINDOW) {
 		if(PsychPrefStateGet_Verbosity()>2) {
-			printf("\n\nPTB-INFO: This is the OpenGL-Psychtoolbox for %s, version %i.%i.%i. (Build date: %s)\n", PSYCHTOOLBOX_OS_NAME, PsychGetMajorVersionNumber(), PsychGetMinorVersionNumber(), PsychGetPointVersionNumber(), PsychGetBuildDate());
+			printf("\n\nPTB-INFO: This is the OpenGL-Psychtoolbox for %s, version %i.%i.%i. (Build date: %s) under %s.\n", PSYCHTOOLBOX_OS_NAME, PsychGetMajorVersionNumber(), PsychGetMinorVersionNumber(), PsychGetPointVersionNumber(), PsychGetBuildDate(), PSYCHTOOLBOX_SCRIPTING_LANGUAGE_NAME);
 			printf("PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.\n"); 
 			printf("PTB-INFO: Psychtoolbox is licensed to you under terms of the GNU General Public License (GPL). See file 'License.txt' in the\n");
 			printf("PTB-INFO: Psychtoolbox root folder for a copy of the GPL license.\n\n");
@@ -568,6 +568,34 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     CGDisplayCount totaldisplaycount=0;
     CGGetOnlineDisplayList(0, NULL, &totaldisplaycount);
     
+	// More than one display online?
+	if (totaldisplaycount > 1) {
+		// Yes. Is this an ATI GPU?
+		if (strstr(glGetString(GL_VENDOR), "ATI")) {
+			// Is this OS/X 10.5.7 or later?
+			long osMinor, osBugfix, osArch;
+			Gestalt(gestaltSystemVersionMinor, &osMinor);
+			Gestalt(gestaltSystemVersionBugFix, &osBugfix);
+			Gestalt(gestaltSysArchitecture, &osArch);
+			
+			if (osMinor == 5 && osBugfix >= 7 && osArch == gestaltIntel) {
+				// OS/X 10.5.7 or later on IntelMac with an ATI GPU in dual-display or multi-display mode.
+				// This specific configuration has serious bugs in CGDisplayBeamposition() beamposition
+				// queries on multi-display setups. We mark the native beamposition mechanism as
+				// unreliable, so our fallback kernel driver based solution is used instead - or
+				// no beampos mechanism at all if driver not loaded:
+				PsychPrefStateSet_ConserveVRAM(PsychPrefStateGet_ConserveVRAM() | kPsychDontUseNativeBeamposQuery);
+				
+				if(PsychPrefStateGet_Verbosity()>1) {
+					printf("\n\nPTB-INFO: This is Mac OS/X 10.5.%i on an Intel Mac with an ATI GPU in multi-display mode.\n", (int) osBugfix);
+					printf("PTB-INFO: Beamposition queries are broken on this configuration! Will disable them.\n");
+					printf("PTB-INFO: Our own beamposition mechanism will still work though if you have the PsychtoolboxKernelDriver loaded.\n");
+					printf("PTB-INFO: Type 'help PsychtoolboxKernelDriver' at the command prompt for more info about this option.\n\n");
+				}
+			}
+		}
+	}
+	
     if(PsychPrefStateGet_Verbosity()>1){
 		multidisplay = (totaldisplaycount>1) ? true : false;    
 		if (multidisplay) {
@@ -860,29 +888,29 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 
     if(PsychPrefStateGet_Verbosity()>2) {
       if (VRAMTotal>0) printf("PTB-INFO: Renderer has %li MB of VRAM and a maximum %li MB of texture memory.\n", VRAMTotal / 1024 / 1024, TexmemTotal / 1024 / 1024);
-      printf("PTB-Info: VBL startline = %i , VBL Endline = %i\n", (int) vbl_startline, VBL_Endline);
+      printf("PTB-INFO: VBL startline = %i , VBL Endline = %i\n", (int) vbl_startline, VBL_Endline);
       if (ifi_beamestimate>0) {
-          printf("PTB-Info: Measured monitor refresh interval from beamposition = %f ms [%f Hz].\n", ifi_beamestimate * 1000, 1/ifi_beamestimate);
+          printf("PTB-INFO: Measured monitor refresh interval from beamposition = %f ms [%f Hz].\n", ifi_beamestimate * 1000, 1/ifi_beamestimate);
           if (PsychPrefStateGet_VBLTimestampingMode()==3 && PSYCH_SYSTEM == PSYCH_OSX) {
-              printf("PTB-Info: Will try to use kernel-level interrupts for accurate Flip time stamping.\n");
+              printf("PTB-INFO: Will try to use kernel-level interrupts for accurate Flip time stamping.\n");
           }
           else {
-              if (PsychPrefStateGet_VBLTimestampingMode()>=0) printf("PTB-Info: Will use beamposition query for accurate Flip time stamping.\n");
-              if (PsychPrefStateGet_VBLTimestampingMode()< 0) printf("PTB-Info: Beamposition queries are supported, but disabled. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\n");
+              if (PsychPrefStateGet_VBLTimestampingMode()>=0) printf("PTB-INFO: Will use beamposition query for accurate Flip time stamping.\n");
+              if (PsychPrefStateGet_VBLTimestampingMode()< 0) printf("PTB-INFO: Beamposition queries are supported, but disabled. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\n");
           }
       }
       else {
           if ((PsychPrefStateGet_VBLTimestampingMode()==1 || PsychPrefStateGet_VBLTimestampingMode()==3) && PSYCH_SYSTEM == PSYCH_OSX) {
-              printf("PTB-Info: Beamposition queries unsupported on this system. Will try to use kernel-level vbl interrupts as fallback.\n");
+              printf("PTB-INFO: Beamposition queries unsupported on this system. Will try to use kernel-level vbl interrupts as fallback.\n");
           }
           else {
-              printf("PTB-Info: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\n");
+              printf("PTB-INFO: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\n");
           }
       }
-      printf("PTB-Info: Measured monitor refresh interval from VBLsync = %f ms [%f Hz]. (%i valid samples taken, stddev=%f ms.)\n",
+      printf("PTB-INFO: Measured monitor refresh interval from VBLsync = %f ms [%f Hz]. (%i valid samples taken, stddev=%f ms.)\n",
 	     ifi_estimate * 1000, 1/ifi_estimate, numSamples, stddev*1000);
-      if (ifi_nominal > 0) printf("PTB-Info: Reported monitor refresh interval from operating system = %f ms [%f Hz].\n", ifi_nominal * 1000, 1/ifi_nominal);
-      printf("PTB-Info: Small deviations between reported values are normal and no reason to worry.\n");
+      if (ifi_nominal > 0) printf("PTB-INFO: Reported monitor refresh interval from operating system = %f ms [%f Hz].\n", ifi_nominal * 1000, 1/ifi_nominal);
+      printf("PTB-INFO: Small deviations between reported values are normal and no reason to worry.\n");
       if ((*windowRecord)->stereomode==kPsychOpenGLStereo) printf("PTB-INFO: Stereo display via OpenGL built-in frame-sequential stereo enabled.\n");
       if ((*windowRecord)->stereomode==kPsychCompressedTLBRStereo) printf("PTB-INFO: Stereo display via vertical image compression enabled (Top=LeftEye, Bot.=RightEye).\n");
       if ((*windowRecord)->stereomode==kPsychCompressedTRBLStereo) printf("PTB-INFO: Stereo display via vertical image compression enabled (Top=RightEye, Bot.=LeftEye).\n");
@@ -898,7 +926,9 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
 		printf("PTB-WARNING: You asked me for reducing VRAM consumption but for this, your graphics hardware would need\n");
 		printf("PTB-WARNING: to support the GL_APPLE_client_storage extension, which it doesn't! Sorry... :(\n");
       }
-      if (PsychPrefStateGet_3DGfx()) printf("PTB-INFO: Support for OpenGL 3D graphics rendering enabled: 24 bit depth-buffer and 8 bit stencil buffer attached.\n");
+      if (PsychPrefStateGet_3DGfx() > 0) printf("PTB-INFO: Support for OpenGL 3D graphics rendering enabled: 24 bit depth-buffer and 8 bit stencil buffer attached.\n");
+      if (PsychPrefStateGet_3DGfx() & 2) printf("PTB-INFO: Additional accumulation buffer for OpenGL 3D graphics rendering attached.\n");
+	  
       if (multiSample>0) {
 	if ((*windowRecord)->multiSample >= multiSample) {
 	  printf("PTB-INFO: Anti-Aliasing with %i samples per pixel enabled.\n", (*windowRecord)->multiSample);
@@ -1090,7 +1120,7 @@ boolean PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWi
     create the texture, allocate a window record and record the window specifications and memory location there.
     TO DO:  We need to walk down the screen number and fill in the correct value for the benefit of TexturizeOffscreenWindow
 */
-boolean PsychOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
+psych_bool PsychOpenOffscreenWindow(double *rect, int depth, PsychWindowRecordType **windowRecord)
 {
     // This is a complete no-op as everything is implemented in SCREENOpenOffscreenWindow at the moment.
     return(TRUE);
@@ -1569,7 +1599,7 @@ void* PsychFlipperThreadMain(void* windowRecordToCast)
  *	Returns success state: TRUE on success, FALSE on error.
  *
  */
-bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
+psych_bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
 {
 	int rc;
 	PsychFlipInfoStruct* flipRequest;
@@ -1859,9 +1889,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     int screenheight, screenwidth;
     GLint read_buffer, draw_buffer;
     unsigned char bufferstamp;
-    const boolean vblsyncworkaround=false;  // Setting this to 'true' would enable some checking code. Leave it false by default.
+    const psych_bool vblsyncworkaround=false;  // Setting this to 'true' would enable some checking code. Leave it false by default.
     static unsigned char id=1;
-    boolean sync_to_vbl;                    // Should we synchronize the CPU to vertical retrace? 
+    psych_bool sync_to_vbl;                    // Should we synchronize the CPU to vertical retrace? 
     double tremaining;                      // Remaining time to flipwhen - deadline
     CGDirectDisplayID displayID;            // Handle for our display - needed for beampos-query.
     double time_at_vbl=0;                   // Time (in seconds) when last Flip in sync with start of VBL happened.
@@ -1886,7 +1916,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	int line_pre_swaprequest = -1;			// Scanline of display immediately before swaprequest.
 	int line_post_swaprequest = -1;			// Scanline of display immediately after swaprequest.
 	int min_line_allowed = 20;				// The scanline up to which "out of VBL" swaps are accepted: A fudge factor for broken drivers...
-	boolean flipcondition_satisfied;	
+	psych_bool flipcondition_satisfied;	
     int vbltimestampmode = PsychPrefStateGet_VBLTimestampingMode();
     PsychWindowRecordType **windowRecordArray=NULL;
     int	i;
@@ -2079,27 +2109,25 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 		if (PsychPrefStateGet_ConserveVRAM() & kPsychBusyWaitForVBLBeforeBufferSwapRequest) glFinish();
 	}
 
-    #if PSYCH_SYSTEM == PSYCH_OSX
-        // OS-X only: Low level queries to the driver:
-		// We query the timestamp and count of the last vertical retrace. This is needed for
-		// correctness checking and timestamp computation on gfx-hardware without beamposition
-		// queries (IntelMacs as of OS/X 10.4.10).
-		// In frame-sequential stereo mode it also allows to lock bufferswaps either to even
-		// or odd video refresh intervals (if windowRecord->targetFlipFieldType specifies this).
-		// That way one can require stereo stimulus onset with either the left eye view or the
-		// right eye view, depending on flip field selection. In other stereo modes or mono
-		// mode one usually doesn't care about onset in even or odd fields.
-		flipcondition_satisfied = FALSE;
-		do {
-			// Query driver:
-			preflip_vbltimestamp = PsychOSGetVBLTimeAndCount(windowRecord->screenNumber, &preflip_vblcount);
-			// Check if ready for flip, ie. if the proper even/odd video refresh cycle is approaching or
-			// if we don't care about this:
-			flipcondition_satisfied = (windowRecord->targetFlipFieldType == -1) || (((preflip_vblcount + 1) % 2) == windowRecord->targetFlipFieldType);
-			// If in wrong video cycle, we simply sleep a millisecond, then retry...
-			if (!flipcondition_satisfied) PsychWaitIntervalSeconds(0.001);
-		} while (!flipcondition_satisfied);
-    #endif
+	// Low level queries to the driver:
+	// We query the timestamp and count of the last vertical retrace. This is needed for
+	// correctness checking and timestamp computation on gfx-hardware without beamposition
+	// queries (IntelMacs as of OS/X 10.4.10).
+	// In frame-sequential stereo mode it also allows to lock bufferswaps either to even
+	// or odd video refresh intervals (if windowRecord->targetFlipFieldType specifies this).
+	// That way one can require stereo stimulus onset with either the left eye view or the
+	// right eye view, depending on flip field selection. In other stereo modes or mono
+	// mode one usually doesn't care about onset in even or odd fields.
+	flipcondition_satisfied = FALSE;
+	do {
+		// Query driver:
+		preflip_vbltimestamp = PsychOSGetVBLTimeAndCount(windowRecord->screenNumber, &preflip_vblcount);
+		// Check if ready for flip, ie. if the proper even/odd video refresh cycle is approaching or
+		// if we don't care about this:
+		flipcondition_satisfied = (windowRecord->targetFlipFieldType == -1) || (((preflip_vblcount + 1) % 2) == windowRecord->targetFlipFieldType);
+		// If in wrong video cycle, we simply sleep a millisecond, then retry...
+		if (!flipcondition_satisfied) PsychWaitIntervalSeconds(0.001);
+	} while (!flipcondition_satisfied);
     
 	// Take a measurement of the beamposition at time of swap request:
 	line_pre_swaprequest = (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber);
@@ -2200,7 +2228,6 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         PsychGetAdjustedPrecisionTimerSeconds(&time_at_vbl);
 		time_at_swapcompletion = time_at_vbl;
 
-        #if PSYCH_SYSTEM == PSYCH_OSX
         // Run kernel-level timestamping always in mode > 1 or on demand in mode 1 if beampos.
         // queries don't work properly:
         if (vbltimestampmode > 1 || (vbltimestampmode == 1 && windowRecord->VBL_Endline == -1)) {
@@ -2223,7 +2250,6 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 				vbltimestampquery_retrycount++;
 			}			
         }
-        #endif
         
         // Calculate estimate of real time of VBL, based on our post glFinish() timestamp, post glFinish() beam-
         // position and the roughly known height of image and duration of IFI. The corrected time_at_vbl
@@ -3110,7 +3136,8 @@ void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 		if (stereo_mode==kPsychCompressedTLBRStereo || stereo_mode==kPsychCompressedTRBLStereo) {
 			if (auxbuffers<2) {
 				PsychErrorExitMsg(PsychError_user, "OpenGL AUX buffers unavailable! The requested stereo mode doesn't work without them.\n"
-								  "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?");
+								  "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?\n"
+								  "On a modern graphics card, try to enable the imaging pipeline (see 'help PsychImaging') to make it work anyway.");
 			}
 			
 			// Compressed stereo mode active. Compositing already done?
@@ -3137,7 +3164,8 @@ void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 			if (stereo_mode==kPsychOpenGLStereo) {
 				if (auxbuffers<2) {
 					PsychErrorExitMsg(PsychError_user, "OpenGL AUX buffers unavailable! dontclear=1 in Screen-Flip doesn't work without them.\n"
-									  "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?");
+									  "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?\n"
+									  "On a modern graphics card, try to enable the imaging pipeline (see 'help PsychImaging') to make it work anyway.");
 				}
 				
 				glDrawBuffer(GL_AUX0);
@@ -3150,14 +3178,21 @@ void PsychPreFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 				glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
 			}
 			else {
-				if (auxbuffers<1) {
-					PsychErrorExitMsg(PsychError_user, "OpenGL AUX buffers unavailable! dontclear=1 in Screen-Flip doesn't work without them.\n"
-									  "Either unsupported by your graphics card, or you disabled them via call to Screen('Preference', 'ConserveVRAM')?");
+				// Single backbuffer: Here we provide a fallback implementation in case AUX buffers
+				// are unavailable:
+				if (auxbuffers < 1) {
+					// No aux buffers. We use OpenGL textures as replacement solution.
+					// Backup current backbuffer of current onscreen window to a texture, create
+					// the texture if neccessary:
+					PsychBackupFramebufferToBackingTexture(windowRecord);
 				}
-				glDrawBuffer(GL_AUX0);
-				glReadBuffer(GL_BACK);
-				glRasterPos2i(0, screenheight);
-				glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
+				else {
+					// At least one aux buffer: Use it for fast backup/restore:
+					glDrawBuffer(GL_AUX0);
+					glReadBuffer(GL_BACK);
+					glRasterPos2i(0, screenheight);
+					glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);            
+				}
 			}
 			
 			if (blending_on) glEnable(GL_BLEND);
@@ -3448,6 +3483,7 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
     int screenwidth=(int) PsychGetWidthFromRect(windowRecord->rect);
     int screenheight=(int) PsychGetHeightFromRect(windowRecord->rect);
     int stereo_mode=windowRecord->stereomode;
+	GLint blending_on, auxbuffers;
 
     // Switch to associated GL-Context of windowRecord:
     PsychSetGLContext(windowRecord);
@@ -3482,7 +3518,8 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 				// We shall not clear the back buffer(s), but restore them to state before "Flip",
 				// so previous stim can be incrementally updated where this makes sense.
 				// Copy back our backup-copy from AUX buffers:
-				glDisable(GL_BLEND);
+				blending_on = (int) glIsEnabled(GL_BLEND);
+				if (blending_on) glDisable(GL_BLEND);
 				
 				// Need to do it on both backbuffers when OpenGL native stereo is enabled:
 				if (stereo_mode==kPsychOpenGLStereo) {
@@ -3496,13 +3533,23 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 					glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
 				}
 				else {
-					glDrawBuffer(GL_BACK);
-					glReadBuffer(GL_AUX0);
-					glRasterPos2i(0, screenheight);
-					glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
+					// At least one AUX buffer supported?
+					glGetIntegerv(GL_AUX_BUFFERS, &auxbuffers);
+					if (auxbuffers > 0) {
+						// Restore backbuffer from aux buffer 0:
+						glDrawBuffer(GL_BACK);
+						glReadBuffer(GL_AUX0);
+						glRasterPos2i(0, screenheight);
+						glCopyPixels(0, 0, screenwidth, screenheight, GL_COLOR);
+					}
+					else {
+						// Restore backbuffer from backing shadow texture:
+						glDrawBuffer(GL_BACK);
+						PsychBlitTextureToDisplay(windowRecord, windowRecord, windowRecord->rect, windowRecord->rect, 0, 0, 1);
+					}
 				}
 				
-				glEnable(GL_BLEND);
+				if (blending_on) glEnable(GL_BLEND);
 			}
 			else {
 				// Clearing (both)  back buffer requested:
@@ -3515,7 +3562,6 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 				else {
 					glDrawBuffer(GL_BACK);
 					PsychGLClear(windowRecord);
-
 				}
 			}
 		}
@@ -3681,7 +3727,7 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
 {
     static unsigned int		recursionLevel = 0;
     int						twidth, theight;
-    Boolean EmulateOldPTB = PsychPrefStateGet_EmulateOldPTB();
+    psych_bool EmulateOldPTB = PsychPrefStateGet_EmulateOldPTB();
 
 	// Are we called from the main interpreter thread? If not, then we return
 	// immediately (No-Op). Worker threads for async flip don't expect this
@@ -3830,61 +3876,8 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
                         // share the backbuffer as scratchpad. Each onscreen window has its own frontbuffer, so
                         // it will be unaffected by the switch --> No need to backup & restore.
                         if (!EmulateOldPTB || (EmulateOldPTB && !PsychIsOnscreenWindow(currentRendertarget))) {
-                            if (currentRendertarget->textureNumber == 0) {
-                                // This one is an onscreen window that doesn't have a shadow-texture yet. Create a suitable one.
-                                glGenTextures(1, &(currentRendertarget->textureNumber));
-                                glBindTexture(PsychGetTextureTarget(currentRendertarget), currentRendertarget->textureNumber);
-								// If this system only supports power-of-2 textures, then we'll need a little trick:
-								if (PsychGetTextureTarget(currentRendertarget)==GL_TEXTURE_2D) {
-									// Ok, we need to create an empty texture of suitable power-of-two size:
-									// Now we can do subimage texturing...
-									twidth=1; while(twidth < (int) PsychGetWidthFromRect(currentRendertarget->rect)) { twidth = twidth * 2; };
-									theight=1; while(theight < (int) PsychGetHeightFromRect(currentRendertarget->rect)) { theight = theight * 2; };
-									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, twidth, theight, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-									glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, (int) PsychGetWidthFromRect(currentRendertarget->rect), (int) PsychGetHeightFromRect(currentRendertarget->rect));
-								}
-								else {
-									// Supports rectangle textures. Just create texture as copy of framebuffer:
-									glCopyTexImage2D(PsychGetTextureTarget(currentRendertarget), 0, GL_RGBA8, 0, 0, (int) PsychGetWidthFromRect(currentRendertarget->rect), (int) PsychGetHeightFromRect(currentRendertarget->rect), 0); 
-								}
-                            }
-                            else {
-								// Texture for this one already exist: Bind and update it:
-								twidth  = (int) PsychGetWidthFromRect(currentRendertarget->rect);
-								theight = (int) PsychGetHeightFromRect(currentRendertarget->rect);
-								
-								// If this is a texture in non-normal orientation, we need to swap width and height, and reset orientation
-								// to upright:
-								if (!PsychIsOnscreenWindow(currentRendertarget)) {
-									// Texture. Handle size correctly:
-									if ((currentRendertarget->textureOrientation <= 1) && (PsychGetTextureTarget(currentRendertarget)==GL_TEXTURE_2D)) {
-										// Transposed power of two texture. Need to realloc texture...
-										twidth=1; while(twidth < (int) PsychGetWidthFromRect(currentRendertarget->rect)) { twidth = twidth * 2; };
-										theight=1; while(theight < (int) PsychGetHeightFromRect(currentRendertarget->rect)) { theight = theight * 2; };
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, twidth, theight, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-
-										// Reassign real size:
-										twidth  = (int) PsychGetWidthFromRect(currentRendertarget->rect);
-										theight = (int) PsychGetHeightFromRect(currentRendertarget->rect);
-
-										currentRendertarget->surfaceSizeBytes = 4 * twidth * theight; 
-									}
-									
-									// After this backup-op, the texture orientation will be a nice upright one:
-									currentRendertarget->textureOrientation = 2;
-								}
-								
-								glBindTexture(PsychGetTextureTarget(currentRendertarget), currentRendertarget->textureNumber);
-								if (PsychGetTextureTarget(currentRendertarget)==GL_TEXTURE_2D) {
-									// Special case for power-of-two textures:
-									glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, twidth, theight);
-								}
-								else {
-									// This would be appropriate but crashes for no good reason on OS-X 10.4.4: glCopyTexSubImage2D(PsychGetTextureTarget(currentRendertarget), 0, 0, 0, 0, 0, (int) PsychGetWidthFromRect(currentRendertarget->rect), (int) PsychGetHeightFromRect(currentRendertarget->rect));                         
-									glCopyTexImage2D(PsychGetTextureTarget(currentRendertarget), 0, GL_RGBA8, 0, 0, twidth, theight, 0);
-									currentRendertarget->surfaceSizeBytes = 4 * twidth * theight; 
-								}
-                            }
+							// Call helper routine defined below:
+							PsychBackupFramebufferToBackingTexture(currentRendertarget);
                         } // Backbuffer -> Texture backup code.
                     } // Transition from- or to a texture.
                 } // currentRenderTarget non-NULL.
@@ -3999,19 +3992,97 @@ void PsychSetupView(PsychWindowRecordType *windowRecord)
     return;
 }
 
+/* PsychBackupFramebufferToBackingTexture(PsychWindowRecordType *backupRendertarget)
+ * Copy current content of current backbuffer into a texture of matching size and RGBA8
+ * format.
+ *
+ * This is used by PsychSetDrawingTarget() for target window switches when no imaging pipeline
+ * aka OpenGL framebuffer objects are available. Mostly for offscreen <-> onscreen window switching
+ * and offscreen <-> offscreen window switching.
+ *
+ * It is also used by PsychPreFlipOperations() in non-imaging mode when clearmode 1 requires a
+ * backbuffer backup/restore but the system doesn't support AUX buffers which are the preferred
+ * solution in such a case.
+ *
+ */
+void PsychBackupFramebufferToBackingTexture(PsychWindowRecordType *backupRendertarget)
+{
+	int twidth, theight;
+	
+	// Already a shadow-texture available as backing store?
+	if (backupRendertarget->textureNumber == 0) {
+		// This one is an onscreen window that doesn't have a shadow-texture yet. Create a suitable one.
+		glGenTextures(1, &(backupRendertarget->textureNumber));
+		glBindTexture(PsychGetTextureTarget(backupRendertarget), backupRendertarget->textureNumber);
+
+		// If this system only supports power-of-2 textures, then we'll need a little trick:
+		if (PsychGetTextureTarget(backupRendertarget)==GL_TEXTURE_2D) {
+			// Ok, we need to create an empty texture of suitable power-of-two size:
+			// Now we can do subimage texturing...
+			twidth=1; while(twidth < (int) PsychGetWidthFromRect(backupRendertarget->rect)) { twidth = twidth * 2; };
+			theight=1; while(theight < (int) PsychGetHeightFromRect(backupRendertarget->rect)) { theight = theight * 2; };
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, twidth, theight, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+			glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, (int) PsychGetWidthFromRect(backupRendertarget->rect), (int) PsychGetHeightFromRect(backupRendertarget->rect));
+		}
+		else {
+			// Supports rectangle textures. Just create texture as copy of framebuffer:
+			glCopyTexImage2D(PsychGetTextureTarget(backupRendertarget), 0, GL_RGBA8, 0, 0, (int) PsychGetWidthFromRect(backupRendertarget->rect), (int) PsychGetHeightFromRect(backupRendertarget->rect), 0); 
+		}
+	}
+	else {
+		// Texture for this one already exist: Bind and update it:
+		twidth  = (int) PsychGetWidthFromRect(backupRendertarget->rect);
+		theight = (int) PsychGetHeightFromRect(backupRendertarget->rect);
+		
+		// If this is a texture in non-normal orientation, we need to swap width and height, and reset orientation
+		// to upright:
+		if (!PsychIsOnscreenWindow(backupRendertarget)) {
+			// Texture. Handle size correctly:
+			if ((backupRendertarget->textureOrientation <= 1) && (PsychGetTextureTarget(backupRendertarget)==GL_TEXTURE_2D)) {
+				// Transposed power of two texture. Need to realloc texture...
+				twidth=1; while(twidth < (int) PsychGetWidthFromRect(backupRendertarget->rect)) { twidth = twidth * 2; };
+				theight=1; while(theight < (int) PsychGetHeightFromRect(backupRendertarget->rect)) { theight = theight * 2; };
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, twidth, theight, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+				
+				// Reassign real size:
+				twidth  = (int) PsychGetWidthFromRect(backupRendertarget->rect);
+				theight = (int) PsychGetHeightFromRect(backupRendertarget->rect);
+				
+				backupRendertarget->surfaceSizeBytes = 4 * twidth * theight; 
+			}
+			
+			// After this backup-op, the texture orientation will be a nice upright one:
+			backupRendertarget->textureOrientation = 2;
+		}
+		
+		glBindTexture(PsychGetTextureTarget(backupRendertarget), backupRendertarget->textureNumber);
+		if (PsychGetTextureTarget(backupRendertarget)==GL_TEXTURE_2D) {
+			// Special case for power-of-two textures:
+			glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, twidth, theight);
+		}
+		else {
+			// This would be appropriate but crashes for no good reason on OS-X 10.4.4: glCopyTexSubImage2D(PsychGetTextureTarget(backupRendertarget), 0, 0, 0, 0, 0, (int) PsychGetWidthFromRect(backupRendertarget->rect), (int) PsychGetHeightFromRect(backupRendertarget->rect));                         
+			glCopyTexImage2D(PsychGetTextureTarget(backupRendertarget), 0, GL_RGBA8, 0, 0, twidth, theight, 0);
+			backupRendertarget->surfaceSizeBytes = 4 * twidth * theight; 
+		}
+	}
+	
+	return;
+}
+
 /* Set Screen - global flag which tells PTB if userspace rendering is active or not. */
-void PsychSetUserspaceGLFlag(boolean inuserspace)
+void PsychSetUserspaceGLFlag(psych_bool inuserspace)
 {
 	inGLUserspace = inuserspace;
 }
 
 /* Get Screen - global flag which tells if we are in userspace rendering mode: */
-boolean PsychIsUserspaceRendering(void)
+psych_bool PsychIsUserspaceRendering(void)
 {
 	return(inGLUserspace);
 }
 
-int PsychRessourceCheckAndReminder(boolean displayMessage) {
+int PsychRessourceCheckAndReminder(psych_bool displayMessage) {
 	int i,j = 0;
 
 	#if PSYCH_SYSTEM != PSYCH_LINUX
@@ -4050,6 +4121,25 @@ int PsychRessourceCheckAndReminder(boolean displayMessage) {
 	return(i + j);
 }
 
+/* PsychGetCurrentShader() - Returns currently bound GLSL
+ * program object, if any. Returns 0 if fixed-function pipeline
+ * is active.
+ *
+ * This needs to distinguish between OpenGL 2.0 and earlier.
+ */
+int PsychGetCurrentShader(PsychWindowRecordType *windowRecord) {
+	int curShader;
+	
+	if (GLEW_VERSION_2_0) {
+		glGetIntegerv(GL_CURRENT_PROGRAM, &curShader);
+	}
+	else {
+		curShader = (int) glGetHandleARB(GL_PROGRAM_OBJECT_ARB);
+	}
+
+	return(curShader);
+}
+
 /* PsychSetShader() -- Lazily choose a GLSL shader to use for further operations.
  *
  * The routine shall bind the shader 'shader' for the OpenGL context of window
@@ -4080,8 +4170,8 @@ int PsychSetShader(PsychWindowRecordType *windowRecord, int shader)
 		if (shader <  -1) { printf("PTB-BUG: Invalid shader id %i requested in PsychSetShader()! Switching to fixed function.\n", shader); shader = 0; }
 		
 		// Query currently bound shader:
-		glGetIntegerv(GL_CURRENT_PROGRAM, &oldShader);
-		
+		oldShader = PsychGetCurrentShader(windowRecord);
+
 		// Switch required? Switch if so:
 		if (shader != oldShader) glUseProgram((GLuint) shader);
 	}
@@ -4109,10 +4199,10 @@ int PsychSetShader(PsychWindowRecordType *windowRecord, int shader)
  */
 void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 {
-	boolean verbose = (PsychPrefStateGet_Verbosity() > 5) ? TRUE : FALSE;
+	psych_bool verbose = (PsychPrefStateGet_Verbosity() > 5) ? TRUE : FALSE;
 	
-	boolean nvidia = FALSE;
-	boolean ati = FALSE;
+	psych_bool nvidia = FALSE;
+	psych_bool ati = FALSE;
 	GLint maxtexsize=0, maxcolattachments=0, maxaluinst=0;
 	
 	if (strstr(glGetString(GL_VENDOR), "ATI") || strstr(glGetString(GL_VENDOR), "AMD")) ati = TRUE;
@@ -4122,6 +4212,13 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE_EXT, &maxtexsize);
 	glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &maxcolattachments);
 	if ((glewIsSupported("GL_ARB_fragment_program") || glewIsSupported("GL_ARB_vertex_program")) && glGetProgramivARB!=NULL) glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_MAX_PROGRAM_NATIVE_ALU_INSTRUCTIONS_ARB, &maxaluinst);
+
+	// Fallback query for max 2D texture size, in case rectangle texture size query should fail:
+	if (maxtexsize == 0) glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxtexsize);
+
+	// Cache maximum supported texture size for reuse by other routines:
+	windowRecord->maxTextureSize = (int) maxtexsize;
+
 	while (glGetError());
 	
 	if (verbose) {
@@ -4259,5 +4356,58 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	
 	if (verbose) printf("PTB-DEBUG: Interrogation done.\n\n");
 	
+	return;
+}
+
+// Common (Operating system independent) code to be executed immediately
+// before a OS specific double buffer swap request is performed: This
+// is called from PsychOSFlipWindowBuffers() within the OS specific variants
+// of PsychWindowGlue.c and shall implement special logging actions, workarounds
+// etc.
+//
+// Currently it implements manual syncing of bufferswap requests to VBL onset,
+// i.e., waits via beamposition query for VBL onset before returning. This to
+// work around setups will totally broken VSYNC support.
+void PsychExecuteBufferSwapPrefix(PsychWindowRecordType *windowRecord)
+{
+    CGDirectDisplayID	cgDisplayID;
+    long				vbl_startline, scanline, lastline;
+
+	// Workaround for broken sync-bufferswap-to-VBL support needed?
+	if (PsychPrefStateGet_ConserveVRAM() & kPsychBusyWaitForVBLBeforeBufferSwapRequest) {
+		// Yes: Sync of bufferswaps to VBL requested?
+		if (windowRecord->vSynced) {
+			// Sync of bufferswaps to retrace requested:
+			// We perform a busy-waiting spin-loop and query current beamposition until
+			// beam leaves VBL area:
+			
+			// Retrieve display handle for beamposition queries:
+			PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, windowRecord->screenNumber);
+			
+			// Retrieve final vbl_startline, aka physical height of the display in pixels:
+			PsychGetScreenSize(windowRecord->screenNumber, &scanline, &vbl_startline);
+
+			// Busy-Wait: The special handling of <=0 values makes sure we don't hang here
+			// if beamposition queries are broken as well:
+			lastline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);
+			
+			if (lastline > 0) {
+				// Within video frame. Wait for beamposition wraparound or start of VBL:
+				if (PsychPrefStateGet_Verbosity()>9) printf("\nPTB-DEBUG: Lastline beampos = %i\n", (int) lastline);
+
+				scanline = lastline;
+
+				// Wait until entering VBL or wraparound (i.e., VBL skipped). The fudge
+				// factor of -1 is to take yet another NVidia bug into account :-(
+				while ((scanline < vbl_startline) && (scanline >= lastline - 1)) {
+					lastline = (scanline > lastline) ? scanline : lastline;
+					if (scanline < (vbl_startline - 100)) PsychYieldIntervalSeconds(0.0);
+					scanline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);
+				}
+				if (PsychPrefStateGet_Verbosity()>9) printf("\nPTB-DEBUG: At exit of loop: Lastline beampos = %i, Scanline beampos = %i\n", (int) lastline, (int) scanline);
+			}
+		}
+	}
+
 	return;
 }

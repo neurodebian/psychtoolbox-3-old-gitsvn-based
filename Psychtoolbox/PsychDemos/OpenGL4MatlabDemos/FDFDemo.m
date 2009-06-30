@@ -27,6 +27,9 @@ function FDFDemo(dotDensity, dotLifetime)
 % 'd' toggles the display between the formless dot field stimulus and some
 % debug visualization.
 %
+% 't' toggles drawing of foreground dots in the colors defined by the
+% texture map of the drawn object.
+%
 % 'r' resets the distribution to empty, then incrementally recreates it.
 %
 % 'h' resets the distribution to a completely new random one.
@@ -66,6 +69,7 @@ space = KbName('space');
 dKey = KbName('d');
 rkey = KbName('r');
 hkey = KbName('h');
+tkey = KbName('t');
 upArrow = KbName('UpArrow');
 downArrow = KbName('DownArrow');
 leftArrow = KbName('LeftArrow');
@@ -134,6 +138,9 @@ try
     % Use max 'dotDensity' dots for background distribution:
     maxBGDots = dotDensity;
     
+    % Init texture mapping toggle flag to "texturemapping off":
+    textoggle = 0;
+    
     % Use occlusion culling: Dots that would stick to the occluded part of
     % the 3D objects surface are not drawn. By default - if this parameter
     % is omitted or set > 1 - all dots are drawn, even "occluded" ones.
@@ -147,6 +154,35 @@ try
     callbackEvalString = 'gluSphere(mysphere, 0.7, 100, 100);';
     fdf = moglFDF('SetRenderCallback', fdf, callbackEvalString);
 
+    % If texture mapping is on, load a texture mapping shader to
+    % demonstrate mixing static color with texture:
+    if textoggle > 0
+        drawShader = LoadGLSLProgramFromFiles('moglFDFTexturedDotsRenderShader.frag', 1);
+        glUseProgram(drawShader);
+        glUniform1i(glGetUniformLocation(drawShader, 'Image'), 0);
+
+        % Tell shader that it should roll its own pointsprite based
+        % anti-aliasing, instead of leaving the job up to the GPU:
+        % Very recent GPU's may be able to do this themselves, e.g., NVidia
+        % Geforce 8800 and later on OS/X 10.5.6 and later. In such a case,
+        % setting doPointSprites to zero may provide a slight speedup:
+        doPointSprites = 1;
+        glUniform1i(glGetUniformLocation(drawShader, 'doSmooth'), doPointSprites);
+
+        % Assign mixweight: 0.0 = static color only, 1.0 = texture only,
+        % intermediate levels provide a mix between 0% and 100% texture:
+        glUniform1f(glGetUniformLocation(drawShader, 'texWeight'), 0.5);
+        glUseProgram(0);
+        
+        % Assign shader for 2D foreground dot draw:
+        fdf = moglFDF('SetDrawShader', fdf, drawShader, [], doPointSprites);
+        
+        % Enable texture:
+        fdf = moglFDF('SetColorTexture', fdf, gltex, gltextarget);
+    else
+        drawShader = [];
+    end
+    
     % Setup the OpenGL rendering context of the onscreen window for use by
     % OpenGL wrapper. After this command, all following OpenGL commands will
     % draw into the onscreen window 'win':
@@ -235,7 +271,7 @@ try
 
     % Init the rotation 'toggle' flag (see above) to "rotation enabled":
     toggle = 1;
-
+    
     % Our framecounter, we love stats ;-)
     fcount = 0;
     
@@ -287,13 +323,13 @@ try
             % anti-aliased dots:
             glBlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA);
             glEnable(GL.BLEND);
-            glPointSize(3.0);
+            glPointSize(5.0);
             glEnable(GL.POINT_SMOOTH);
         end
         
-        % Render 2D dot set in yellow:
-        glColor3f(1,1,0);
-        
+        % Render 2D dot set in white:
+        glColor3f(1,1,1);
+                
         % This performs the actual high-speed drawing of the dot field into
         % window 'win':
         fdf = moglFDF('Render', fdf, win, [1 1]);
@@ -338,6 +374,22 @@ try
                 toggle = 1 - toggle;
             end
 
+            if keyCode(tkey)
+                KbReleaseWait;
+                textoggle = 1 - textoggle;
+                if textoggle
+                    % Enable texture mapping:
+                    fdf = moglFDF('SetColorTexture', fdf, gltex, gltextarget);
+                    if ~isempty(drawShader)
+                        fdf = moglFDF('SetDrawShader', fdf, drawShader);
+                    end
+                else
+                    % Disable texture mapping:
+                    fdf = moglFDF('SetColorTexture', fdf, [], []);
+                    fdf = moglFDF('SetDrawShader', fdf, []);
+                end
+            end
+            
             % 'r' key resets the distribution:
             if keyCode(rkey)
                 resetDistribution = 1;

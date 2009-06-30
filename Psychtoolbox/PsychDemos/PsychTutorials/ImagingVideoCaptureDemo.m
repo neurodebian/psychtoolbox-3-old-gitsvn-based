@@ -45,7 +45,7 @@ try
     bluroperator = CreateGLOperator(win, [], blurshader, 'Parametric box blur operator.');
     
     
-    grabber = Screen('OpenVideoCapture', win, 0, [0 0 640 480]);
+    grabber = Screen('OpenVideoCapture', win, 0);
 
     blurmaptex = Screen('OpenOffscreenWindow', win, 0, [0 0 640 480]);
     cr = CenterRect([0 0 640 480], winRect);
@@ -65,10 +65,12 @@ try
         Screen('FillRect', win, [255 0 0], [1 1 1680 1050]);
         Screen('FillRect', win, [0 255 0], [0 0 10 10]);
         if (tex>0)
-            ftex = Screen('TransformTexture', tex, bluroperator, blurmaptex, ftex);
+            %rect = Screen('Rect', tex)
+            ftex = Screen('TransformTexture', tex, bluroperator, blurmaptex);
+            
             % Draw new texture from framegrabber.
             Screen('DrawTexture', win, ftex); %Screen('Rect', win));
-            
+            Screen('Close', ftex);
             % Show it.
             Screen('Flip', win);
         end;        
