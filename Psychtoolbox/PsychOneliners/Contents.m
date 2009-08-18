@@ -63,6 +63,7 @@
 %   OSName                  - Convential English-language name of your operating system.
 %   PackColorImage          - Pack three color planes into one m by n by three matrix.
 %   ProgressBar             - Displays a progress bar in MATLAB's command window.
+%   PsychDebugWindowConfiguration - Enable special debug window configuration to aid single display debugging.
 %   PsychNumel              - Drop-in replacement for numel() on old Matlab versions that don't support it.
 %   PsychtoolboxRoot        - Robust way to get path to Psychtoolbox folder, even if renamed.
 %   RemoveSVNPaths          - Removes .svn folders from the path.
@@ -77,6 +78,7 @@
 %   ShrinkMatrix            - Shrinks a 2-D or 3-D matrix (an image) by a factor.
 %   SmartVec                - Creates a vector/sequence that satisfies certain conditions.
 %   SortCell                - Sorts cell matrices containing different data types in different columns.
+%   Speek                   - Use speech synthesis output to speak a given text. Mac OS/X only.
 %   Stopwatch               - Time intervals.
 %   streq                   - strcmp.
 %   StrPad                  - Makes a string a specified length, either by pre-padding it with a specified character or cutting from its beginning.

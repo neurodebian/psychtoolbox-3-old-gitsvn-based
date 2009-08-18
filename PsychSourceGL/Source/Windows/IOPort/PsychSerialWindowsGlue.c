@@ -32,83 +32,283 @@ int PsychIOOSCheckError(PsychSerialDeviceRecord* device, char* inerrmsg);
 // Externally defined level of verbosity:
 extern int verbosity;
 
-// Map numeric baud rate to Posix constant:
-//static int BaudToConstant(int inint)
-//{
-//	// Need to map from numeric values to predefined constants. On OS/X the
-//	// constants are identical to the input values, but on Linux they aren't, so better safe
-//	// than sorry, although it looks as if Linux accepts the "raw" numbers properly as well...
-//	switch(inint) {
-//		case 50: inint = B50; break;
-//		case 75: inint = B75; break;
-//		case 110: inint = B110; break;
-//		case 134: inint = B134; break;
-//		case 150: inint = B150; break;
-//		case 200: inint = B200; break;
-//		case 300: inint = B300; break;
-//		case 600: inint = B600; break;
-//		case 1200: inint = B1200; break;
-//		case 1800: inint = B1800; break;
-//		case 2400: inint = B2400; break;
-//		case 4800: inint = B4800; break;
-//		case 9600: inint = B9600; break;
-//		case 19200: inint = B19200; break;
-//		case 38400: inint = B38400; break;
-//		case 57600: inint = B57600; break;
-//		case 115200: inint = B115200; break;
-//		case 230400: inint = B230400; break;
-//		case 7200: inint = B7200; break;
-//		case 14400: inint = B14400; break;
-//		case 28800: inint = B28800; break;
-//		case 76800: inint = B76800; break;
-//
-//		default:
-//			// Pass inint unchanged in the hope that the OS will accept it:
-//			if (verbosity > 1) printf("IOPort: Non-standard BaudRate %i specified. We'll see if the OS likes this. Double-check the settings!\n", inint);
-//	}
-//	
-//	return(inint);
-//}
-//
-// Map Posix constant to numeric baud rate:
-//static int ConstantToBaud(int inint)
-//{
-//	// Need to map predefined constants to numeric values On OS/X the
-//	// constants are identical to the input values, but on Linux they aren't, so better safe
-//	// than sorry, although it looks as if Linux accepts the "raw" numbers properly as well...
-//	switch(inint) {
-//		case B50: inint = 50; break;
-//		case B75: inint = 75; break;
-//		case B110: inint = 110; break;
-//		case B134: inint = 134; break;
-//		case B150: inint = 150; break;
-//		case B200: inint = 200; break;
-//		case B300: inint = 300; break;
-//		case B600: inint = 600; break;
-//		case B1200: inint = 1200; break;
-//		case B1800: inint = 1800; break;
-//		case B2400: inint = 2400; break;
-//		case B4800: inint = 4800; break;
-//		case B9600: inint = 9600; break;
-//		case B19200: inint = 19200; break;
-//		case B38400: inint = 38400; break;
-//		case B57600: inint = 57600; break;
-//		case B115200: inint = 115200; break;
-//		case B230400: inint = 230400; break;
-//		#if PSYCH_SYSTEM == PSYCH_OSX
-//		// Only defined on OS/X:
-//		case B7200: inint = 7200; break;
-//		case B14400: inint = 14400; break;
-//		case B28800: inint = 28800; break;
-//		case B76800: inint = 76800; break;
-//		#endif
-//		default:
-//			// Pass inint unchanged in the hope that the OS will accept it:
-//			if (verbosity > 1) printf("IOPort: Non-standard BaudRate %i detected. Let's see if this makes sense...\n", inint);
-//	}
-//	
-//	return(inint);
-//}
+int PsychSerialWindowsGlueAsyncReadbufferBytesAvailable(PsychSerialDeviceRecord* device)
+{	
+	int navail = 0;
+	
+	// Lock data structure:
+	PsychLockMutex(&(device->readerLock));
+	
+	// Compute amount of pending data for readout:
+	navail = (device->readerThreadWritePos - device->clientThreadReadPos);
+
+	// Unlock data structure:
+	PsychUnlockMutex(&(device->readerLock));
+
+	// Return it.
+	return(navail);
+}
+
+void* PsychSerialWindowsGlueReaderThreadMain(void* deviceToCast)
+{
+	int rc, nread;
+	int navail;
+	int tmpcurpos, naccumread;
+	unsigned char lastcharacter, lineterminator;	
+	double t;
+	COMSTAT dstatus;
+	DWORD   dummy;
+
+	// Get a handle to our device struct: These pointers must not be NULL!!!
+	PsychSerialDeviceRecord* device = (PsychSerialDeviceRecord*) deviceToCast;
+
+	// Try to raise our priority: We ask to switch ourselves (NULL) to priority class 1 aka
+	// round robin realtime scheduling, with a tweakPriority of +1, ie., raise the relative
+	// priority level by +1 wrt. to the current level:
+	if ((rc = PsychSetThreadPriority(NULL, 1, 1)) > 0) {
+		if (verbosity > 0) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Failed to switch to realtime priority [%i]!\n", rc);
+	}
+
+	// Main loop: Runs until external thread cancellation signal device->abortThreadReq set to non-zero:
+	while (0 == device->abortThreadReq) {
+		if (verbosity > 9) printf("IOPort-DEBUG: In PsychSerialWindowsGlueReaderThreadMain(): New loop iteration, abortflag = %i, checking abort signal.\n", device->abortThreadReq); 
+		PsychTestCancelThread(&(device->readerThread));
+		if (verbosity > 9) printf("IOPort-DEBUG: In PsychSerialWindowsGlueReaderThreadMain(): New loop iteration, abortflag = %i, abort signal negative.\n", device->abortThreadReq); 
+
+        if ((rc=PsychIOOSCheckError(device, NULL))>0) {
+				if (verbosity > 0) printf("PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Errorcheck on device %s returned errorcode (%d)! Aborted.\n", device->portSpec, rc);
+				return(0);
+        }
+        
+		// Polling read requested?
+		if (device->isBlockingBackgroundRead == 0) {
+			// Polling operation:
+			
+			// Enough data available for read of requested granularity?
+			if (ClearCommError(device->fileDescriptor, &dummy, &dstatus)==0) {
+				if (verbosity > 0) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): ClearCommError() bytes available query on device %s returned (%d)\n", device->portSpec, GetLastError());
+				return(0);
+			}
+			navail = (int) dstatus.cbInQue;
+			
+			// If not, we sleep for some time, then retry:
+			while(navail < device->readGranularity) {
+				// Cancellation point: Test for cancel request and terminate, if so:
+				if (device->abortThreadReq > 0) return(0);
+				PsychTestCancelThread(&(device->readerThread));
+
+				// Yield...
+				PsychYieldIntervalSeconds(device->pollLatency);
+
+				// ... and retest:
+				if (ClearCommError(device->fileDescriptor, &dummy, &dstatus)==0) {
+					if (verbosity > 0) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): ClearCommError() bytes available query on device %s returned (%d)\n", device->portSpec, GetLastError());
+					return(0);
+				}
+				navail = (int) dstatus.cbInQue;
+			}
+		}
+		else {
+			// Non-polling operation. We perform a blocking read on the device.
+			// Assuming the masterthread doesn't perform any non-blocking operations,
+			// which would screw us or it, this is safe. The read() call is a thread cancellation
+			// point, so we can be safely aborted by the masterthread even if blocked on
+			// input.
+
+			// Set filedescriptor to blocking mode:
+			device->timeouts.ReadIntervalTimeout = (int) (device->readTimeout * 1000 + 0.5);
+			device->timeouts.ReadTotalTimeoutMultiplier = device->timeouts.ReadIntervalTimeout;
+			device->timeouts.ReadTotalTimeoutConstant = 0;
+			
+			if (SetCommTimeouts(device->fileDescriptor, &(device->timeouts)) == 0) {
+				if (verbosity > 0) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Error calling SetCommTimeouts on device %s for blocking read - (%d).\n", device->portSpec, GetLastError());
+				return(0);
+			}
+		}
+
+		// Zerofill the space we're gonna read in next read() request, so we have a nice
+		// clean buffersegment in case of a short-read, e.g., in cooked mode on end-of-line:
+		memset(&(device->readBuffer[(device->readerThreadWritePos) % (device->readBufferSize)]), 0, device->readGranularity);
+		
+		// Async linebuffered read op?
+		if (device->readFilterFlags & kPsychIOPortAsyncLineBufferFiltering) {
+			// Emulation of linebuffered readop, similar to Unix cooked, canonical input processing mode:
+			tmpcurpos = (device->readerThreadWritePos) % (device->readBufferSize);
+			lineterminator = device->lineTerminator;
+			lastcharacter  = lineterminator + 1;
+			naccumread = 0;
+			t = DBL_MIN;
+
+			// Repeat reading until a maximum of readGranularity bytes has been read or until
+			// lineterminator character is encountered, whatever comes first:
+			while ( (naccumread < device->readGranularity) && (lastcharacter != lineterminator) ) {
+                // Check for termination request:
+                if (device->abortThreadReq > 0) return(0);
+				PsychTestCancelThread(&(device->readerThread));
+
+				// Read 1 Byte:
+				if (ReadFile(device->fileDescriptor, &lastcharacter, 1, &nread, NULL) == 0) {
+					// Some error:
+					nread = -1;
+				}
+				
+				if (nread > 0) {
+					// Put it into readBuffer:
+					device->readBuffer[tmpcurpos++] = lastcharacter;
+
+					// Get representative timestamp of "start of line terminated new line" for first received byte:
+					if (0 == naccumread) PsychGetAdjustedPrecisionTimerSeconds(&t);
+
+					// Increment count of received bytes:
+					naccumread++;
+				}
+				else {
+					// 1 Byte read failed!
+
+					// Diagnostic:
+					if (verbosity > 5) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Linebuffered read: Failed to read 1 byte of data for reason [%d] at relative position %i! Padding...\n", GetLastError(), naccumread);
+					
+					// Break out of while() loop:
+					break;
+				}
+			}
+			
+			// Done with this read quantum, either due to error, line-terminator reached, or readGranularity bytes stored.
+
+			// Increment serial bytes received counter:
+			device->asyncReadBytesCount += (naccumread > 0) ? naccumread : 0;			
+		}
+		else {
+			// Standard non-linebuffered readop:
+			
+			// How much data to read? We use the last 4-Bytes of a readGranularity quantum for our
+			// serial bytes counter if kPsychIOPortCMUPSTFiltering is active:
+			naccumread = (device->readFilterFlags & kPsychIOPortCMUPSTFiltering) ? (device->readGranularity - 4) : device->readGranularity;
+			if (naccumread < 0) naccumread = 0;
+			
+			// Enough data available. Read it!
+			if (ReadFile(device->fileDescriptor, &(device->readBuffer[(device->readerThreadWritePos) % (device->readBufferSize)]), naccumread, &nread, NULL) == 0) {
+				// Some error:
+				if (verbosity > 0) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Error during blocking read from device %s - (%d).\n", device->portSpec, GetLastError());
+				return(0);
+			}
+			
+			// Sufficient amount read?
+			if (nread != naccumread) {
+				// Should not happen, unless device is in cooked (canonical) input processing mode, where any read() will
+				// at most return the content of a single line of buffered input, regardless of requested amount. In this
+				// case it is not only a perfectly valid and expected result, but also safe, becuse our memset() above will
+				// zero-fill the remainder of the buffer with a defined value. For this reason we only output an error
+				// if high verbosity level is selected for debug output:
+				if (verbosity > 5) fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Failed to read %i bytes of data for unknown reason (Got only %i bytes)! Padding...\n", naccumread, nread);
+			}
+			
+			// Increment serial bytes received counter:
+			device->asyncReadBytesCount += (nread > 0) ? nread : 0;
+			
+			// Filtermode for filtering out CR and LF characters active (e.g., for UBW32-Bitwhacker with StickOS)?
+			if ((device->readFilterFlags & kPsychIOPortCRLFFiltering) &&
+				((device->readBuffer[(device->readerThreadWritePos) % (device->readBufferSize)] == 10) ||
+				 (device->readBuffer[(device->readerThreadWritePos) % (device->readBufferSize)] == 13))) {
+				// Current read byte is code 10 or 13 aka CR or LF. Discard & Skip:
+				continue;
+			}
+			
+			// Filtermode for CMU button box or PST button box enabled?
+			if (device->readFilterFlags & kPsychIOPortCMUPSTFiltering) {
+				// Special input data filter for the CMU button box and the PST button box.
+				// Both boxes are hillarious masterpieces of totally braindamaged protocol design.
+				// They send a continous stream of status bytes, at a rate of 1000 Hz (!?!), regardless
+				// if the status of the box has changed or not, instead of just sending a status update
+				// when actually something has changed. This creates a lot of load on the host computer
+				// and a s***load of redundant data. As these shoddy beasts are still sold to customers,
+				// and quite widespread, we implement special filtering. We check each received byte if
+				// it matches its predecessor. If so, we discard it, as it is redundant.
+				if ((device->readerThreadWritePos > 0) && (device->readBuffer[(device->readerThreadWritePos) % (device->readBufferSize)] == lastcharacter)) {
+					// Current read byte value is identical to last stored value.
+					// --> No status change, therefore no reason to store this redundant value.
+					// We skip processing and wait for the next byte:
+					continue;
+				}
+				else {
+					// Store current character as "lastcharacter" reference for next iteration:
+					lastcharacter = device->readBuffer[(device->readerThreadWritePos) % (device->readBufferSize)];
+					
+					// Store new counter as a 32-bit unsigned int, which may possibly be not 32-bit boundary aligned
+					// on the target architecture!
+					*((unsigned int*) &(device->readBuffer[(device->readerThreadWritePos+1) % (device->readBufferSize)])) = (unsigned int) device->asyncReadBytesCount;
+				}
+			}
+			
+			// Take read completion timestamp:
+			PsychGetAdjustedPrecisionTimerSeconds(&t);
+			
+		}	// End of regular non-linebuffered readop.
+
+		// Store timestamp for this read chunk of data:
+		device->timeStamps[(device->readerThreadWritePos / device->readGranularity) % (device->readBufferSize / device->readGranularity)] = t;
+		
+		// Try to lock, block until available if not available:
+		if ((rc=PsychLockMutex(&(device->readerLock)))) {
+			// This could potentially kill Matlab, as we're printing from outside the main interpreter thread.
+			// Use fprintf() instead of the overloaded printf() (aka mexPrintf()) in the hope that we don't
+			// wreak havoc -- maybe it goes to the system log, which should be safer...
+			fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): mutex_lock failed.\n");
+			
+			// Commit suicide:
+			return(0);
+		}
+
+		// Update linear write pointer:
+		device->readerThreadWritePos += device->readGranularity;
+		
+		// Need to unlock the mutex:
+		if ((rc=PsychUnlockMutex(&(device->readerLock)))) {
+			// This could potentially kill Matlab, as we're printing from outside the main interpreter thread.
+			// Use fprintf() instead of the overloaded printf() (aka mexPrintf()) in the hope that we don't
+			// wreak havoc -- maybe it goes to the system log, which should be safer...
+			fprintf(stderr, "PTB-ERROR: In IOPort:PsychSerialWindowsGlueReaderThreadMain(): Last mutex_unlock in termination failed.\n");
+			
+			// Commit suicide:
+			return(0);
+		}
+
+		// Next iteration...
+	}
+	
+	// Go and die peacefully...
+	return(0);
+}
+
+void PsychIOOSShutdownSerialReaderThread( PsychSerialDeviceRecord* device)
+{
+	if (device->readerThread) {
+		// Signal the thread that it should cancel:
+		device->abortThreadReq = 1;
+		if (verbosity > 6) printf("IOPort-DEBUG: In PsychIOOSShutdownSerialReaderThread(): Calling PsychAbortThread()...\n"); 
+		PsychAbortThread(&(device->readerThread));
+		
+		// Wait for it to die:
+		if (verbosity > 6) printf("IOPort-DEBUG: In PsychIOOSShutdownSerialReaderThread(): Calling PsychDeleteThread()...\n"); 
+		PsychDeleteThread(&(device->readerThread));
+
+		// Mark it as dead:
+		device->readerThread = NULL;
+		
+		// Release the mutex:
+		if (verbosity > 6) printf("IOPort-DEBUG: In PsychIOOSShutdownSerialReaderThread(): Calling PsychDestroyMutex()...\n"); 
+		PsychDestroyMutex(&(device->readerLock));
+
+		// Reset cancel signal:
+		device->abortThreadReq = 0;
+
+		// Release timestamp buffer:
+		free(device->timeStamps);
+		device->timeStamps = NULL;
+	}
+	
+	return;
+}
 
 /* PsychIOOSOpenSerialPort()
  *
@@ -207,7 +407,9 @@ PsychSerialDeviceRecord* PsychIOOSOpenSerialPort(const char* portSpec, const cha
 	// demand would be also awfully slow, and as it doesn't do any harm for non-blocking writes AFAIK,
 	// we now always unconditionally enable it already here during device setup, where extra delays of
 	// 1-2 msecs don't matter.
-	if (SetCommMask(device->fileDescriptor, EV_TXEMPTY)==0) {
+	//
+	// If eventCharEnabled is set, we also enable EV_RXFLAG events...
+	if (SetCommMask(device->fileDescriptor, ((device->eventCharEnabled > 0) ? (EV_TXEMPTY | EV_RXFLAG) : EV_TXEMPTY))==0) {
 		sprintf(errmsg, "Error during setup for blocking write operations to device %s during call to SetCommMask(EV_TXEMPTY) - (%d).\n", portSpec, GetLastError());
 		goto error;
 	}
@@ -263,6 +465,8 @@ void PsychIOOSCloseSerialPort(PsychSerialDeviceRecord* device)
 {
 	if (device == NULL) PsychErrorExitMsg(PsychError_internal, "NULL-Ptr instead of valid device pointer!");
 	
+	PsychIOOSShutdownSerialReaderThread(device);
+	
 	// Drain all send-buffers:
     // Block until all written output has been sent from the device.
     // Note that this call is simply passed on to the serial device driver. 
@@ -290,6 +494,7 @@ void PsychIOOSCloseSerialPort(PsychSerialDeviceRecord* device)
 
 	// Release read buffer, if any:
 	if (device->readBuffer) free(device->readBuffer);
+	if (device->bounceBuffer) free(device->bounceBuffer);
 
 	// Release memory for device struct:
 	free(device);
@@ -305,12 +510,12 @@ void PsychIOOSCloseSerialPort(PsychSerialDeviceRecord* device)
  *
  * Returns success- or failure status.
  */
-PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const char* configString)
+PsychError PsychIOOSConfigureSerialPort( PsychSerialDeviceRecord* device, const char* configString)
 {
     DCB				options;
 	char*			p;
 	float			infloat;
-	int				inint, inint2;
+	int				inint, inint2, rc;
 	psych_bool			updatetermios = FALSE;
 
 	// Init DCBlength field to size of structure! Fixed as of 31.12.2008 -- May have caused
@@ -375,6 +580,64 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 				return(PsychError_system);
 			}
 		}
+	}
+
+	// Assign line terminator if any:
+	if ((p = strstr(configString, "Terminator="))) {
+		if (1!=sscanf(p, "Terminator=%i", &inint)) {
+			if (verbosity > 0) printf("Invalid parameter for Terminator= set!\n");
+			return(PsychError_invalidIntegerArg);
+		}
+
+		device->lineTerminator = (unsigned char) inint;
+		
+		// We also assign the line terminator as Event Character: This allows
+		// some line-delimited input buffering with the lineTerminator as
+		// delimiter in synchronous reads.
+		// It may also set the lineTerminator as event character and enable it
+		// in Serial-USB converters from FTDI, thereby allowing to drastically
+		// lower receive latency on reception of lineTerminator delimited data
+		// packets:
+		if (inint >= 0) {
+			// Enable event character:
+			options.EvtChar = (char) inint;
+			device->eventCharEnabled = 1;
+		}
+		else {
+			// Disable use of event characters (maybe):
+			options.EvtChar = (char) 255;
+			device->eventCharEnabled = 0;
+		}
+		updatetermios = TRUE;
+
+		// Need to update the event mask as well, depending on the new enable setting
+		// for event characters. See comments in PsychIOOSOpenSerialPort(); for SetCommMask() call as well!
+		if (SetCommMask(device->fileDescriptor, ((device->eventCharEnabled > 0) ? (EV_TXEMPTY | EV_RXFLAG) : EV_TXEMPTY))==0) {
+			if (verbosity > 0) printf("IOPort: Error: SetCommMask() call for 'Terminator' setup failed on device %s - (%d).\n", device->portSpec, GetLastError());
+			return(PsychError_system);
+		}
+	}
+
+	// Assign receiver enable state, if any:
+	if ((p = strstr(configString, "ReceiverEnable="))) {
+		if (1!=sscanf(p, "ReceiverEnable=%i", &inint)) {
+			if (verbosity > 0) printf("Invalid parameter for ReceiverEnable= set!\n");
+			return(PsychError_invalidIntegerArg);
+		}
+
+		// 'ReceiverEnable' is so far unsupported on Windows. Don't know if the OS has any
+		// way to allow to change the setting.
+		/*
+		if (inint > 0) {
+			// Enable receiver:
+			
+		}
+		else {
+			// Disable receiver:
+		}
+
+		updatetermios = TRUE;
+		*/
 	}
 
 	// Set common baud rate for send and receive:
@@ -642,6 +905,78 @@ PsychError PsychIOOSConfigureSerialPort(PsychSerialDeviceRecord* device, const c
 		}
 	}
 
+	// Async background read via parallel thread requested?
+	if ((p = strstr(configString, "StartBackgroundRead="))) {
+		if (1!=sscanf(p, "StartBackgroundRead=%i", &inint)) {
+			if (verbosity > 0) printf("Invalid parameter for StartBackgroundRead set!\n");
+			return(PsychError_invalidIntegerArg);
+		}
+		else {
+			// Set data-fetch granularity for single background read requests:
+			if (inint < 1) {
+				if (verbosity > 0) printf("Invalid StartBackgroundRead fetch granularity of %i bytes provided. Must be at least 1 byte!\n", inint);
+				return(PsychError_invalidIntegerArg);
+			}
+			
+			if (device->readBufferSize < (unsigned int) inint) {
+				if (verbosity > 0) printf("Invalid StartBackgroundRead fetch granularity of %i bytes provided. Bigger than current Inputbuffer size of %i bytes!\n", inint, device->readBufferSize);
+				return(PsychError_invalidIntegerArg);
+			}
+
+			if ((device->readBufferSize % inint) != 0) {
+				if (verbosity > 0) printf("Invalid StartBackgroundRead fetch granularity of %i bytes provided. Inputbuffer size of %i bytes is not an integral multiple of fetch granularity as required!\n", inint, device->readBufferSize);
+				return(PsychError_invalidIntegerArg);
+			}
+
+			if (device->readerThread) {
+				if (verbosity > 0) printf("Called StartBackgroundRead, but background read operations are already enabled! Disable first via 'StopBackgroundRead'!\n");
+				return(PsychError_user);			
+			}
+			
+			// Setup data structures:
+			device->asyncReadBytesCount = 0;			
+			device->readerThreadWritePos = 0;
+			device->clientThreadReadPos  = 0;
+			device->readGranularity = inint;
+			
+			// Allocate sufficiently large timestamp buffer:
+			device->timeStamps = (double*) calloc(sizeof(double), device->readBufferSize / device->readGranularity);
+			
+			// Create & Init the mutex:
+			if ((rc=PsychInitMutex(&(device->readerLock)))) {
+				printf("PTB-ERROR: In StartBackgroundReadCould(): Could not create readerLock mutex lock.\n");
+				return(PsychError_system);
+			}
+			
+			// Create and startup thread:
+			if ((rc=PsychCreateThread(&(device->readerThread), NULL, PsychSerialWindowsGlueReaderThreadMain, (void*) device))) {
+				printf("PTB-ERROR: In StartBackgroundReadCould(): Could not create background reader thread.\n");
+				return(PsychError_system);
+			}
+		}
+	}
+
+	if ((p = strstr(configString, "BlockingBackgroundRead="))) {
+		if (1!=sscanf(p, "BlockingBackgroundRead=%i", &inint)) {
+			if (verbosity > 0) printf("Invalid parameter for BlockingBackgroundRead= set!\n");
+			return(PsychError_invalidIntegerArg);
+		}
+		device->isBlockingBackgroundRead = inint;
+	}
+
+	// Stop a background reader?
+	if ((p = strstr(configString, "StopBackgroundRead"))) {
+		PsychIOOSShutdownSerialReaderThread(device);
+	}
+
+	if ((p = strstr(configString, "ReadFilterFlags="))) {
+		if (1!=sscanf(p, "ReadFilterFlags=%i", &inint)) {
+			if (verbosity > 0) printf("Invalid parameter for ReadFilterFlags= set!\n");
+			return(PsychError_invalidIntegerArg);
+		}
+		device->readFilterFlags = (unsigned int) inint;
+	}
+
 	// Done.
 	return(PsychError_none);
 }
@@ -717,11 +1052,15 @@ int PsychIOOSWriteSerialPort(PsychSerialDeviceRecord* device, void* writedata, u
 			// Take timestamp for completeness although it doesn't make much sense in the blocking case:
 			PsychGetAdjustedPrecisionTimerSeconds(&timestamp[3]);
 
-			// Really wait for write completion, ie., until the last byte has left the transmitter:
-			// (N.B.: No need to clear or init EvtMask, it is a pure return parameter)
-			if (WaitCommEvent(device->fileDescriptor, (LPDWORD) &EvtMask, NULL)==0) {
-				sprintf(errmsg, "Error during blocking write to device %s during call to WaitCommEvent(EV_TXEMPTY) - (%d).\n", device->portSpec, GetLastError());
-				return(-1);
+			// Wait until a event mask with EV_TXEMPTY event signalled is received:
+			EvtMask = 0;
+			while (0 == (EvtMask & EV_TXEMPTY)) {
+				// Really wait for write completion, ie., until the last byte has left the transmitter:
+				// (N.B.: No need to clear or init EvtMask, it is a pure return parameter)
+				if (WaitCommEvent(device->fileDescriptor, (LPDWORD) &EvtMask, NULL)==0) {
+					sprintf(errmsg, "Error during blocking write to device %s during call to WaitCommEvent(EV_TXEMPTY) - (%d).\n", device->portSpec, GetLastError());
+					return(-1);
+				}
 			}
 		}
 	}
@@ -738,9 +1077,10 @@ int PsychIOOSWriteSerialPort(PsychSerialDeviceRecord* device, void* writedata, u
 	return(nwritten);
 }
 
-int PsychIOOSReadSerialPort(PsychSerialDeviceRecord* device, void** readdata, unsigned int amount, int blocking, char* errmsg, double* timestamp)
+int PsychIOOSReadSerialPort( PsychSerialDeviceRecord* device, void** readdata, unsigned int amount, int blocking, char* errmsg, double* timestamp)
 {
 	double timeout;
+	int raPos, i;	
 	int nread = 0;	
 	*readdata = NULL;
 
@@ -764,88 +1104,186 @@ int PsychIOOSReadSerialPort(PsychSerialDeviceRecord* device, void** readdata, un
 	
 	// Nonblocking mode?
 	if (blocking <= 0) {
-		// Yep. Set COMMTIMEOUT for non-blocking read mode:		
-		device->timeouts.ReadIntervalTimeout = MAXDWORD;
-		device->timeouts.ReadTotalTimeoutConstant = 0;
-		device->timeouts.ReadTotalTimeoutMultiplier = 0;
+		// Yes.
 		
-		if (SetCommTimeouts(device->fileDescriptor, &(device->timeouts)) == 0)
-		{
-			sprintf(errmsg, "Error calling SetCommTimeouts on device %s for non-blocking read - (%d).\n", device->portSpec, GetLastError());
-			return(-1);
+		// Background read active?
+		if (device->readerThread) {
+			// Just return what is available in the internal buffer:
+			nread = PsychSerialWindowsGlueAsyncReadbufferBytesAvailable(device);
 		}
-		
-		// Read the data, at most 'amount' bytes, nonblocking:
-		if (ReadFile(device->fileDescriptor, device->readBuffer, amount, &nread, NULL) == 0)
-		{			
-			// Some error:
-			sprintf(errmsg, "Error during non-blocking read from device %s - (%d).\n", device->portSpec, GetLastError());
-			return(-1);
+		else {	
+			// No, regular sync read: Set COMMTIMEOUT for non-blocking read mode:		
+			device->timeouts.ReadIntervalTimeout = MAXDWORD;
+			device->timeouts.ReadTotalTimeoutConstant = 0;
+			device->timeouts.ReadTotalTimeoutMultiplier = 0;
+			
+			if (SetCommTimeouts(device->fileDescriptor, &(device->timeouts)) == 0)
+			{
+				sprintf(errmsg, "Error calling SetCommTimeouts on device %s for non-blocking read - (%d).\n", device->portSpec, GetLastError());
+				return(-1);
+			}
+			
+			// Read the data, at most 'amount' bytes, nonblocking:
+			if (ReadFile(device->fileDescriptor, device->readBuffer, amount, &nread, NULL) == 0)
+			{			
+				// Some error:
+				sprintf(errmsg, "Error during non-blocking read from device %s - (%d).\n", device->portSpec, GetLastError());
+				return(-1);
+			}
 		}
 	}
 	else {
-		// Nope. Setup timeouts for blocking read with user code spec'd timeout parameters:
-		// We set all fields to the same value, so reception of a single byte should not take longer than device->readTimeout
-		// seconds, neither absolute, nor on average. ReadIntervalTimeout is equivalent to VTIME on Unix, its an inter-byte
-		// timer. As this only gets triggered after receipt of first byte, we need to use ReadTotalTimeoutXXX as well, so
-		// even if nothing is received, we time out after (readTimeout * amount) time units.
-		// All these timeouts are per byte, not absolute for the whole read op, so the real maximum duration for the whole
-		// read is the given readTimeout multiplied by the total number of requested bytes.
-		// This is conformant to the Unix behaviour where the timeout is also per byte, so it scales with the total
-		// number of requested bytes worst case.
-		//
-		// Granularity of setting is milliseconds, so we need to convert our seconds value to milliseconds, with proper
-		// rounding applied:
-		device->timeouts.ReadIntervalTimeout = (int) (device->readTimeout * 1000 + 0.5);
-		device->timeouts.ReadTotalTimeoutMultiplier = device->timeouts.ReadIntervalTimeout;
-		device->timeouts.ReadTotalTimeoutConstant = 0;
-		
-		if (SetCommTimeouts(device->fileDescriptor, &(device->timeouts)) == 0)
-		{
-			sprintf(errmsg, "Error calling SetCommTimeouts on device %s for blocking read - (%d).\n", device->portSpec, GetLastError());
-			return(-1);
-		}
-		
-		if (amount > 1) {
-			// Need to poll for arrival of first byte, as the interbyte ReadIntervalTimeout timer is only armed after
-			// reception of first byte:
+		// Nope. This is a blocking read request:
+
+		// Background read active?
+		if (device->readerThread) {
+			// Poll until requested amount of data is available:
+			// TODO FIXME: Could do this in a more friendly way by using condition
+			// variables, so we sleep until async reader thread signals availability
+			// of sufficient data...
 			PsychGetAdjustedPrecisionTimerSeconds(&timeout);
 			*timestamp = timeout;
 			timeout+=device->readTimeout;
 			
-			while((*timestamp < timeout) && (PsychIOOSBytesAvailableSerialPort(device) < 1)) {
+			while((*timestamp < timeout) && (PsychSerialWindowsGlueAsyncReadbufferBytesAvailable(device) < (int) amount)) {
 				PsychGetAdjustedPrecisionTimerSeconds(timestamp);
-				// Due to the shoddy Windows scheduler, we can't use a nice sleep duration of 500 microseconds like
-				// on Unices, but need to use a rather large 5 msecs so the system actually puts us to sleep
-				// and we don't overload the machine in realtime scheduling:
-				PsychWaitIntervalSeconds(device->pollLatency);
+				PsychYieldIntervalSeconds(device->pollLatency);
 			}
 			
-			if (PsychIOOSBytesAvailableSerialPort(device) < 1) {
-				// Ok, first byte didn't arrive within one timeout period:
-				return(0);
-			}
+			// Return amount of available data:
+			nread = PsychSerialWindowsGlueAsyncReadbufferBytesAvailable(device);			
 		}
-		
-		// Read the data, exactly 'amount' bytes, blocking, unless timeout occurs:
-		if (ReadFile(device->fileDescriptor, device->readBuffer, amount, &nread, NULL) == 0)
-		{			
-			// Some error:
-			sprintf(errmsg, "Error during blocking read from device %s - (%d).\n", device->portSpec, GetLastError());
+		else {
+			// Nope. Setup timeouts for blocking read with user code spec'd timeout parameters:
+			// We set all fields to the same value, so reception of a single byte should not take longer than device->readTimeout
+			// seconds, neither absolute, nor on average. ReadIntervalTimeout is equivalent to VTIME on Unix, its an inter-byte
+			// timer. As this only gets triggered after receipt of first byte, we need to use ReadTotalTimeoutXXX as well, so
+			// even if nothing is received, we time out after (readTimeout * amount) time units.
+			// All these timeouts are per byte, not absolute for the whole read op, so the real maximum duration for the whole
+			// read is the given readTimeout multiplied by the total number of requested bytes.
+			// This is conformant to the Unix behaviour where the timeout is also per byte, so it scales with the total
+			// number of requested bytes worst case.
+			//
+			// Granularity of setting is milliseconds, so we need to convert our seconds value to milliseconds, with proper
+			// rounding applied:
+			device->timeouts.ReadIntervalTimeout = (int) (device->readTimeout * 1000 + 0.5);
+			device->timeouts.ReadTotalTimeoutMultiplier = device->timeouts.ReadIntervalTimeout;
+			device->timeouts.ReadTotalTimeoutConstant = 0;
+			
+			if (SetCommTimeouts(device->fileDescriptor, &(device->timeouts)) == 0)
+			{
+				sprintf(errmsg, "Error calling SetCommTimeouts on device %s for blocking read - (%d).\n", device->portSpec, GetLastError());
+				return(-1);
+			}
+
+			// Skip this polling for first byte if BlockingBackgroundRead is non-zero:
+			if (device->isBlockingBackgroundRead == 0) {			
+				if (amount > 1) {
+					// Need to poll for arrival of first byte, as the interbyte ReadIntervalTimeout timer is only armed after
+					// reception of first byte:
+					PsychGetAdjustedPrecisionTimerSeconds(&timeout);
+					*timestamp = timeout;
+					timeout+=device->readTimeout;
+					
+					while((*timestamp < timeout) && (PsychIOOSBytesAvailableSerialPort(device) < 1)) {
+						PsychGetAdjustedPrecisionTimerSeconds(timestamp);
+						// Due to the shoddy Windows scheduler, we can't use a nice sleep duration of 500 microseconds like
+						// on Unices, but need to use a rather large 5 msecs so the system actually puts us to sleep
+						// and we don't overload the machine in realtime scheduling:
+						PsychYieldIntervalSeconds(device->pollLatency);
+					}
+					
+					if (PsychIOOSBytesAvailableSerialPort(device) < 1) {
+						// Ok, first byte didn't arrive within one timeout period:
+						return(0);
+					}
+				}
+			}
+
+			// Read the data, exactly 'amount' bytes, blocking, unless timeout occurs:
+			if (ReadFile(device->fileDescriptor, device->readBuffer, amount, &nread, NULL) == 0)
+			{			
+				// Some error:
+				sprintf(errmsg, "Error during blocking read from device %s - (%d).\n", device->portSpec, GetLastError());
+				return(-1);
+			}
+		} // End Sync blocking read.
+	} // End blocking read.
+	
+	// Read successfully completed if we reach this point. Clear error message:
+	errmsg[0] = 0;
+	
+	// Was this a fetch-op from an active background read?
+	if (device->readerThread) {
+		// Yes.
+
+		// Check for buffer overflow:
+		if (nread > (int) device->readBufferSize) {
+			sprintf(errmsg, "Error: Readbuffer overflow for background read operation on device %s. Flushing buffer to recover. At least %i bytes of input data have been lost, expect data corruption!\n", device->portSpec, nread);
+
+			// Flush readBuffer - Try to get a fresh start...
+			PsychLockMutex(&(device->readerLock));
+			
+			// Set read pointer to current write pointer, effectively emptying the buffer:
+			device->clientThreadReadPos = device->readerThreadWritePos;
+			
+			// Unlock data structure:
+			PsychUnlockMutex(&(device->readerLock));
+
+			// Return error code:
 			return(-1);
 		}
+		
+		// Clamp available amount to requested (or maximum allowable) amount:
+		nread = (nread > (int) amount) ? (int) amount : nread;
+		
+		// Compute startindex in buffer for readout operation:
+		raPos = (device->clientThreadReadPos) % (device->readBufferSize);
+		
+		// Exceeding the end of the buffer?
+		if (raPos + nread - 1 >= (int) device->readBufferSize) {
+			// Yes: Need an intermediate bounce-buffer to make this safe:
+			if (device->bounceBufferSize < nread) {
+				free(device->bounceBuffer);
+				device->bounceBuffer = NULL;
+				device->bounceBufferSize = 0;
+			}
+			
+			if (NULL == device->bounceBuffer) {
+				// (Re-)allocate bounceBuffer. Allocate at least 4096 Bytes, ie., one memory page.
+				// Anything smaller would be just plain inefficient speed-wise:
+				device->bounceBufferSize = (nread < 4096) ? 4096 : nread;
+				device->bounceBuffer = (unsigned char*) calloc(sizeof(unsigned char), device->bounceBufferSize);
+			}
+			
+			// Copy data to bounce-buffer, take wraparound in readBuffer into account:
+			for(i = 0; i < nread; i++, raPos++) device->bounceBuffer[i] = device->readBuffer[raPos % (device->readBufferSize)];
+			*readdata = (void*) device->bounceBuffer;
+		}
+		else {
+			// No: Can directly copy from readBuffer, starting at raPos:
+			*readdata = (void*) &(device->readBuffer[raPos]);
+		}
+
+		// Retrieve timestamp for this read chunk of data:
+		*timestamp = device->timeStamps[(device->clientThreadReadPos / device->readGranularity) % (device->readBufferSize / device->readGranularity)];
+
+		// Update of read-pointer:
+		device->clientThreadReadPos += nread;
 	}
-	
-	// Take read-completion timestamp:
-	PsychGetAdjustedPrecisionTimerSeconds(timestamp);
+	else {
+		// No. Standard read:
+		
+		// Take timestamp of read completion:
+		PsychGetAdjustedPrecisionTimerSeconds(timestamp);
 
-	// Check for communication errors, acknowledge them, clear the error state and return error message:
-	PsychIOOSCheckError(device, errmsg);
+		// Check for communication errors, acknowledge them, clear the error state and return error message:
+		PsychIOOSCheckError(device, errmsg);
 
-	// Read successfully completed if we reach this point. Clear error message, assign read return data, return:
-	errmsg[0] = 0;
+		// Assign returned data:
+		*readdata = (void*) device->readBuffer;
+	}
 
-	*readdata = device->readBuffer;	
 	return(nread);
 }
 
@@ -880,12 +1318,17 @@ int PsychIOOSBytesAvailableSerialPort(PsychSerialDeviceRecord* device)
 {
 	COMSTAT dstatus;
 	DWORD   dummy;
-	
-	if (ClearCommError(device->fileDescriptor, &dummy, &dstatus)==0) {
-		if (verbosity > 0) printf("Error during 'BytesAvailable': ClearCommError() bytes available query on device %s returned (%d)\n", device->portSpec, GetLastError());
-		return(-1);
+
+	if (device->readerThread) {
+		// Async reader poll: Calculate what is available in the internal buffer:
+		return(PsychSerialWindowsGlueAsyncReadbufferBytesAvailable(device));
 	}
-	
+	else {
+		if (ClearCommError(device->fileDescriptor, &dummy, &dstatus)==0) {
+			if (verbosity > 0) printf("Error during 'BytesAvailable': ClearCommError() bytes available query on device %s returned (%d)\n", device->portSpec, GetLastError());
+			return(-1);
+		}
+	}
 	return((int) dstatus.cbInQue);
 }
 
@@ -898,11 +1341,28 @@ void PsychIOOSFlushSerialPort(PsychSerialDeviceRecord* device)
 	return;
 }
 
-void PsychIOOSPurgeSerialPort(PsychSerialDeviceRecord* device)
+void PsychIOOSPurgeSerialPort( PsychSerialDeviceRecord* device)
 {
 	if (PurgeComm(device->fileDescriptor, PURGE_RXABORT | PURGE_RXCLEAR | PURGE_TXABORT | PURGE_TXCLEAR)==0) {
 		if (verbosity > 0) printf("Error during 'Purge': PurgeComm() on device %s returned (%d)\n", device->portSpec, GetLastError());
 	}
 	
+	if (device->readerThread) {
+		// Purge the input buffer of async reader thread as well:
+
+		// Lock data structure:
+		PsychLockMutex(&(device->readerLock));
+		
+		// Set read pointer to current write pointer, effectively emptying the buffer:
+		// It is important to not modify the write pointer, only the read pointer, otherwise
+		// we would have an ugly race-condition within the writer thread, as the writer thread
+		// does not mutex-lock during reading the writeposition pointer, only during updating
+		// the writeposition pointer!
+		device->clientThreadReadPos = device->readerThreadWritePos;
+		
+		// Unlock data structure:
+		PsychUnlockMutex(&(device->readerLock));
+	}
+
 	return;
 }

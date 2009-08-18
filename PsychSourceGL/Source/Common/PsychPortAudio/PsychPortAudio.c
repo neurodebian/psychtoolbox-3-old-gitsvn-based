@@ -37,6 +37,19 @@
 #include "pa_asio.h"
 #endif
 
+
+//#ifdef __cplusplus
+//extern "C"
+//{
+//#endif /* __cplusplus */
+//
+//// Forward define of prototype of our own new PortAudio extension function for Zero latency direct input monitoring:
+//PaError Pa_DirectInputMonitoring(PaStream *stream, int enable, int inputChannel, int outputChannel, double gain, double pan);
+//
+//#ifdef __cplusplus
+//}
+//#endif /* __cplusplus */
+
 #define MAX_SYNOPSIS_STRINGS 50  
 
 //declare variables local to this file.  
@@ -71,14 +84,6 @@ static const char *synopsisSYNOPSIS[MAX_SYNOPSIS_STRINGS];
 // mutex lock hold times for low-level debugging and tuning:
 //#define MUTEX_LOCK_TIME_STATS 1
 
-#if PSYCH_SYSTEM == PSYCH_WINDOWS
-	// HANDLE to Win32 event object:
-	typedef HANDLE psychpa_conditionvar;
-#else
-	// Posix condition variable:
-	typedef pthread_cond_t psychpa_conditionvar;
-#endif
-
 typedef struct PsychPASchedule {
 	unsigned int	mode;				// Mode of schedule slot: 0 = Invalid slot, > 0 valid slot, where different bits in the int mean something...
 	double			repetitions;		// Number of repetitions for the playloop defined in this slot.
@@ -91,12 +96,14 @@ typedef struct PsychPASchedule {
 // Our device record:
 typedef struct PsychPADevice {
 	psych_mutex	mutex;			// Mutex lock for the PsychPADevice struct.
-	psychpa_conditionvar changeSignal;	// Condition variable or event object for change signalling (see above).
+	psych_condition changeSignal;	// Condition variable or event object for change signalling (see above).
 	int		 opmode;			// Mode of operation: Playback, capture or full duplex?
 	int		 runMode;			// Runmode: 0 = Stop engine at end of playback, 1 = Keep engine running in hot-standby, ...
 	PaStream *stream;			// Pointer to associated portaudio stream.
 	PaStreamInfo* streaminfo;   // Pointer to stream info structure, provided by PortAudio.
 	PaHostApiTypeId hostAPI;	// Type of host API.
+	int		indeviceidx;		// Device index of capture device. -1 if none open.
+	int		outdeviceidx;		// Device index of output device. -1 if none open.
 	volatile double	 reqStartTime;		// Requested start time in system time (secs).
 	volatile double	 startTime;			// Real start time in system time (secs). Returns real start time after start.
 								// The real start time is the time when the first sample hit the speaker in playback or full-duplex mode.
@@ -398,19 +405,7 @@ static void PsychPAUnlockDeviceMutex(PsychPADevice* dev)
 static void PsychPACreateSignal(PsychPADevice* dev)
 {
 	if (uselocking) {
-		// Locking and signalling: We have to wait for a signal, and we
-		// enter here with the device mutex held. Waiting is operating system dependent:
-		#if PSYCH_SYSTEM == PSYCH_WINDOWS
-			// MS-Windows: Create auto-reset event-object:
-			dev->changeSignal = CreateEvent(NULL,               // default security attributes
-											FALSE,              // auto-reset event
-											FALSE,              // initial state is nonsignaled
-											NULL				// no object name
-											); 
-		#else
-			// Unices aka Posix: Create condition variable:
-			pthread_cond_init(&(dev->changeSignal), NULL);
-		#endif
+		PsychInitCondition(&(dev->changeSignal), NULL);
 	}
 }
 
@@ -418,30 +413,14 @@ static void PsychPACreateSignal(PsychPADevice* dev)
 static void PsychPADestroySignal(PsychPADevice* dev)
 {
 	if (uselocking) {
-		// Locking and signalling: We have to wait for a signal, and we
-		// enter here with the device mutex held. Waiting is operating system dependent:
-		#if PSYCH_SYSTEM == PSYCH_WINDOWS
-			// MS-Windows: Destroy event-object:
-			CloseHandle(dev->changeSignal); 
-		#else
-			// Unices aka Posix: Destroy condition variable:
-			pthread_cond_destroy(&(dev->changeSignal));
-		#endif
+		PsychDestroyCondition(&(dev->changeSignal));
 	}
 }
 
 static void PsychPASignalChange(PsychPADevice* dev)
 {
 	if (uselocking) {
-		// Locking and signalling: We have to wait for a signal, and we
-		// enter here with the device mutex held. Waiting is operating system dependent:
-		#if PSYCH_SYSTEM == PSYCH_WINDOWS
-			// MS-Windows: Set our event-object to signalled state to wake up waiting master thread, if any:
-			SetEvent(dev->changeSignal);
-		#else
-			// Unices aka Posix: Signal our condition variable to wake up waiting master thread, if any:
-			pthread_cond_signal(&(dev->changeSignal));
-		#endif
+		PsychSignalCondition(&(dev->changeSignal));
 	}
 }
 
@@ -450,17 +429,7 @@ static void PsychPAWaitForChange(PsychPADevice* dev)
 	if (uselocking) {
 		// Locking and signalling: We have to wait for a signal, and we
 		// enter here with the device mutex held. Waiting is operating system dependent:
-		#if PSYCH_SYSTEM == PSYCH_WINDOWS
-			// MS-Windows: Unlock mutex, wait for our event-object to go to signalled
-			// state, then reacquire the mutex:
-			PsychPAUnlockDeviceMutex(dev);
-			WaitForSingleObject(dev->changeSignal, INFINITE);
-			PsychPALockDeviceMutex(dev);
-		#else
-			// Unices aka Posix: Wait on a condition variable to signal. Dropping and reaquiring
-			// the lock happens automatically in an atomic manner:
-			pthread_cond_wait(&(dev->changeSignal), &(dev->mutex));
-		#endif
+		PsychWaitCondition(&(dev->changeSignal), &(dev->mutex));
 	}
 	else {
 		// No locking and signalling: Just yield for a bit, then retry...
@@ -1209,7 +1178,7 @@ void InitializeSynopsis(void)
 	synopsis[i++] = "version = PsychPortAudio('Version');";
 	synopsis[i++] = "oldlevel = PsychPortAudio('Verbosity' [,level]);";
 	synopsis[i++] = "count = PsychPortAudio('GetOpenDeviceCount');";
-	synopsis[i++] = "devices = PsychPortAudio('GetDevices' [,devicetype]);";
+	synopsis[i++] = "devices = PsychPortAudio('GetDevices' [,devicetype] [, deviceIndex]);";
 	synopsis[i++] = "\nGeneral settings:\n";
 	synopsis[i++] = "[oldyieldInterval, oldMutexEnable, lockToCore1] = PsychPortAudio('EngineTunables' [, yieldInterval] [, MutexEnable] [, lockToCore1]);";
 	synopsis[i++] = "oldRunMode = PsychPortAudio('RunMode', pahandle [,runMode]);";
@@ -1218,6 +1187,7 @@ void InitializeSynopsis(void)
 	synopsis[i++] = "PsychPortAudio('Close' [, pahandle]);";
 	synopsis[i++] = "oldOpMode = PsychPortAudio('SetOpMode', pahandle [, opModeOverride]);";
 	synopsis[i++] = "oldbias = PsychPortAudio('LatencyBias', pahandle [,biasSecs]);";
+	synopsis[i++] = "enable = PsychPortAudio('DirectInputMonitoring', pahandle, enable [, inputChannel = -1][, outputChannel = 0][, gainLevel = 0.0][, stereoPan = 0.5]);";
 	synopsis[i++] = "[underflow, nextSampleStartIndex, nextSampleETASecs] = PsychPortAudio('FillBuffer', pahandle, bufferdata [, streamingrefill=0][, startIndex=Append]);";
 	synopsis[i++] =	"bufferhandle = PsychPortAudio('CreateBuffer' [, pahandle], bufferdata);";
 	synopsis[i++] =	"PsychPortAudio('DeleteBuffer'[, bufferhandle] [, waitmode]);";
@@ -1691,7 +1661,7 @@ PsychError PSYCHPORTAUDIOOpen(void)
 		break;
 		
 		case paDirectSound:	// DirectSound defaults to 120 msecs, which is way too much! It doesn't accept 0.0 msecs.
-			lowlatency = 0.02;	// Choose some half-way safe tradeoff: 20 msecs.
+			lowlatency = 0.04;	// Choose some half-way safe tradeoff: 40 msecs.
 		break;
 		
 		case paASIO:		
@@ -1783,6 +1753,8 @@ PsychError PSYCHPORTAUDIOOpen(void)
 	audiodevices[audiodevicecount].schedule_size = 0;
 	audiodevices[audiodevicecount].schedule_pos = 0;
 	audiodevices[audiodevicecount].schedule_writepos = 0;
+	audiodevices[audiodevicecount].outdeviceidx = (audiodevices[audiodevicecount].opmode & kPortAudioPlayBack) ? outputParameters.device : -1;
+	audiodevices[audiodevicecount].indeviceidx  = (audiodevices[audiodevicecount].opmode & kPortAudioCapture)  ? inputParameters.device  : -1;
 
 	// If we use locking, we need to initialize the per-device mutex:
 	if (uselocking && PsychInitMutex(&(audiodevices[audiodevicecount].mutex))) {
@@ -3361,6 +3333,10 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 		"LatencyBias: Is an additional bias setting you can impose via PsychPortAudio('LatencyBias', pahandle, bias); "
 		"in case our drivers estimate is a bit off. Allows fine-tuning.\n"
 		"SampleRate: Is the sampling rate for playback/recording in samples per second (Hz).\n"
+		"OutDeviceIndex: Is the deviceindex of the playback device, or -1 if not opened for playback. "
+		"You can pass OutDeviceIndex to PsychPortAudio('GetDevices', [], OutDeviceIndex); to query information "
+		"about the device.\n"
+		"InDeviceIndex: Is the deviceindex of the capture device, or -1 if not opened for capture.\n"
 		"RecordedSecs: Is the total amount of recorded sound data (in seconds) since start of capture.\n"
 		"ReadSecs: Is the total amount of sound data (in seconds) that has been fetched from the internal buffer. "
 		"The difference between RecordedSecs and ReadSecs is the amount of recorded sound data pending for retrieval. ";
@@ -3371,7 +3347,8 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 	unsigned int playposition, totalplaycount;
 
 	const char *FieldNames[]={	"Active", "RequestedStartTime", "StartTime", "CaptureStartTime", "RequestedStopTime", "EstimatedStopTime", "CurrentStreamTime", "ElapsedOutSamples", "PositionSecs", "RecordedSecs", "ReadSecs", "SchedulePosition",
-								"XRuns", "TotalCalls", "TimeFailed", "BufferSize", "CPULoad", "PredictedLatency", "LatencyBias", "SampleRate" };
+								"XRuns", "TotalCalls", "TimeFailed", "BufferSize", "CPULoad", "PredictedLatency", "LatencyBias", "SampleRate",
+								"OutDeviceIndex", "InDeviceIndex" };
 	int pahandle = -1;
 	
 	// Setup online help: 
@@ -3388,7 +3365,7 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
 	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided.");
 
-	PsychAllocOutStructArray(1, kPsychArgOptional, 1, 20, FieldNames, &status);
+	PsychAllocOutStructArray(1, kPsychArgOptional, 1, 22, FieldNames, &status);
 
 	// Ok, in a perfect world we should hold the device mutex while querying all the device state.
 	// However, we don't: This reduces lock contention at the price of a small chance that the
@@ -3423,6 +3400,8 @@ PsychError PSYCHPORTAUDIOGetStatus(void)
 	PsychSetStructArrayDoubleElement("PredictedLatency", 0, audiodevices[pahandle].predictedLatency, status);
 	PsychSetStructArrayDoubleElement("LatencyBias", 0, audiodevices[pahandle].latencyBias, status);
 	PsychSetStructArrayDoubleElement("SampleRate", 0, audiodevices[pahandle].streaminfo->sampleRate, status);
+	PsychSetStructArrayDoubleElement("OutDeviceIndex", 0, audiodevices[pahandle].outdeviceidx, status);
+	PsychSetStructArrayDoubleElement("InDeviceIndex", 0, audiodevices[pahandle].indeviceidx, status);
 	return(PsychError_none);
 }
 
@@ -3538,13 +3517,16 @@ PsychError PSYCHPORTAUDIOLatencyBias(void)
  */
 PsychError PSYCHPORTAUDIOGetDevices(void) 
 {
- 	static char useString[] = "devices = PsychPortAudio('GetDevices' [,devicetype]);";
+ 	static char useString[] = "devices = PsychPortAudio('GetDevices' [, devicetype] [, deviceIndex]);";
 	static char synopsisString[] = 
-		"Returns 'devices', an array of structs, one struct for each available PortAudio device. "
+		"Returns 'devices', an array of structs, one struct for each available PortAudio device.\n\n"
+		"If the optional parameter 'deviceIndex' is provided and the optional parameter 'devicetype' "
+		"is set to [], then only returns a single struct with information about the device with index "
+		"'deviceIndex'.\n\n"
 		"Each struct contains information about its associated PortAudio device. The optional "
 		"parameter 'devicetype' can be used to enumerate only devices of a specific class: \n"
 		"1=Windows/DirectSound, 2=Windows/MME, 3=Windows/ASIO, 11=Windows/WDMKS, 13=Windows/WASAPI, "
-		"8=Linux/ALSA, 7=Linux/OSS, 12=Linux/JACK, 5=MacOSX/CoreAudio.\n "
+		"8=Linux/ALSA, 7=Linux/OSS, 12=Linux/JACK, 5=MacOSX/CoreAudio.\n\n"
 		"On OS/X you'll usually only see devices for the CoreAudio API, a first-class audio subsystem. "
 		"On Linux you may have the choice between ALSA, JACK and OSS. ALSA or JACK provide very low "
 		"latencies and very good timing, OSS is an older system which is less capable but not very "
@@ -3553,13 +3535,14 @@ PsychError PSYCHPORTAUDIOGetDevices(void)
 		"latency, it should give you comparable performance to OS/X or Linux. 2nd best choice "
 		"would be WASAPI (on Windows-Vista) or WDMKS (on Windows-2000/XP) for ok latency on good days. DirectSound is the next "
 		"worst choice if you have hardware with DirectSound support. If everything else fails, you'll be left "
-		"with MMS, a premium example of system misdesign successfully sold to paying customers.";
+		"with MME, a premium example of system misdesign successfully sold to paying customers.";
 		
 	static char seeAlsoString[] = "Open GetDeviceSettings ";	 
 	PsychGenericScriptType 	*devices;
 	const char *FieldNames[]={	"DeviceIndex", "HostAudioAPIId", "HostAudioAPIName", "DeviceName", "NrInputChannels", "NrOutputChannels", 
 								 		"LowInputLatency", "HighInputLatency", "LowOutputLatency", "HighOutputLatency",  "DefaultSampleRate", "xxx" };
 	int devicetype = -1;
+	int deviceindex = -1;
 	int count = 0;
 	int i, ic, filteredcount;
 	PaDeviceInfo* padev = NULL;
@@ -3569,7 +3552,7 @@ PsychError PSYCHPORTAUDIOGetDevices(void)
 	PsychPushHelp(useString, synopsisString, seeAlsoString);
 	if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none); };
 	
-	PsychErrorExit(PsychCapNumInputArgs(1));     // The maximum number of inputs
+	PsychErrorExit(PsychCapNumInputArgs(2));     // The maximum number of inputs
 	PsychErrorExit(PsychRequireNumInputArgs(0)); // The required number of inputs	
 	PsychErrorExit(PsychCapNumOutputArgs(1));	 // The maximum number of outputs
 
@@ -3577,7 +3560,13 @@ PsychError PSYCHPORTAUDIOGetDevices(void)
 	PsychPortAudioInitialize();
 
 	PsychCopyInIntegerArg(1, kPsychArgOptional, &devicetype);
-	if (devicetype < -1) PsychErrorExitMsg(PsychError_user, "Invalid 'devicetype' provided. Valid are levels of zero and greater.");
+	if (devicetype < -1) PsychErrorExitMsg(PsychError_user, "Invalid 'devicetype' provided. Valid are values of zero and greater.");
+
+	PsychCopyInIntegerArg(2, kPsychArgOptional, &deviceindex);
+	if (deviceindex < -1) PsychErrorExitMsg(PsychError_user, "Invalid 'deviceindex' provided. Valid are values of zero and greater.");
+	
+	// Provided deviceIndex overrides potentially provided deviceType, if any:
+	if (deviceindex >= 0 && devicetype >=0) PsychErrorExitMsg(PsychError_user, "Provided 'deviceindex' and 'devicetype'! This is forbidden. Provide one or the other.");
 	
 	// Query number of devices and allocate out struct array:
 	count = (int) Pa_GetDeviceCount();
@@ -3593,6 +3582,10 @@ PsychError PSYCHPORTAUDIOGetDevices(void)
 			}
 		}
 
+		// Only return one single struct if specific deviceindex given:
+		if (deviceindex >= 0) filteredcount = 1;
+		
+		// Alloc output struct array:
 		PsychAllocOutStructArray(1, kPsychArgOptional, filteredcount, 11, FieldNames, &devices);
 	}
 	else {
@@ -3602,22 +3595,30 @@ PsychError PSYCHPORTAUDIOGetDevices(void)
 	// Iterate through device list:
 	ic = 0;
 	for (i=0; i<count; i++) {
-		padev = Pa_GetDeviceInfo((PaDeviceIndex) i);
-		hainfo = Pa_GetHostApiInfo(padev->hostApi);
-		if ((devicetype==-1) || (hainfo->type == devicetype)) {
-			PsychSetStructArrayDoubleElement("DeviceIndex", ic, i, devices);
-			PsychSetStructArrayDoubleElement("HostAudioAPIId", ic, hainfo->type, devices);
-			PsychSetStructArrayStringElement("HostAudioAPIName", ic, hainfo->name, devices);
-			PsychSetStructArrayStringElement("DeviceName", ic, padev->name, devices);
-			PsychSetStructArrayDoubleElement("NrInputChannels", ic, padev->maxInputChannels, devices);
-			PsychSetStructArrayDoubleElement("NrOutputChannels", ic, padev->maxOutputChannels, devices);
-			PsychSetStructArrayDoubleElement("LowInputLatency", ic, padev->defaultLowInputLatency, devices);
-			PsychSetStructArrayDoubleElement("HighInputLatency", ic, padev->defaultHighInputLatency, devices);
-			PsychSetStructArrayDoubleElement("LowOutputLatency", ic, padev->defaultLowOutputLatency, devices);
-			PsychSetStructArrayDoubleElement("HighOutputLatency", ic, padev->defaultHighOutputLatency, devices);
-			PsychSetStructArrayDoubleElement("DefaultSampleRate", ic, padev->defaultSampleRate, devices);
-			// PsychSetStructArrayDoubleElement("xxx", ic, 0, devices);
-			ic++;
+		// Return info about deviceindex i if it matches the selected deviceindex or if
+		// all devices should be returned:
+		if ((deviceindex == -1) || (deviceindex == i)) {
+			// Get info about deviceindex i:
+			padev = Pa_GetDeviceInfo((PaDeviceIndex) i);
+			hainfo = Pa_GetHostApiInfo(padev->hostApi);
+			
+			// Return info if devicetype doesn't matter or if it matches the required one:
+			if ((devicetype==-1) || (hainfo->type == devicetype)) {
+				// Fill slot ic of struct array with info of deviceindex i:
+				PsychSetStructArrayDoubleElement("DeviceIndex", ic, i, devices);
+				PsychSetStructArrayDoubleElement("HostAudioAPIId", ic, hainfo->type, devices);
+				PsychSetStructArrayStringElement("HostAudioAPIName", ic, hainfo->name, devices);
+				PsychSetStructArrayStringElement("DeviceName", ic, padev->name, devices);
+				PsychSetStructArrayDoubleElement("NrInputChannels", ic, padev->maxInputChannels, devices);
+				PsychSetStructArrayDoubleElement("NrOutputChannels", ic, padev->maxOutputChannels, devices);
+				PsychSetStructArrayDoubleElement("LowInputLatency", ic, padev->defaultLowInputLatency, devices);
+				PsychSetStructArrayDoubleElement("HighInputLatency", ic, padev->defaultHighInputLatency, devices);
+				PsychSetStructArrayDoubleElement("LowOutputLatency", ic, padev->defaultLowOutputLatency, devices);
+				PsychSetStructArrayDoubleElement("HighOutputLatency", ic, padev->defaultHighOutputLatency, devices);
+				PsychSetStructArrayDoubleElement("DefaultSampleRate", ic, padev->defaultSampleRate, devices);
+				// PsychSetStructArrayDoubleElement("xxx", ic, 0, devices);
+				ic++;
+			}
 		}
 	}
 	
@@ -4197,6 +4198,161 @@ PsychError PSYCHPORTAUDIOSetOpMode(void)
 		// Assign new opMode:
 		audiodevices[pahandle].opmode = opMode;
 	}
+
+	return(PsychError_none);
+}
+
+/* PsychPortAudio('DirectInputMonitoring') - Enable/Disable or reconfigure direct input monitoring.
+ */
+PsychError PSYCHPORTAUDIODirectInputMonitoring(void) 
+{
+ 	static char useString[] = "result = PsychPortAudio('DirectInputMonitoring', pahandle, enable [, inputChannel = -1][, outputChannel = 0][, gainLevel = 0.0][, stereoPan = 0.5]);";
+	//																			1		  2			3					 4					  5					 6
+	static char synopsisString[] = 
+		"Change the current settings for the \"direct input monitoring\" feature on device 'pahandle'.\n"
+		"The device must be open for this setting to take effect. Changed settings may or may not "
+		"persist across closing and opening the device, this is hardware dependent and not to be relied on.\n"
+		"So-called \"Zero latency direct input monitoring\" is a hardware feature of some modern "
+		"(and usually higher end) soundcards. It allows to directly feed audio signals that are received "
+		"at the audio input connectors of the soundcard back to the output connectors, without any extended "
+		"intermediate processing of the audio signals by either the sound hardware or the host computer and "
+		"its software. Due to this direct signal path, which only applies selectable amplification and "
+		"some stereo panning and rerouting, the feedback latency from input to output (e.g, microphone to "
+		"speakers) is as minimal as technically possible. On many high-end cards it is instantaneous!\n\n"
+		"The 'enable' flag is mandatory: If set to zero, monitoring will be disabled for the given 'inputChannel'. "
+		"A setting of one will enable input live-monitoring of the given 'inputChannel' to the given 'outputChannel' with "
+		"the selected other settings.\n"
+		"All following settings are optional and have reasonable defaults. Depending on your hardware, some or all of them "
+		"may be silently ignored by your sound hardware.\n"
+		"The optional 'inputChannel' argument specifies which input audio channels monitoring settings should be modified. "
+		"If omitted or set to -1, all input channels settings will be modified, or at least tried to be modified.\n"
+		"The optional 'outputChannel' specifies the index of the base-channel of a channel stereo-pair to which the 'inputChannel' "
+		"should be routed. It must be an even number like 0, 2, 4, .... If omitted, channel 0, i.e., the first output channel "
+		"stereo pair will be used. This at least on ASIO soundcards under MS-Windows.\n"
+		"The optional 'gainLevel' defines the desired amplifier gain for the routed signal. The value should be negative for "
+		"signal attenuation (i.e., negative gain) and positive for amplification (i.e., positive gain). "
+		"As specification of gains is not standardized across operating systems, the numbers you'll have to pass in for a desired "
+		"effect will vary across operating systems and audio hardware. However, the default setting of zero tries to set a neutral "
+		"gain of zero decibel - the signal is passed through without change in intensity. On MS-Windows with ASIO soundcards, values "
+		"between 0.0 and 1.0 will select gains between 0 and 12 dB. Values between 0.0 and -1.0 will select negative gains between "
+		"0 and -infinity dB, ie., full attenuation. The setting may get completely ignored or only approximately implemented by given "
+		"hardware. Double-check your results!\n"
+		"The optional 'stereoPan' parameter allows to select panning between the two output channels of a selected stereo output "
+		"channel pair if the hardware allows that. Range 0.0 - 1.0 selects between left-channel and right channel, with the default "
+		"of 0.5 selecting a centered output with equal distribution to both channels.\n\n"
+		"In the optional return argument 'result' the function returns a status code to report if the requested change could be carried "
+		"out successfully. A value of zero means success. A value of 1 means some error, e.g., invalid parameters specified. A value of "
+		"2 means that your combinatin of operating system, sound system, soundcard device driver and soundcard hardware does not support "
+		"direct input monitoring, at least not for the given configuration. A setting of 3 means that your PortAudio driver plugin does "
+		"not support the feature - You may need to update your plugin from the Psychtoolbox Wiki.\n\n"
+		"The current PsychPortAudio driver only supports direct input monitoring on Microsoft Windows systems with ASIO-2.0 capable sound "
+		"hardware, and only if the latest portaudio_x86.dll ASIO plugin is installed from our Wiki. Even then, only a subset of ASIO-2 "
+		"hardware may support this feature and only a subset of these may support all parameters. According to vendor documentation, some "
+		"soundcards from Creative Labs and many of RME's cards do support this feature.\n"
+		"\n";
+
+	static char seeAlsoString[] = "Open GetDeviceSettings ";	 
+	
+	PaError rcp;
+	int pahandle = -1;
+	int enable, inputChannel, outputChannel, rc;
+	double gain, stereoPan;
+
+	// Setup online help: 
+	PsychPushHelp(useString, synopsisString, seeAlsoString);
+	if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none); };
+	
+	PsychErrorExit(PsychCapNumInputArgs(6));     // The maximum number of inputs
+	PsychErrorExit(PsychRequireNumInputArgs(2)); // The required number of inputs	
+	PsychErrorExit(PsychCapNumOutputArgs(1));	 // The maximum number of outputs
+
+	// Make sure PortAudio is online:
+	PsychPortAudioInitialize();
+
+	// Get mandatory device handle:
+	PsychCopyInIntegerArg(1, kPsychArgRequired, &pahandle);
+	if (pahandle < 0 || pahandle>=MAX_PSYCH_AUDIO_DEVS || audiodevices[pahandle].stream == NULL) PsychErrorExitMsg(PsychError_user, "Invalid audio device handle provided. No such device with that handle open!");
+
+	// Get mandatory enable flag:
+	PsychCopyInIntegerArg(2, kPsychArgRequired, &enable);
+	if (enable < 0 || enable > 1) PsychErrorExitMsg(PsychError_user, "Invalid enable flag provided. Must be zero or one for on or off!");
+
+	// Copy in optional inputChannel id:
+	if (PsychCopyInIntegerArg(3, kPsychArgOptional, &inputChannel)) {
+		if (inputChannel < -1 || inputChannel >= (int) audiodevices[pahandle].inchannels) PsychErrorExitMsg(PsychError_user, "Invalid inputChannel provided. No such input channel available on device!");		
+	}
+	else {
+		inputChannel = -1;
+	}
+
+	// Copy in optional outputChannel id:
+	if (PsychCopyInIntegerArg(4, kPsychArgOptional, &outputChannel)) {
+		if (outputChannel < 0 || outputChannel >= (int) audiodevices[pahandle].outchannels) PsychErrorExitMsg(PsychError_user, "Invalid outputChannel provided. No such outputChannel channel available on device!");		
+	}
+	else {
+		outputChannel = 0;
+	}
+
+	// Copy in optional gain:
+	gain = 0.0;
+	PsychCopyInDoubleArg(5, kPsychArgOptional, &gain);
+	
+	// Copy in optional stereoPan:
+	stereoPan = 0.5;
+	PsychCopyInDoubleArg(6, kPsychArgOptional, &stereoPan);
+	if (stereoPan < 0 || stereoPan > 1) PsychErrorExitMsg(PsychError_user, "Invalid stereoPan provided. Not in valid range 0.0 to 1.0!");		
+
+	// Default result code is "totally unsupported by our driver":
+	rc = 3;
+	
+	// Feature currently only supported on MS-Windows...
+	#if PSYCH_SYSTEM == PSYCH_WINDOWS
+		// MS-Windows: Is the device in question opened as an ASIO device? If not, then game over. Otherwise we know
+		// we're using the ASIO enabled portaudio_x86.dll which may support this feature on this hardware:
+		if (audiodevices[pahandle].hostAPI == paASIO) {
+			// ASIO device opened as such via ASIO capable Portaudio plugin. Is the plugin recent enough
+			// to support the directmonitoring interface?
+			if (strstr(Pa_GetVersionText(), "WITH-DIM")) {
+				// Plugin supports the API, so at least we can safely call it without crashing.
+				// Lower the fail level to rc = 2, can't fail because of our deficiencies anymore:
+				if (verbosity > 4) printf("PsychPortAudio('DirectInputMonitoring'): Calling with padev=%i (%p), enable = %i, in=%i, out=%i, gain=%f, pan=%f.\n", pahandle, audiodevices[pahandle].stream, enable, inputChannel, outputChannel, gain, stereoPan);
+				rcp = Pa_DirectInputMonitoring(audiodevices[pahandle].stream, enable, inputChannel, outputChannel, gain, stereoPan);
+				switch (rcp) {
+					case paNoError:
+						// Success!
+						rc = 0;
+					break;
+					
+					case paInvalidFlag:
+						// Some invalid request:
+						rc = 1;
+					break;
+					
+					case paBadIODeviceCombination:
+						// Unsupported by device:
+						rc = 2;
+					break;
+					
+					default:
+						// Default to unknown failure:
+						rc = 1;
+				}
+				if ((verbosity > 1) && (rc != 0)) printf("PsychPortAudio('DirectInputMonitoring'): Failed to change monitoring settings for calling with padev=%i (%p), enable = %i, in=%i, out=%i, gain=%f, pan=%f.\n", pahandle, audiodevices[pahandle].stream, enable, inputChannel, outputChannel, gain, stereoPan);
+			}
+			else {
+				if (verbosity > 1) printf("PsychPortAudio('DirectInputMonitoring'): Your portaudio_x86.dll plugin is too old to support this feature! Download a more recent one from the Psychtoolbox Wiki!\n");	
+			}
+		}
+		else {
+			if (verbosity > 3) printf("PsychPortAudio('DirectInputMonitoring'): Tried to call, but feature not supported on this non ASIO sound hardware.\n");	
+		}
+	#else
+		// Linux or OS/X:
+		if (verbosity > 3) printf("PsychPortAudio('DirectInputMonitoring'): Tried to call, but feature not yet supported on your operating system.\n");	
+	#endif
+
+	// Return success status:
+	PsychCopyOutDoubleArg(1, kPsychArgOptional, rc);
 
 	return(PsychError_none);
 }

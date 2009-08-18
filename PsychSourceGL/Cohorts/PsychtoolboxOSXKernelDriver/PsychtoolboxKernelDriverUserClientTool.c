@@ -21,6 +21,7 @@
 #include <ApplicationServices/ApplicationServices.h>
 #include "PsychtoolboxKernelDriverUserClientInterface.h"
 #include <limits.h>
+#include <unistd.h>
 
 #define kMyPathToSystemLog			"/var/log/system.log"
 
@@ -31,6 +32,7 @@
 #define	IO_OBJECT_NULL	((io_object_t) 0)
 #endif
 
+void G80SetCursorPosition(int headId, int ditherOn);
 
 kern_return_t MyUserClientOpenExample(io_service_t service, io_connect_t *connect)
 {
@@ -252,11 +254,35 @@ unsigned int PsychOSKDWriteRegister(io_connect_t connect, unsigned int offset, u
 	return(0);
 }
 
+unsigned int PsychOSKDSetDitherMode(io_connect_t connect, unsigned int head, unsigned int dither)
+{
+	PsychKDCommandStruct syncCommand;
+    IOByteCount			 structSize1 = sizeof(PsychKDCommandStruct);
+	
+	// Set command code for display sync:
+	syncCommand.command = kPsychKDSetDitherMode;
+	syncCommand.inOutArgs[0] = head;
+	syncCommand.inOutArgs[1] = dither;
+	
+	// Issue request:
+	kern_return_t kernResult = PsychKDDispatchCommand(connect, structSize1, &syncCommand, &structSize1, &syncCommand);    
+	if (kernResult != KERN_SUCCESS) {
+		printf("PTB-ERROR: Kernel driver kPsychKDSetDitherMode failed (Kernel error code: %lx).\n", kernResult);
+		// A value of 1 signals failure:
+		return(1);
+	}
+	
+	// Return success:
+	return(0);
+}
+
+// Define globally for subroutines:
+io_connect_t	connect;
+
 int main(int argc, char* argv[])
 {
     kern_return_t	kernResult; 
     io_service_t	service;
-    io_connect_t	connect;
     io_iterator_t 	iterator;
     CFDictionaryRef	classToMatch;
     int				i,j;
@@ -299,43 +325,56 @@ int main(int argc, char* argv[])
 		// Release the io_service_t now that we're done with it.
 		IOObjectRelease(service);
 
+		if (kernResult != KERN_SUCCESS) {
+			fprintf(stderr, "Failed to open connection to driver!\n");
+			if (kernResult == kIOReturnExclusiveAccess) fprintf(stderr, "Check if other app is using driver already [kIOReturnExclusiveAccess]!\n");
+			return(-1);
+		}
+		
 		if (connect != IO_OBJECT_NULL) {	
 
-			// Trigger display resync and print result:
-			// printf("Our Resync result is %i\n\n", PsychOSSynchronizeAllDisplayHeads(connect));
-			
-			// Test beamposition queries with 100 samples:
-			// for (i=0; i<100; i++) printf("Sample %i: Beampos: %i\n", i, PsychOSKDGetBeamposition(connect, 0));
-			
-			printf("D1: Primary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_PRIMARY_SURFACE_ADDRESS));
-			printf("D1: Secondary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_SECONDARY_SURFACE_ADDRESS));
-			printf("D1: Pitch is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_PITCH));
-			printf("D2: Primary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS));
-			printf("D2: Secondary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS));
-			printf("D2: Pitch is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_PITCH));
-
-			while(1) {
-				if (PsychOSKDReadRegister(connect, RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS)!=i) {
-					i=PsychOSKDReadRegister(connect, RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS);
-					printf("D2: New Primary surface is %lx\n\n", i);
-					printf("D2: New Secondary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS));
-				}
+			if (argc > 3 && atoi(argv[1]) == 1) {
+				// NVidia test:
+				PsychOSKDSetDitherMode(connect, atoi(argv[2]), atoi(argv[3]));
+				G80SetCursorPosition(atoi(argv[2]), atoi(argv[3]));
 			}
-			
-			if (0) {
-				printf("D1: RADEON_D1GRPH_CONTROL %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_CONTROL));
-				PsychOSKDWriteRegister(connect, RADEON_D1GRPH_LUT_SEL, 0x1 << 8);
-				printf("D1: RADEON_D1GRPH_LUT_SEL %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_LUT_SEL));
+			else {
+				// Trigger display resync and print result:
+				// printf("Our Resync result is %i\n\n", PsychOSSynchronizeAllDisplayHeads(connect));
 				
-				printf("Switching to ARGB2101010...\n");
-				ov = PsychOSKDReadRegister(connect, RADEON_D1GRPH_CONTROL);
-				PsychOSKDWriteRegister(connect, RADEON_D1GRPH_CONTROL, ((0x1 << 8) | ov));
-				for(j=1; j<10; j++) for(i=1; i< 1000*1000*1000; i++);
-				printf("Switching back to ARGB8888...\n");
-				PsychOSKDWriteRegister(connect, RADEON_D1GRPH_CONTROL, ov);
-				PsychOSKDWriteRegister(connect, RADEON_D1GRPH_LUT_SEL, 0);
+				// Test beamposition queries with 100 samples:
+				// for (i=0; i<100; i++) printf("Sample %i: Beampos: %i\n", i, PsychOSKDGetBeamposition(connect, 0));
 				
-				printf("D1: RADEON_LVTMA_BIT_DEPTH_CONTROL %lx\n\n", PsychOSKDReadRegister(connect, RADEON_LVTMA_BIT_DEPTH_CONTROL));
+				printf("D1: Primary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_PRIMARY_SURFACE_ADDRESS));
+				printf("D1: Secondary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_SECONDARY_SURFACE_ADDRESS));
+				printf("D1: Pitch is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_PITCH));
+				printf("D2: Primary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS));
+				printf("D2: Secondary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS));
+				printf("D2: Pitch is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_PITCH));
+				
+				while(1) {
+					if (PsychOSKDReadRegister(connect, RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS)!=i) {
+						i=PsychOSKDReadRegister(connect, RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS);
+						printf("D2: New Primary surface is %lx\n\n", i);
+						printf("D2: New Secondary surface is %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS));
+					}
+				}
+				
+				if (0) {
+					printf("D1: RADEON_D1GRPH_CONTROL %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_CONTROL));
+					PsychOSKDWriteRegister(connect, RADEON_D1GRPH_LUT_SEL, 0x1 << 8);
+					printf("D1: RADEON_D1GRPH_LUT_SEL %lx\n\n", PsychOSKDReadRegister(connect, RADEON_D1GRPH_LUT_SEL));
+					
+					printf("Switching to ARGB2101010...\n");
+					ov = PsychOSKDReadRegister(connect, RADEON_D1GRPH_CONTROL);
+					PsychOSKDWriteRegister(connect, RADEON_D1GRPH_CONTROL, ((0x1 << 8) | ov));
+					for(j=1; j<10; j++) for(i=1; i< 1000*1000*1000; i++);
+					printf("Switching back to ARGB8888...\n");
+					PsychOSKDWriteRegister(connect, RADEON_D1GRPH_CONTROL, ov);
+					PsychOSKDWriteRegister(connect, RADEON_D1GRPH_LUT_SEL, 0);
+					
+					printf("D1: RADEON_LVTMA_BIT_DEPTH_CONTROL %lx\n\n", PsychOSKDReadRegister(connect, RADEON_LVTMA_BIT_DEPTH_CONTROL));
+				}
 			}
 			
 			// Close the user client and tear down the connection.
@@ -344,4 +383,23 @@ int main(int argc, char* argv[])
 	}
 	
 	return 0;
+}
+
+// This blob of code allows to change the G90 GPU's hardware cursor position.
+// Proof that our MMIO mapping works correctly, but other than that pretty pointles...
+void G80SetCursorPosition(int headId, int ditherOn)
+{
+    const int headOff = 0x1000 * headId;
+	int x, y, xr, yr;
+	
+	for (yr=0; yr< 500; yr+=20) {
+		for (xr=0; xr< 500; xr++) {
+			x = xr & 0xffff;
+			y = yr & 0xffff;
+			PsychOSKDWriteRegister(connect, (0x00647084 + headOff), y << 16 | x);
+			PsychOSKDWriteRegister(connect, (0x00647080 + headOff), 0);
+			usleep(1000);
+		}
+	}
+	return;
 }

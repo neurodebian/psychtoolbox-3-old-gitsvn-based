@@ -21,6 +21,11 @@
 #include <IOKit/IOInterruptEventSource.h>
 #include <IOKit/IOFilterInterruptEventSource.h>
 
+// Settings for member fDeviceType:
+#define kPsychUnknown 0
+#define kPsychGeForce 1
+#define kPsychRadeon  2
+
 struct PsychKDCommandStruct;
 
 class PsychtoolboxKernelDriver : public IOService
@@ -28,6 +33,7 @@ class PsychtoolboxKernelDriver : public IOService
     OSDeclareDefaultStructors(PsychtoolboxKernelDriver)
 	
 private:
+	UInt32							fDeviceType;
     IOPCIDevice *					fPCIDevice;
 	IOMemoryMap *					fRadeonMap;
 	IOVirtualAddress				fRadeonRegs;
@@ -36,7 +42,8 @@ private:
 	
 	UInt32							fInterruptCookie;
 	UInt32							fInterruptCounter;
-	
+	UInt32							fVBLCounter[2];
+
 	// Initialize our own interrupt handler for snooping on gfx-card state changes:
 	bool InitializeInterruptHandler(void);	
 
@@ -46,17 +53,26 @@ private:
 	// Slow-Path WorkLoop interrupt handler: Gets called if the fast-path handler returns "true".
 	void workLoopInterruptHandler(OSObject* myself, IOInterruptEventSource* mySource, int pendingIRQs);
 	
+	// Handle VBLANK IRQ's for display head 'headId':
+	void handleVBLIRQ(UInt32 headId);
+	
 	// Read 32 bit control register at 'offset':
 	UInt32	ReadRegister(UInt32 offset);
 
 	// Write 32 bit control register at 'offset' with 'value':
 	void	WriteRegister(UInt32 offset, UInt32 value);
+
+	// Helper function for SetDitherMode() on G80 GPUs:
+	void    G80DispCommand(UInt32 addr, UInt32 data);
 	
 	// Return current vertical rasterbeam position of display head 'headId' (0=Primary CRTC1, 1=Secondary CRTC2):
 	UInt32 GetBeamPosition(UInt32 headId);
 	
 	// Instantaneously resynchronize display heads of a Radeon dual-head gfx-card:
 	SInt32	FastSynchronizeAllDisplayHeads(void);
+	
+	// Try to change hardware dither mode on GPU:
+	void SetDitherMode(UInt32 headId, UInt32 ditherOn);
 	
 	// Perform instant state snapshot of interesting registers and return'em:
 	void	GetStateSnapshot(PsychKDCommandStruct* outStruct);

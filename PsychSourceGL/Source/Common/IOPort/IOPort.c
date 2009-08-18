@@ -352,6 +352,9 @@ PsychError IOPORTOpenSerialPort(void)
 		"parameters are supported by all operating systems, and all settings have reasonable "
 		"defaults. Settings unknown to a specific operating system are ignored.\n"
 		"The following is a list of (possibly) supported parameters with their defaults:\n\n"
+		"Lenient -- If this keyword is present, then the driver will carry on on certain error conditions "
+		"instead of aborting. This is sometimes neccessary for some special cases like virtual com ports or "
+		"other non-standard setups.\n\n"
 		"BaudRate=9600 -- The baud transmission rate of the connection. Standard baud rates include "
 		"110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000 and "
 		"256000 bits per second. Not all values may be supported by all operating systems and drivers.\n\n"
@@ -359,7 +362,12 @@ PsychError IOPORTOpenSerialPort(void)
 		"DataBits=8    -- Number of data bits per packet: 5,6,7 or 8, on Windows also 16.\n\n"
 		"StopBits=1    -- Number of stop bits per packet: 1 or 2.\n\n"
 		"FlowControl=None  -- Type of flow control: None, Hardware (RTS/CTS lines), Software (XON/XOFF characters).\n\n"
-		"Terminator=os default  -- Type of terminator, given as ASCII character value, e.g., 13 for char(13) aka CR. Currently unused\n\n"
+		"ReceiverEnable=1 -- A non-zero setting will enable the serial receiver, a zero setting will disable the receiver. "
+		"This setting may not be supported by all operating systems and hardware. In such a case, the receiver will always "
+		"be enabled, irrespective of this setting. On MS-Windows, this setting is not available at all.\n\n"
+		"Terminator=os default  -- Type of terminator, given as ASCII character value, e.g., 13 for char(13) aka CR or 10 for LF. Currently "
+		"only used in async read mode (see 'StartBackgroundRead' below) if the 'ReadFilterFlags' are set to include value 4, "
+		"or on OS/X and Linux in 'Cooked' processing mode as line delimiter. A setting of -1 will try to disable the line terminator.\n\n"
 		"DTR=os default	-- Setting for 'Data Terminal Ready' pin: 0 or 1.\n\n"
 		"RTS=os default	-- Setting for 'Request To Send' pin: 0 or 1.\n\n"
 		"BreakBehaviour=Ignore -- Behaviour if a 'Break Condition' is detected on the line: Ignore, Flush, Zero. On Windows, this setting is ignored.\n\n"
@@ -382,7 +390,7 @@ PsychError IOPORTOpenSerialPort(void)
 		"SendTimeout=1.0 -- Interbyte send timeout in seconds. Only used on Windows.\n\n"
 		"ReceiveTimeout=1.0 -- Interbyte receive timeout in seconds.\n\n"
 		"ReceiveLatency=0.000001 -- Latency in seconds for processing of new input bytes. Only used on OS/X.\n\n"
-		"PollLatency=0.0005 (0.005 on Windows) -- Latency between polls in seconds for polling in some 'Read' operations.\n\n"
+		"PollLatency=0.0005 (0.001 on Windows) -- Latency between polls in seconds for polling in some 'Read' operations.\n\n"
 		"ProcessingMode=Raw -- Mode of input/output processing: Raw or Cooked. On Windows, only Raw (binary) mode is supported.\n\n"
 		"StartBackgroundRead=readGranularity -- Enable asynchronous background read operations on the port. This is only supported "
 		"on Linux and OS/X for now. A parallel background thread is started which tries to fetch 'readGranularity' bytes of data, "
@@ -392,13 +400,24 @@ PsychError IOPORTOpenSerialPort(void)
 		"data collection from devices that stream some data at a constant rate. You set up background read, let the parallel "
 		"thread do all data collection in the background and collect the data at the end of a session with a sequence of "
 		"IOPort('Read') calls. This way, data collection doesn't clutter your main experiment script.\n\n"
-		"StopBackgroundRead -- Stop running background read operation, discard all pending data.\n\n";
+		"BlockingBackgroundRead=0 -- Perform blocking background reads instead of polling reads, if set to 1.\n\n"
+		"StopBackgroundRead -- Stop running background read operation, discard all pending data.\n\n"
+		"ReadFilterFlags=0 -- Special flags to specify certain post-processing operations on read input data.\n"
+		"* A setting of 1 will enable special filtering for serial input data from the CMU or PST response button boxes. "
+		"  Redundant data bytes received will be discarded - only bytes that are different from their predecessor are stored. "
+		"  All read data has a 4-Byte 32 bit count of total bytes read attached. You should set 'readGranularity' = 5 for best "
+		"  effect with the CMU or PST button boxes or compatible devices. \n"
+		"* A setting of 2 will filter out CR and LF character codes 10 and 13 from the inputstream.\n"
+		"* A setting of 4 will implement simple line-buffering for async reads: Read up to 'readGranularity' bytes per iteration, "
+		"  or until 'Terminator' character encountered, whatever comes first. Zero-Pad to full 'readGranularity' bytes in any case. "
+		"  Read timestamps in this line-buffered mode correspond to the reception of the first byte of a line, not the last one!\n"
+		"\n\n";
 
 	static char seeAlsoString[] = "'CloseAll'";	 
   	
 	#if PSYCH_SYSTEM == PSYCH_WINDOWS
-	// Difference to Unices: PollLatency defaults to 5 msecs instead of 0.5 msecs due to shoddy windows scheduler:
-	static char defaultConfig[] = "BaudRate=9600 Parity=None DataBits=8 StopBits=1 FlowControl=None PollLatency=0.005 ReceiveLatency=0.000001 SendTimeout=1.0 ReceiveTimeout=1.0 ProcessingMode=Raw BreakBehaviour=Ignore OutputBufferSize=4096 InputBufferSize=4096"; 
+	// Difference to Unices: PollLatency defaults to 1 msecs instead of 0.5 msecs due to shoddy windows scheduler:
+	static char defaultConfig[] = "BaudRate=9600 Parity=None DataBits=8 StopBits=1 FlowControl=None PollLatency=0.001 ReceiveLatency=0.000001 SendTimeout=1.0 ReceiveTimeout=1.0 ProcessingMode=Raw BreakBehaviour=Ignore OutputBufferSize=4096 InputBufferSize=4096"; 
 	#else
 	static char defaultConfig[] = "BaudRate=9600 Parity=None DataBits=8 StopBits=1 FlowControl=None PollLatency=0.0005 ReceiveLatency=0.000001 SendTimeout=1.0 ReceiveTimeout=1.0 ProcessingMode=Raw BreakBehaviour=Ignore OutputBufferSize=4096 InputBufferSize=4096"; 
 	#endif
