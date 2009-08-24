@@ -23,11 +23,13 @@
 %    ContrastModulatedNoiseTheElegantStyleDemo - Demonstrate creation of contrast modulated noise.
 %                                                Elegant and efficient, but needs recent hardware.
 %
+%    DatarecordingFromSerialPortDemo - Template for asynchronous data collection and timestamping from serial port.
 %    DelayedSoundFeedbackDemo - Demonstrates a audio feedback loop via PsychPortAudio() with exactly controlled latency.
 %    DotDemo                 - Animate dots with Screen('DrawDots).
 %    DKLDemo                 - Demonstrate DKL color space.
 %    DrawFormattedTextDemo   - Demonstrate formatted text drawing via DrawFormattedText()
 %    DrawHighQualityUnicodeTextDemo - Demonstrate drawing of high quality, anti-aliased and Unicode text.
+%    DrawManuallyAntiAliasedTextDemo - Manually anti-alias text for special purpose applications.
 %    DrawMirroredTextDemo    - Shows how to draw horizontally mirrored text.
 %    DrawSomeTextDemo        - Very simple example of using 'DrawText'.
 %    DriftDemo               - Animation of grating using textures.
