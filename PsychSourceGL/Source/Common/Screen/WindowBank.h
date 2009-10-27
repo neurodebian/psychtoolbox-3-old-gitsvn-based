@@ -118,12 +118,16 @@ TO DO:
 #define kPsychHalfHeightWindow		   8192 // This flag is also used as 'specialflag' for onscreen windows. Ask for windows with half-height, e.g., for interleaved stereo...
 #define kPsychNative10bpcFBActive	   1024 // Setting for 'specialflags' field of windowRecords: Means that this windowRecord is attached to a native 10bpc system framebuffer
 											// and needs some special handling it init, shutdown and during operation.
+// Value 32768 is defined in ScreenTypes.h as kPsychBusyWaitForVBLBeforeBufferSwapRequest and is also used as a 'specialflags' setting to define
+// this behaviour on a per-window basis.
+
+#define kPsychIsFullscreenWindow		  4 // 'specialflags' setting 4 means: This is a fullscreen window.
 
 // The following numbers are allocated to imagingMode flag above: A (S) means, shared with specialFlags:
-// 1,2,4,8,16,32,64,128,256,512,1024,S-2048,4096,S-8192. --> Flags above 32768 and higher are available...
+// 1,2,4,8,16,32,64,128,256,512,1024,S-2048,4096,S-8192,16384. --> Flags of 32768 and higher are available...
 
 // The following numbers are allocated to specialFlags flag above: A (S) means, shared with imagingMode:
-// 1,2,1024,S-2048,S-8192. --> Flags above 16384 and higher are available, as well as 4,8,16,32,64,128,256,512,4096
+// 1,2,4,1024,S-2048,S-8192, 32768. --> Flags of 65536 and higher are available, as well as 8,16,32,64,128,256,512,4096, 16384
 
 // Definition of a single hook function spec:
 typedef struct PsychHookFunction*	PtrPsychHookFunction;
@@ -265,6 +269,7 @@ typedef struct _PsychWindowRecordType_{
 		GLboolean								colorMask[4];			// psych_bool 4 element array which encodes the glColorMask() for this window.
 		unsigned int							gfxcaps;				// Bitfield of gfx-cards capabilities and limitations: See constants kPsychGfxCapXXXX above.
 		unsigned int							specialflags;			// Container for all kind of special flags...
+		char									gpuCoreId[8];			// ASCII string with name of GPU core, as detected by PsychDetectAndAssignGfxCapabilities().
 		int										maxTextureSize;			// Maximum size of a texture supported by GPU.
         int                                     stereomode;             // MK: Is this a stereo window? 0=non-stereo, >0 == specific type of stero.
         int                                     stereodrawbuffer;       // MK: Which drawbuffer is active in stereo? 0=left, 1=right, 2=none
@@ -282,6 +287,7 @@ typedef struct _PsychWindowRecordType_{
         psych_bool                                    backBufferBackupDone;   // MK: Will be set by SCREENDrawingFinished to signal backbuffer backup.
         psych_bool                                    vSynced;				// MK: Flag that stores VSYNC enable state: TRUE = Sync to VBL, FALSE = Don't.
         int                                     nr_missed_deadlines;    // MK: Counter, incremented by Flip if it detects a missed/skipped frame.
+		double									rawtime_at_swapcompletion; // Raw timestamp of swapcompletion (result without high-precision timestamping).
 
 	// Pointers to temporary arrays with gamma tables to upload to the gfx-card at next Screen('Flip'):
 	// They default to NULL and get possibly set in Screen('LoadNormalizedGammaTable'):

@@ -8296,7 +8296,6 @@
 			);
 			mainGroup = 29B97314FDCFA39411CA2CEA /* TestPBMex */;
 			projectDirPath = "";
-			projectRoot = "";
 			targets = (
 				2FEBA482098861FB00F4165F /* CocoaEventBridge */,
 				2FEBA43009885B4700F4165F /* DoNothing */,
@@ -16295,7 +16294,7 @@
 				KEEP_PRIVATE_EXTERNS = NO;
 				LIBRARY_SEARCH_PATHS = (
 					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
+					"$(LIBRARY_SEARCH_PATHS)",
 				);
 				LINK_WITH_STANDARD_LIBRARIES = YES;
 				MACH_O_TYPE = mh_bundle;
@@ -17563,7 +17562,7 @@
 				KEEP_PRIVATE_EXTERNS = NO;
 				LIBRARY_SEARCH_PATHS = (
 					"$(SYSTEM_APPS_DIR)/$(MATLAB_DIR_NAME)/bin/mac",
-					/usr/lib/gcc/darwin/2.95.2,
+					"$(LIBRARY_SEARCH_PATHS)",
 				);
 				LINK_WITH_STANDARD_LIBRARIES = YES;
 				MACH_O_TYPE = mh_bundle;

@@ -134,6 +134,7 @@ typedef unsigned char		psych_bool;
 
 //abstract up simple data types. 
 #if PSYCH_SYSTEM == PSYCH_LINUX
+        typedef long long						psych_int64;
         typedef unsigned long long              psych_uint64;
         typedef unsigned int                    psych_uint32;
         typedef unsigned char                   psych_uint8;
@@ -163,7 +164,8 @@ typedef unsigned char		psych_bool;
 #endif
 
 #if PSYCH_SYSTEM == PSYCH_WINDOWS
-        typedef LONG                            psych_uint64;
+        typedef LONGLONG						psych_int64;
+        typedef ULONGLONG                       psych_uint64;
         typedef DWORD                           psych_uint32;
         typedef BYTE                            psych_uint8;
         typedef WORD                            psych_uint16;
@@ -199,6 +201,7 @@ typedef unsigned char		psych_bool;
 			HANDLE				handle;			// Handle to actual thread (NULL == Invalid).
 			DWORD				threadId;		// Unique numeric id (0 = Invalid.)
 			psych_condition		terminateReq;	// Condition/Event object to signal the request for termination.
+			HANDLE				taskHandleMMCS; // Handle to task for MMCSS scheduled thread, NULL otherwise.
 		} psych_threadstruct;
 		typedef struct psych_threadstruct*	psych_thread;
 
@@ -220,6 +223,7 @@ typedef unsigned char		psych_bool;
 		typedef UInt16				psych_uint16;
         typedef UInt32				psych_uint32;
         typedef unsigned long long	psych_uint64;
+        typedef long long			psych_int64;
 
 		// Datatype for condition variables:
 		typedef pthread_cond_t		psych_condition;

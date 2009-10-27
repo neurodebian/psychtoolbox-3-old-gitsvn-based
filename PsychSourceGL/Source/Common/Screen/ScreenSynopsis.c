@@ -103,7 +103,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "Screen('gluDisk', windowPtr, color, x, y [,size]);";
 	synopsis[i++] = "Screen('DrawDots', windowPtr, xy [,size] [,color] [,center] [,dot_type]);";
 	synopsis[i++] = "Screen('DrawLines', windowPtr, xy [,width] [,colors] [,center] [,smooth]);";
-	synopsis[i++] = "[sourceFactorOld, destinationFactorOld, colorMaskOld]=('BlendFunction', windowIndex, [sourceFactorNew], [destinationFactorNew], [colorMaskNew]);";
+	synopsis[i++] = "[sourceFactorOld, destinationFactorOld, colorMaskOld]=Screen('BlendFunction', windowIndex, [sourceFactorNew], [destinationFactorNew], [colorMaskNew]);";
 
 	// Draw Text in windows
 	synopsis[i++] = "\n% Draw Text in windows";
@@ -161,7 +161,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "[width, height]=Screen('WindowSize', windowPointerOrScreenNumber);";
 	synopsis[i++] = "[width, height]=Screen('DisplaySize', ScreenNumber);";
 	synopsis[i++] = "[oldmaximumvalue oldclampcolors] = Screen('ColorRange', windowPtr [, maximumvalue][, clampcolors=1]);";
-	synopsis[i++] = "info = Screen('GetWindowInfo', windowPtr [, beamposOnly=0]);";
+	synopsis[i++] = "info = Screen('GetWindowInfo', windowPtr [, infoType=0] [, auxArg1]);";
 	synopsis[i++] = "resolutions=Screen('Resolutions', screenNumber);";
 	synopsis[i++] = "oldResolution=Screen('Resolution', screenNumber [, newwidth] [, newheight] [, newHz] [, newPixelSize] [, specialMode]);";
 
@@ -202,8 +202,8 @@ void InitializeSynopsis()
 	synopsis[i++] =  "[ texturePtr [timeindex]]=Screen('GetMovieImage', windowPtr, moviePtr, [waitForImage], [fortimeindex], [specialFlags = 0] [, specialFlags2 = 0]);";
 	synopsis[i++] =  "[droppedframes] = Screen('PlayMovie', moviePtr, rate, [loop], [soundvolume]);";
  	synopsis[i++] =  "timeindex = Screen('GetMovieTimeIndex', moviePtr);";
- 	synopsis[i++] =  "[oldtimeindex] = Screen('SetMovieTimeIndex', moviePtr, timeindex);";
-        
+ 	synopsis[i++] =  "[oldtimeindex] = Screen('SetMovieTimeIndex', moviePtr, timeindex [, indexIsFrames=0]);";
+
 	// Video capture support:
 	synopsis[i++] = "\n% Video capture functions:";
 	synopsis[i++] = "devices = Screen('VideoCaptureDevices' [, engineId]);";

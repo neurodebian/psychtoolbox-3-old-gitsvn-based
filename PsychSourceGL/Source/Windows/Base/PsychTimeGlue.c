@@ -43,18 +43,37 @@
 
 */
 
+// Pseudo-Threadstruct for masterPsychtoolboxThread: Used in PsychSetThreadPriority()
+// and hopefully nowhere else:
+static psych_threadstruct masterPsychtoolboxThread;
+static psych_thread		  masterPsychtoolboxThreadhandle = NULL;
 
-static double			precisionTimerAdjustmentFactor=1;
+// Module handle for the MMCSS interface API library 'avrt.dll': Or 0 if unsupported.
+HMODULE Avrtlibrary = 0;
+
+// dwmSupported is true if MMCSS is supported and library is linked:
+static psych_bool AvrtSupported = FALSE;
+
+// MMCSS function definitions and procpointers:
+typedef BOOL (WINAPI *AvSetMmThreadPriorityPROC)(HANDLE AvrtHandle, int Priority);
+typedef BOOL (WINAPI *AvRevertMmThreadCharacteristicsPROC)(HANDLE taskHandle);
+typedef HANDLE (WINAPI *AvSetMmMaxThreadCharacteristicsPROC)(LPCTSTR firstTask, LPCTSTR secondTask, LPDWORD taskIndex);
+
+AvSetMmThreadPriorityPROC			PsychAvSetMmThreadPriority				= NULL;
+AvRevertMmThreadCharacteristicsPROC	PsychAvRevertMmThreadCharacteristics	= NULL;
+AvSetMmMaxThreadCharacteristicsPROC	PsychAvSetMmMaxThreadCharacteristics	= NULL;
+
+
+static double			precisionTimerAdjustmentFactor;
 static double			estimatedGetSecsValueAtTickCountZero;
-static psych_bool			isKernelTimebaseFrequencyHzInitialized=FALSE;
-static long double	kernelTimebaseFrequencyHz;
-static psych_bool       counterExists=FALSE;
-static psych_bool       firstTime=TRUE;
-static double        sleepwait_threshold = 0.003;
-static psych_bool			Timertrouble = FALSE;
-static psych_bool 		schedulingtrouble = FALSE;
-static double			tickInSecsAtLastQuery = -1;
-static double			timeInSecsAtLastQuery = -1;
+static psych_uint64		kernelTimebaseFrequencyHz;
+static psych_bool       counterExists;
+static psych_bool       firstTime;
+static double			sleepwait_threshold;
+static psych_bool		Timertrouble;
+static psych_bool 		schedulingtrouble;
+static double			tickInSecsAtLastQuery;
+static double			timeInSecsAtLastQuery;
 
 // Our critical section variable to guarantee exclusive access to PsychGetPrecisionTimerSeconds()
 // in order to prevent race-conditions for the timer correctness checks in multi-threaded code:
@@ -108,7 +127,7 @@ void PsychWaitUntilSeconds(double whenSecs)
       // Too many consecutive misses. Increase our threshold for sleep-waiting
       // by 5 ms until it reaches 20 ms.
       if (sleepwait_threshold < 0.02) sleepwait_threshold+=0.005;
-      printf("PTB-WARNING: Wait-Deadline missed for %i consecutive times (Last miss %lf ms). New sleepwait_threshold is %lf ms.\n",
+      printf("PTB-WARNING: Wait-Deadline missed for %i consecutive times (Last miss %0.6f ms). New sleepwait_threshold is %0.6f ms.\n",
 	     missed_count, (now - whenSecs)*1000.0f, sleepwait_threshold*1000.0f);
 		// Reset missed count after increase of threshold:
 		missed_count = 0;
@@ -180,16 +199,40 @@ void PsychYieldIntervalSeconds(double delaySecs)
 
 double	PsychGetKernelTimebaseFrequencyHz(void)
 {
-  if(!isKernelTimebaseFrequencyHzInitialized){
-    isKernelTimebaseFrequencyHzInitialized=TRUE;
-    PsychGetPrecisionTimerTicksPerSecond(&kernelTimebaseFrequencyHz);
-  }
-  return((double)kernelTimebaseFrequencyHz);
+  return((double) (psych_int64) kernelTimebaseFrequencyHz);
+}
+
+/* Returns TRUE on MS-Vista and later, FALSE otherwise: */
+int PsychIsMSVista(void)
+{
+	// Info struct for queries to OS:
+	OSVERSIONINFO osvi;
+	
+	// Init flag to -1 aka unknown:
+	static int isVista = -1;
+	
+	if (isVista == -1) {
+		// First call: Do the query!
+		
+		// Query info about Windows version:
+		memset(&osvi, 0, sizeof(OSVERSIONINFO));
+		osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+		GetVersionEx(&osvi);
+
+		// It is a Vista or later if major version is equal to 6 or higher:
+		// 6.0  = Vista, 6.1 = Windows-7, 5.2 = Windows Server 2003, 5.1 = WindowsXP, 5.0 = Windows 2000, 4.x = NT
+		isVista = (osvi.dwMajorVersion >= 6) ? 1 : 0;
+	}
+	
+	// Return flag:
+	return(isVista);
 }
 
 /* Called at module init time: */
 void PsychInitTimeGlue(void)
 {
+	LARGE_INTEGER	counterFreq;
+
 	// Initialize our timeglue mutex:
 
 	// Alternative would be InitializeCriticalSection().
@@ -199,13 +242,56 @@ void PsychInitTimeGlue(void)
 	//	// We're screwed:
 	//	printf("PTBCRITICAL -ERROR: In PsychInitTimeGlue() - failed to init time_lock!!! May malfunction or crash soon....\n");
 	//}
+
+	// Setup defaults for all state variables:
+	precisionTimerAdjustmentFactor=1;
+	kernelTimebaseFrequencyHz = 0;
+	if (QueryPerformanceFrequency(&counterFreq)) {
+		kernelTimebaseFrequencyHz = (psych_uint64) counterFreq.QuadPart;
+	}
+	
+	counterExists=FALSE;
+	firstTime=TRUE;
+	sleepwait_threshold = 0.003;
+	Timertrouble = FALSE;
+	schedulingtrouble = FALSE;
+	tickInSecsAtLastQuery = -1;
+	timeInSecsAtLastQuery = -1;
 	
 	// That is why we use the less capable critical section init call:
 	// Has less capable error handling etc., but what can one do...
 	InitializeCriticalSection(&time_lock);
 
+	// Init the master thread handle and associated struct:
+	masterPsychtoolboxThreadhandle = &masterPsychtoolboxThread;
+	memset(masterPsychtoolboxThreadhandle, 0, sizeof(masterPsychtoolboxThread));
+	
 	// Setup mapping of ticks to time:
 	PsychEstimateGetSecsValueAtTickCountZero();
+
+	// Try to load and bind MMCSS API library on Microsoft Vista and later:
+	// This would allow us to take advantage of MMCSS scheduling for better timing precision...
+	AvrtSupported = FALSE;
+	Avrtlibrary = LoadLibrary("Avrt.dll");
+	if (Avrtlibrary) {
+		// Load success. Dynamically bind the relevant functions:
+		PsychAvSetMmThreadPriority				= (AvSetMmThreadPriorityPROC) GetProcAddress(Avrtlibrary, "AvSetMmThreadPriority");
+		PsychAvSetMmMaxThreadCharacteristics	= (AvSetMmMaxThreadCharacteristicsPROC) GetProcAddress(Avrtlibrary, "AvSetMmMaxThreadCharacteristicsA");
+		PsychAvRevertMmThreadCharacteristics	= (AvRevertMmThreadCharacteristicsPROC) GetProcAddress(Avrtlibrary, "AvRevertMmThreadCharacteristics");
+		
+		if (PsychAvSetMmThreadPriority && PsychAvSetMmMaxThreadCharacteristics && PsychAvRevertMmThreadCharacteristics) {
+			// Mark MMCSS API as supported:
+			AvrtSupported = TRUE;
+		}
+		else {
+			// Failed:
+			FreeLibrary(Avrtlibrary);
+			Avrtlibrary = 0;
+			PsychAvRevertMmThreadCharacteristics = NULL;
+			PsychAvSetMmMaxThreadCharacteristics = NULL;
+			PsychAvSetMmThreadPriority = NULL;
+		}
+	}	
 }
 
 /* Called at module shutdown/jettison time: */
@@ -214,6 +300,19 @@ void PsychExitTimeGlue(void)
 	// Release our timeglue mutex:
 	DeleteCriticalSection(&time_lock);
 
+	// Free Avrt.dll if loaded: Disable MMCSS services...
+	if (AvrtSupported && Avrtlibrary) {
+		FreeLibrary(Avrtlibrary);
+		Avrtlibrary = 0;
+		AvrtSupported = FALSE;
+		PsychAvRevertMmThreadCharacteristics = NULL;
+		PsychAvSetMmMaxThreadCharacteristics = NULL;
+		PsychAvSetMmThreadPriority = NULL;
+	}
+
+	// NULL out the master thread handle:
+	masterPsychtoolboxThreadhandle = NULL;
+	
 	return;
 }
 
@@ -246,6 +345,16 @@ void PsychGetPrecisionTimerTicksPerSecond(double *frequency)
   return;
 }
 
+double PsychMapPrecisionTimerTicksToSeconds(psych_uint64 ticks)
+{
+	if (!Timertrouble) {
+		return((double) (psych_int64) ticks / (double) (psych_int64) kernelTimebaseFrequencyHz);
+	}
+	else {
+		return(-1);
+	}
+}
+
 void PsychGetPrecisionTimerTicksMinimumDelta(psych_uint32 *delta)
 
 {
@@ -254,23 +363,27 @@ void PsychGetPrecisionTimerTicksMinimumDelta(psych_uint32 *delta)
 }
 
 void PsychGetPrecisionTimerSeconds(double *secs)
-
 {
   double					ss, ticks, diff;
   static LARGE_INTEGER		counterFreq;
   LARGE_INTEGER				count;
-  static double				oss=0.0f;
-  static double				oldticks=0.0f;
-  static double				lastSlowcheckTimeSecs = -1;
-  static double				lastSlowcheckTimeTicks = -1;
-  int						tick1, tick2, hangcount;
+  static double				oss;
+  static double				oldticks;
+  static double				lastSlowcheckTimeSecs;
+  static double				lastSlowcheckTimeTicks;
+  psych_uint32				tick1, tick2, hangcount;
   psych_uint64				curRawticks;
-  static psych_uint64		oldRawticks;
-  static psych_uint64		tickWarpOffset = 0;
   
 	// First time init of timeglue: Set up system for high precision timing,
 	// and enable workarounds for broken systems:
   if (firstTime) {
+
+		// Init state to defaults:
+		oss=0.0;
+		oldticks=0.0;
+		lastSlowcheckTimeSecs = -1;
+		lastSlowcheckTimeTicks = -1;
+		
 		// Switch the system into high resolution timing mode, i.e.,
 		// 1 khZ timer interrupts aka 1 msec timer resolution, for both,
 		// the Sleep() command and TimeGetTime() queries. This way, our hybrid
@@ -313,12 +426,17 @@ void PsychGetPrecisionTimerSeconds(double *secs)
         	printf("PTBCRITICAL -ERROR: Check the FAQ section of the Psychtoolbox Wiki for more information.\n");
 		}
 		
+		// Sleep us at least 10 msecs, so the system will reschedule us, with the
+		// thread affinity mask above applied. Don't know if this is needed, but
+		// better safe than sorry:
+		Sleep(10);
+		
 		// Spin-Wait until timeGetTime() has switched to 1 msec resolution:
 		hangcount = 0;
 		while(hangcount < 100) {
-			tick1 = (int) timeGetTime();
-			while((tick2=(int) timeGetTime()) == tick1);
-			if (tick2 - tick1 == 1) break;
+			tick1 = (psych_uint32) timeGetTime();
+			while((tick2=(psych_uint32) timeGetTime()) == tick1);
+			if ((tick2 > tick1) && (tick2 - tick1 == 1)) break;
 			hangcount++;
 		}
 
@@ -335,7 +453,6 @@ void PsychGetPrecisionTimerSeconds(double *secs)
 		}
 
 		// Ok, now timeGetTime() should have the requested 1 msec increment rate.
-		oldRawticks = -1;
 
 		// Ok, this is a dumb solution, but at least sort of robust. The
 		// proper solution will have to wait for the next 'beta' release cycle.
@@ -360,9 +477,30 @@ void PsychGetPrecisionTimerSeconds(double *secs)
     	counterExists = QueryPerformanceFrequency(&counterFreq);
 		if (counterExists) {
 			// Initialize old counter values to now:
-			QueryPerformanceCounter(&count);
-			oss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
-		}	
+			if (0 == QueryPerformanceCounter(&count)) {
+				Timertrouble = TRUE;
+				counterExists = FALSE;
+				oss = 0;
+				
+				printf("PTB-CRITICAL WARNING! Timing code detected problems with the high precision TIMER in your system hardware!\n");
+				printf("PTB-CRITICAL WARNING! Initial call to QueryPerformanceCounter() failed!\n");
+				printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");				
+				printf("PTB-CRITICAL WARNING! This can cause a cascade of errors, failures and problems in any timing related functions!!\n\n");				
+				printf("PTB-CRITICAL WARNING! It is NOT RECOMMENDED to continue using this machine for studies that require any\n");
+				printf("PTB-CRITICAL WARNING! timing precision in stimulus onset or response collection. No guarantees can be made\n");
+				printf("PTB-CRITICAL WARNING! wrt. to timing or correctness of any timestamps or stimulus onsets!\n");
+				printf("PTB-CRITICAL WARNING! Read 'help GetSecsTest' and run GetSecsTest for further diagnosis and troubleshooting.\n");
+				printf("PTB-CRITICAL WARNING! It may also help to restart the machine to see if the problem is transient.\n");
+				printf("PTB-CRITICAL WARNING! Also check the FAQ section of the Psychtoolbox Wiki for more information.\n\n");
+			}
+			else {
+				oss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
+			}
+		}
+		
+		// Sleep us another 10 msecs to make sure there is a significant difference between
+		// first invocation and successive invocations:
+		Sleep(10);
   }
   
 	// Query system time of low resolution counter:
@@ -370,32 +508,26 @@ void PsychGetPrecisionTimerSeconds(double *secs)
 
 	// Need to acquire our timelock before we continue, as we will soon access shared data structures:
 	EnterCriticalSection(&time_lock);
-	
-	/* MK: Nice idea, but won't work that way :-( Need a more complex
-		// solution here. This has to wait for the next release cycle...
-		// Compare against old raw value to detect overflow and wraparound:
-		if ((curRawticks < oldRawticks) && (oldRawticks != -1)) {
-			// Wraparound due to 32 bit overflow after 49.8 days of uptime!
-			// Update our warp-offset to take this into account:
-			tickWarpOffset = tickWarpOffset + (0xffffffff - oldRawticks) + 1;
-		}
-		
-		// Update old raw count so it can be used as reference for next call:
-		oldRawticks = curRawticks;
-		
-		// Compute corrected - always monotonically increasing - uptime from tick count
-		// by applying the warp offset:
-		curRawticks += tickWarpOffset;
-	*/
 
 	// Convert to ticks in seconds for further processing:
-	ticks = ((double) curRawticks) * 0.001;
+	ticks = ((double) (psych_int64) curRawticks) * 0.001;
 	tickInSecsAtLastQuery = ticks;
 	
 	
   if (counterExists) {
 	// Query Performance counter:
-   QueryPerformanceCounter(&count);
+	if (0 == QueryPerformanceCounter(&count)) {
+			Timertrouble = TRUE;
+			printf("PTB-CRITICAL WARNING! Timing code detected problems with the high precision TIMER in your system hardware!\n");
+			printf("PTB-CRITICAL WARNING! A call to QueryPerformanceCounter() failed!\n");
+			printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
+			printf("PTB-CRITICAL WARNING! It is NOT RECOMMENDED to continue using this machine for studies that require high\n");
+			printf("PTB-CRITICAL WARNING! timing precision in stimulus onset or response collection. No guarantees can be made\n");
+			printf("PTB-CRITICAL WARNING! wrt. to timing or correctness of any timestamps or stimulus onsets!\n");
+			printf("PTB-CRITICAL WARNING! Read 'help GetSecsTest' and run GetSecsTest for further diagnosis and troubleshooting.\n");
+			printf("PTB-CRITICAL WARNING! It may also help to restart the machine to see if the problem is transient.\n");
+			printf("PTB-CRITICAL WARNING! Also check the FAQ section of the Psychtoolbox Wiki for more information.\n\n");
+	}
 
    ss = ((double)count.QuadPart)/((double)counterFreq.QuadPart);
    timeInSecsAtLastQuery = ss;
@@ -419,7 +551,7 @@ void PsychGetPrecisionTimerSeconds(double *secs)
 		if (ss < oss) {
 			Timertrouble = TRUE;
 			printf("PTB-CRITICAL WARNING! Timing code detected problems with the high precision TIMER in your system hardware!\n");
-			printf("PTB-CRITICAL WARNING! Apparently time is reported as RUNNING BACKWARDS. (Timewarp Delta: %f secs.)\n", ss - oss);
+			printf("PTB-CRITICAL WARNING! Apparently time is reported as RUNNING BACKWARDS. (Timewarp Delta: %0.30f secs.)\n", ss - oss);
 			printf("PTB-CRITICAL WARNING! One reason could be a multi-core system with unsynchronized TSC's and buggy platform drivers.\n");
 			printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
 		}
@@ -438,7 +570,7 @@ void PsychGetPrecisionTimerSeconds(double *secs)
 			// Performance counter is faulty! Report this to user, then continue
 			// by use of the older tick counter as a band-aid.
 			Timertrouble = TRUE;
-			printf("PTB-CRITICAL WARNING! Timing code detected a FAULTY high precision TIMER in your system hardware!(Delta %f secs).\n", diff);
+			printf("PTB-CRITICAL WARNING! Timing code detected a FAULTY high precision TIMER in your system hardware!(Delta %0.30f secs).\n", diff);
 			printf("PTB-CRITICAL WARNING! Seems the timer sometimes randomly jumps forward in time by over 250 msecs!");
 			printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
 			printf("PTB-CRITICAL WARNING! For more information see Microsoft knowledge base article Nr. 274323.\n");
@@ -463,7 +595,7 @@ void PsychGetPrecisionTimerSeconds(double *secs)
 				// Performance counter is lagging behind realtime! Report this to user, then continue
 				// by use of the older tick counter as a band-aid.
 				Timertrouble = TRUE;
-				printf("PTB-CRITICAL WARNING! Timing code detected a LAGGING high precision TIMER in your system hardware! (Delta %f secs).\n", diff);
+				printf("PTB-CRITICAL WARNING! Timing code detected a LAGGING high precision TIMER in your system hardware! (Delta %0.30f secs).\n", diff);
 				printf("PTB-CRITICAL WARNING! Seems that the timer sometimes stops or slows down! This can happen on systems with\n");
 				printf("PTB-CRITICAL WARNING! processor power management (cpu throttling) and defective platform drivers.\n");				
 				printf("PTB-CRITICAL WARNING! Will switch back to lower precision/resolution timer (only +/-1 millisecond accuracy at best).\n");
@@ -632,7 +764,8 @@ int PsychCreateThread(psych_thread* threadhandle, void* threadparams, void *(*st
 	if (*threadhandle == NULL) PsychErrorExitMsg(PsychError_outofMemory, "Insufficient free RAM memory when trying to create processing thread!");
 	(*threadhandle)->handle = NULL;
 	(*threadhandle)->threadId = 0;
-	
+	(*threadhandle)->taskHandleMMCS = NULL;
+
 	// Create termination event for thread: It can be set to signalled via PsychAbortThread() and
 	// threads can test for its state via PsychTestCancelThread(), which will exit the thread cleanly
 	// if the event is signalled.
@@ -737,27 +870,51 @@ int PsychIsCurrentThreadEqualToPsychThread(psych_thread threadhandle)
 }
 
 /* Change priority for thread 'threadhandle', or for the calling thread if 'threadhandle' == NULL.
+ * threadhandle == 0x1 means "Main Psychtoolbox thread" and may incur special treatment.
  * 'basePriority' can be 0 for normal scheduling, 1 for higher priority and 2 for highest priority.
  * 'tweakPriority' modulates more fine-grained within the category given by 'basepriority'. It
- * can be anywhere between 0 and some big value where bigger means more priority.
+ * can be anywhere between 0 and 2 where bigger means more priority.
+ *
+ * See http://msdn.microsoft.com/en-us/library/ms684247(VS.85).aspx for explanation of the MMCSS
+ * scheduling services on Vista and later. The short story is: A non-Administrator user can usually
+ * get no more than HIGH_PRIORITY scheduling for the Matlab/Octave process, and even for admin users,
+ * running with REALTIME_PRIORTY is usually too dangerous with most Psychtoolbox applications. If we
+ * are able to use MMCSS scheduling on Vista and later, we get something better than HIGH_PRIORITY,
+ * pretty close to REALTIME_PRIORITY, but with a safety net that should prevent disaster, assuming
+ * the Windows MMCSS service knows what it is doing...
  *
  * Returns zero on success, non-zero on failure to set new priority.
  */
 int PsychSetThreadPriority(psych_thread* threadhandle, int basePriority, int tweakPriority)
 {
 	int rc;
+	DWORD foo;
 	HANDLE thread;
-	
-	// tweakPriority unused for now:
-	(int) tweakPriority;
-	
-	if (NULL != threadhandle) {
+
+	if ((NULL != threadhandle) && (0x1 != threadhandle)) {
 		// Retrieve thread HANDLE of thread to change:
 		thread = (*threadhandle)->handle;
 	}
 	else {
 		// Retrieve handle of calling thread:
 		thread = GetCurrentThread();
+		
+		// Is this a special "Masterthread" pseudo-handle?
+		if (0x1 == (int) threadhandle) {
+			// Yes: This is the Psychtoolbox main thread calling. We don't have
+			// a "normal" psych_thread* threadhandle for this one, so we need to
+			// kind'a bootstrap one for this thread. Space for one handle for the
+			// masterthread is allocated at the top of this C file in
+			// masterPsychtoolboxThreadthreadhandle. It gets zero-filled on init,
+			// cleared/freed on exit.
+			threadhandle = &masterPsychtoolboxThreadhandle;
+		}
+	}
+
+	// If this is a MMCSS scheduled thread, we need to revert it to normal mode first:
+	if (AvrtSupported && (NULL != threadhandle) && ((*threadhandle)->taskHandleMMCS)) {
+		PsychAvRevertMmThreadCharacteristics((*threadhandle)->taskHandleMMCS);
+		(*threadhandle)->taskHandleMMCS = NULL;
 	}
 	
 	switch(basePriority) {
@@ -784,8 +941,31 @@ int PsychSetThreadPriority(psych_thread* threadhandle, int basePriority, int twe
 		
 		case 2: // Highest priority: This preempts basically any system service!
 			if ((rc = SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL)) == 0) {
-				// Failed to get TIME_CRITICAL priority. Retry with HIGHEST priority:
-				rc = SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST);
+				// Failed to get TIME_CRITICAL priority!
+				// Try to get as close as possible to TIME_CRITICAL. On Vista and later,
+				// we can try to abuse MMCSS scheduling to get to a pretty high priority,
+				// certainly higher than HIGHEST, close to TIME_CRITICAL:
+				if (AvrtSupported && (NULL != threadhandle)) {
+					foo = 0;
+					(*threadhandle)->taskHandleMMCS = PsychAvSetMmMaxThreadCharacteristics("Pro Audio", "Capture", &foo);
+					if ((*threadhandle)->taskHandleMMCS) {
+						// Success! Apply tweakPriority as well...
+						PsychAvSetMmThreadPriority((*threadhandle)->taskHandleMMCS, tweakPriority);
+						rc = 0;
+						// printf("PTB-DEBUG: CLASS 2 Call to PsychAvSetMmMaxThreadCharacteristics() for Vista-MMCSS scheduling SUCCESS for threadhandle %p.\n", threadhandle);
+					}
+					else {
+						// Failed! Retry with HIGHEST priority:
+						rc = SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST);
+						// printf("PTB-WARNING: Call to PsychAvSetMmMaxThreadCharacteristics() for Vista-MMCSS scheduling failed for threadhandle %p. Setting thread priority to HIGHEST as a work-around...\n", threadhandle);
+					}
+				}
+				else {
+					// MMCSS not supported on pre-Vista system, or thread not eligible for MMCSS.
+					// Retry with HIGHEST priority, the best we can do on pre-Vista:
+					rc = SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST);
+				}
+				 
 			}
 			if (rc == 0) {
 				rc = GetLastError();	// Failed!
@@ -794,7 +974,30 @@ int PsychSetThreadPriority(psych_thread* threadhandle, int basePriority, int twe
 				rc = 0;
 			}
 		break;
-		
+
+		case 10: // MMCSS scheduling: Vista, Windows-7 and later only...
+			if (AvrtSupported && (NULL != threadhandle)) {
+				foo = 0;
+				(*threadhandle)->taskHandleMMCS = PsychAvSetMmMaxThreadCharacteristics("Pro Audio", "Capture", &foo);
+				if ((*threadhandle)->taskHandleMMCS) {
+					// Success! Apply tweakPriority as well...
+					PsychAvSetMmThreadPriority((*threadhandle)->taskHandleMMCS, tweakPriority);
+					rc = 0;
+					// printf("PTB-DEBUG: CLASS 10 Call to PsychAvSetMmMaxThreadCharacteristics() for Vista-MMCSS scheduling SUCCESS for threadhandle %p.\n", threadhandle);
+				}
+				else {
+					// Failed! Retry with HIGHEST priority:
+					rc = SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST);
+					printf("PTB-WARNING: Call to PsychAvSetMmMaxThreadCharacteristics() for Vista-MMCSS scheduling failed for threadhandle %p. Setting thread priority to HIGHEST as a work-around...\n", threadhandle);
+				}
+			}
+			else {
+				// MMCSS not supported on pre-Vista system, or thread not eligible for MMCSS.
+				// Retry with HIGHEST priority, the best we can do on pre-Vista:
+				rc = SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST);
+			}
+		break;
+
 		default:
 			printf("PTB-CRITICAL: In call to PsychSetThreadPriority(): Invalid/Unknown basePriority %i provided!\n", basePriority);
 			rc = 2;

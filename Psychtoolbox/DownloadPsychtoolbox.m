@@ -8,6 +8,9 @@ function DownloadPsychtoolbox(targetdirectory,downloadmethod,targetRevision,flav
 % It's a careful program, checking for all required resources and
 % privileges before it starts.
 %
+% CAUTION: Psychtoolbox *will not work* with 64 bit versions of Matlab or
+% Octave.
+%
 % On Mac OSX, all parameters are optional. On MS-Windows and GNU/Linux, the
 % first parameter "targetdirectory" with the path to the installation
 % target directory is required. The "targetdirectory" name may not contain
@@ -253,10 +256,20 @@ function DownloadPsychtoolbox(targetdirectory,downloadmethod,targetRevision,flav
 %              chance to reconsider.
 % 03/22/09 mk  Update help text again. Rename 'stable' into 'unsupported'.
 % 05/31/09 mk  Add support for Octave-3.
+% 10/05/09 mk  Strip trailing fileseperator from targetDirectory, as
+%              suggested by Erik Flister to avoid trouble with new svn
+%              clients.
 
 % Flush all MEX files: This is needed at least on M$-Windows for SVN to
 % work if Screen et al. are still loaded.
 clear mex
+
+% Check if this is a 64-bit Matlab, which we don't support at all:
+if strcmp(computer,'PCWIN64') | strcmp(computer,'MACI64') | strcmp(computer,'GLNXA64') %#ok<OR2>
+    fprintf('Psychtoolbox does not work on a 64 bit version of Matlab or Octave.\n');
+    fprintf('You need to install a 32 bit Matlab or Octave to install & use Psychtoolbox.\n');
+    error('Tried to install on a 64 bit version of Matlab or Octave, which is not supported.');
+end
 
 % Check OS
 isWin=strcmp(computer,'PCWIN') | strcmp(computer,'PCWIN64')| strcmp(computer, 'i686-pc-mingw32');
@@ -291,6 +304,11 @@ if isempty(targetdirectory)
         fprintf('path as the first argument to this script, e.g. DownloadPsychtoolbox(''C:\\Toolboxes\\'').\n');
         error('For Windows and Linux, the call to %s must specify a full path for the location of installation.',mfilename);
     end     
+end
+
+% Strip trailing fileseperator, if any:
+if targetdirectory(end) == filesep
+    targetdirectory = targetdirectory(1:end-1);
 end
 
 % Override for download method provided?

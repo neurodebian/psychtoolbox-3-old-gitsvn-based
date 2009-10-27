@@ -429,17 +429,30 @@ PsychError SCREENGetMouseHelper(void)
 			switch(priorityLevel) {
 				case 0: // Standard scheduling:
 					SetPriorityClass(currentProcess, NORMAL_PRIORITY_CLASS);
+
+					// Disable any MMCSS scheduling for us:
+					PsychSetThreadPriority(0x1, 0, 0);
 				break;
 				
 				case 1: // High priority scheduling:
 					SetPriorityClass(currentProcess, HIGH_PRIORITY_CLASS);
+
+					// Additionally try to schedule us MMCSS: This will lift us roughly into the
+					// same scheduling range as REALTIME_PRIORITY_CLASS, even if we are non-admin users
+					// on Vista and Windows-7 and later, however with a scheduler safety net applied.
+					PsychSetThreadPriority(0x1, 10, 0);
 				break;
 				
 				case 2: // Realtime scheduling:
 					// This can fail if Matlab is not running under a user account with proper permissions:
-					if (0 == SetPriorityClass(currentProcess, REALTIME_PRIORITY_CLASS)) {
+					if ((0 == SetPriorityClass(currentProcess, REALTIME_PRIORITY_CLASS)) || (REALTIME_PRIORITY_CLASS != GetPriorityClass(currentProcess))) {
 						// Failed to get RT-Scheduling. Let's try at least high priority scheduling:
 						SetPriorityClass(currentProcess, HIGH_PRIORITY_CLASS);
+						
+						// Additionally try to schedule us MMCSS: This will lift us roughly into the
+						// same scheduling range as REALTIME_PRIORITY_CLASS, even if we are non-admin users
+						// on Vista and Windows-7 and later, however with a scheduler safety net applied.
+						PsychSetThreadPriority(0x1, 10, 0);
 					}
 				break;
 			}

@@ -10,6 +10,8 @@
 %    AlphaImageDemo          - Simple demo of OpenGL alpha blending.
 %    AlphaRotateDemo         - A variant of AlphaImageDemoOSX, demonstrates rotated drawing.
 %    ArcDemo                 - Demonstrate the 'FrameArc', 'FillArc' functions.
+%    AudioTunnel3DDemo       - Very sketchy demo on how to use OpenAL for 3D spatialized sound.
+%    AudioTunnel3DDemo       - Another sketchy demo on how to use OpenAL for 3D spatialized sound.
 %    BasicSoundFeedbackDemo  - Demonstrates a audio feedback loop via PsychPortAudio(). See DelayedSoundFeedbackDemo for a more research grade approach.
 %    BasicSoundInputDemo     - Demonstrate basic usage of PsychPortAudio() for sound capture.
 %    BasicSoundOutputDemo    - Demonstrate basic usage of PsychPortAudio() for sound playback.
@@ -23,6 +25,7 @@
 %    ContrastModulatedNoiseTheElegantStyleDemo - Demonstrate creation of contrast modulated noise.
 %                                                Elegant and efficient, but needs recent hardware.
 %
+%    DatarecordingFromISCANDemo - Template for asynchronous data collection and timestamping of gaze samples from ISCAN eye tracker.
 %    DatarecordingFromSerialPortDemo - Template for asynchronous data collection and timestamping from serial port.
 %    DelayedSoundFeedbackDemo - Demonstrates a audio feedback loop via PsychPortAudio() with exactly controlled latency.
 %    DotDemo                 - Animate dots with Screen('DrawDots).
@@ -50,7 +53,7 @@
 %    GarboriumDemo           - Demonstrate superimposed drawing of many Gabors by use of alpha-
 %                              blending, 'DrawTextures' batch drawing and PTB imaging pipeline.
 %    GazeContingentDemo      - Implementation of a simple gaze contingent display 
-%    GLSLClutAnimDemo        - Demonstrates use of function moglClutBlit to
+%    GLSLCLUTAnimDemo        - Demonstrates use of function moglClutBlit to
 %                              perform CLUT animation with GLSL in an OS independent way.
 %    GratingDemo             - Basic display of a grating on the screen.
 %    IsomerizationsInDishDemo - Compute photoreceptor isomerizations for retina in a dish.
@@ -64,7 +67,7 @@
 %    MovieDemo               - Animation without offscreen windows.
 %    MovingLineDemo          - Shows some horizontally moving lines to demonstrate flat panel display artifacts.
 %    NomogramDemo            - Compute photoreceptor nomograms.
-%    OldNewRecogDemo         - A full old-new recognition experiment.
+%    OldNewRecogExp          - A full old-new recognition experiment.
 %    OpenGL4MatlabDemos      - Subfolder: Demos on how to use MOGL OpenGL functions.
 %    ProceduralGaborDemo     - Demo for fast drawing of Gabors via procedural textures.
 %    ProceduralGarboriumDemo - Same as GarboriumDemo, just with procedural gabor drawing.
@@ -77,5 +80,4 @@
 %    StereoViewer            - A simple viewer for stereo image pairs.
 %    StoreBit                - Not at all clear why this is here
 %    ValetonVanNorrenDemo    - Exercise our code that implements the V-VN (1983) cone adaptation model.
-
-
+%    VideoCaptureDemo        - Simple demo for video capture functions.

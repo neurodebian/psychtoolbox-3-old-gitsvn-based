@@ -44,6 +44,9 @@ function UpdatePsychtoolbox(targetdirectory, targetRevision)
 %              security certificates...
 % 01/05/09 mk  Remove && or || to make old Matlab versions happier.
 % 05/31/09 mk  Add support for Octave-3.
+% 10/05/09 mk  Strip trailing fileseperator from targetDirectory, as
+%              suggested by Erik Flister to avoid trouble with new svn
+%              clients.
 
 % Flush all MEX files: This is needed at least on M$-Windows for SVN to
 % work if Screen et al. are still loaded.
@@ -55,6 +58,11 @@ end
 
 if isempty(targetdirectory)
     targetdirectory=PsychtoolboxRoot;
+end
+
+% Strip trailing fileseperator, if any:
+if targetdirectory(end) == filesep
+    targetdirectory = targetdirectory(1:end-1);
 end
 
 if nargin<2
@@ -72,12 +80,19 @@ if any(isspace(targetdirectory))
     fprintf('The targetdirectory spec contains white-space. This should work, but has not been tested extensively.\n');
 end
 
+% Check if this is a 64-bit Matlab, which we don't support at all:
+if strcmp(computer,'PCWIN64') | strcmp(computer,'MACI64') | strcmp(computer,'GLNXA64') %#ok<OR2>
+    fprintf('Psychtoolbox does not work on a 64 bit version of Matlab or Octave.\n');
+    fprintf('You need to install a 32 bit Matlab or Octave to install & use Psychtoolbox.\n');
+    error('Tried to update on a 64 bit version of Matlab or Octave, which is not supported.');
+end
+
 % Check OS
 isWin=strcmp(computer,'PCWIN') | strcmp(computer,'PCWIN64') | strcmp(computer, 'i686-pc-mingw32');
 isOSX=strcmp(computer,'MAC') | strcmp(computer,'MACI') | ~isempty(findstr(computer, 'apple-darwin'));
 isLinux=strcmp(computer,'GLNX86') | ~isempty(findstr(computer, 'linux-gnu'));
 
-if ~isWin & ~isOSX & ~isLinux
+if ~isWin & ~isOSX & ~isLinux %#ok<AND2>
     os=computer;
     if strcmp(os,'MAC2')
         os='Mac OS9';
@@ -98,7 +113,7 @@ svnpath = GetSubversionPath;
 
 % Check that subversion client is installed.
 % Currently, we only know how to check this for Mac OSX.
-if isOSX & isempty(svnpath)
+if isOSX & isempty(svnpath) %#ok<AND2>
     fprintf('The Subversion client "svn" is not in its expected\n');
     fprintf('location "/usr/local/bin/svn" on your disk. Please \n');
     fprintf('download and install the most recent Subversion client from:\n');
@@ -111,7 +126,7 @@ fprintf('About to update your working copy of the OpenGL-based Psychtoolbox.\n')
 updatecommand=[svnpath 'svn update '  targetRevision ' ' strcat('"',targetdirectory,'"') ];
 fprintf('Will execute the following update command:\n');
 fprintf('%s\n', updatecommand);
-if isOSX | isLinux
+if isOSX | isLinux %#ok<OR2>
     err=system(updatecommand);
     result = 'For reason, see output above.';
 else
@@ -148,7 +163,7 @@ addpath(genpath(targetdirectory));
 fprintf('Your MATLAB/OCTAVE path has been updated. Now trying to save the new MATLAB/OCTAVE path...\n\n');
 
 % Does SAVEPATH work?
-if exist('savepath')
+if exist('savepath') %#ok<EXIST>
    err=savepath;
 else
    err=path2rc;

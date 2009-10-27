@@ -221,16 +221,27 @@ void InitCGDisplayIDList(void)
     
     printf("\n"); fflush(NULL);
 
-    // On a multi-display setup in explicit multi-display mode, we disable beamposition queries by default for now.
-    // Users are free to override the default. This behaviour will be changed in the future when multi-display support
-    // for DirectDraw has been properly implemented and tested:
-    PsychPrefStateSet_VBLTimestampingMode(-1);
-	printf("PTB-INFO: Please note that beamposition queries for accurate Screen('Flip') timestamping are disabled by\n");
-	printf("PTB-INFO: default on MS-Windows multi-display setups. If you want to use them, first run the 'PerceptualVBLSyncTest'\n");
-	printf("PTB-INFO: script to verify they're working correctly on your setup. Then you can add the command:\n");
-	printf("PTB-INFO: Screen('Preference', 'VBLTimestampingMode', 1); at the top of your script to manually enable them.\n");
-	printf("PTB-INFO: Usually beamposition queries work correctly if both of your displays are set to the same resolution,\n");
-	printf("PTB-INFO: color depths and video refresh rate, but you *must verify this*.\n\n");
+	if ((numDisplays == 3) && (w1 == w2) && (h1 == h2) && (PsychGetNominalFramerate(1) == PsychGetNominalFramerate(2)) && PsychIsMSVista()) {
+		printf("PTB-INFO: This setup is running on a MS-Vista system or later with two displays of same resolution and refresh rate.\n");
+		printf("PTB-INFO: I believe it is safe under this conditions to keep high-precision timestamping enabled, but you should run the\n");
+		printf("PTB-INFO: 'PerceptualVBLSyncTest' script at least once after any big change in display configuration to verify this.\n\n");
+	}
+	else {
+		// On a multi-display setup in explicit multi-display mode, we disable beamposition queries by default for now.
+		// Users are free to override the default. This behaviour will be changed in the future when multi-display support
+		// for DirectDraw has been properly implemented and tested.
+		PsychPrefStateSet_VBLTimestampingMode(-1);
+		printf("PTB-INFO: This setup is either a pre-Vista (Win2k or WinXP) setup, or it has more than two displays connected, or\n");
+		printf("PTB-INFO: it is a dual-display Vista/Windows-7 setup, but display settings for the displays are not identical.\n\n");
+		printf("PTB-INFO: Please note that beamposition queries for accurate Screen('Flip') timestamping are disabled by\n");
+		printf("PTB-INFO: default on such MS-Windows multi-display setups. If you want to use them, first run the 'PerceptualVBLSyncTest'\n");
+		printf("PTB-INFO: script to verify they're working correctly on your setup. Then you can add the command:\n");
+		printf("PTB-INFO: Screen('Preference', 'VBLTimestampingMode', 1); at the top of your script to manually enable them.\n");
+		printf("PTB-INFO: Usually beamposition queries work correctly if both of your displays are set to the same resolution,\n");
+		printf("PTB-INFO: color depths and video refresh rate, but you *must verify this*.\n");
+		printf("PTB-INFO: Make also sure that the 'primary monitor' in the display settings is set to your main stimulus \n");
+		printf("PTB-INFO: presentation display for more reliable timing and generally less problems.\n");
+	}
   }
 
   // Ready.
@@ -505,10 +516,13 @@ void PsychGetScreenSize(int screenNumber, long *width, long *height)
 
 void PsychGetGlobalScreenRect(int screenNumber, double *rect)
 {
-  // Create an empty rect:
-  PsychMakeRect(rect, 0, 0, 1, 1);
-  // Fill it with meaning by PsychGetScreenRect():
-  PsychGetScreenRect(screenNumber, rect);
+    long width, height; 
+	
+    PsychGetScreenSize(screenNumber, &width, &height);
+    rect[kPsychLeft]= (int) displayDeviceStartX[screenNumber];
+    rect[kPsychTop]= (int) displayDeviceStartY[screenNumber];
+    rect[kPsychRight]=rect[kPsychLeft] + (int) width;
+    rect[kPsychBottom]=rect[kPsychTop] + (int) height;	
 }
 
 
@@ -517,10 +531,10 @@ void PsychGetScreenRect(int screenNumber, double *rect)
     long width, height; 
 
     PsychGetScreenSize(screenNumber, &width, &height);
-    rect[kPsychLeft]= (int) displayDeviceStartX[screenNumber];
-    rect[kPsychTop]= (int) displayDeviceStartY[screenNumber];
-    rect[kPsychRight]=rect[kPsychLeft] + (int) width;
-    rect[kPsychBottom]=rect[kPsychTop] + (int) height; 
+    rect[kPsychLeft]=0;
+    rect[kPsychTop]=0;
+    rect[kPsychRight]=(int)width;
+    rect[kPsychBottom]=(int)height; 
 } 
 
 
@@ -923,15 +937,14 @@ void PsychTestDDrawBeampositionQueries(void)
 			// All queries failed in VBL?
 			if (bogusvalueinvblcount == bogusvaluecount) {
 				// Yes. This allows for an ugly but workable workaround:
-				if (verbosity > 1) {
-					printf("PTB-WARNING: Seems beamposition queries malfunction whenever the display is in a vertical retrace state!\n");
-					printf("PTB-WARNING: I will enable a work-around which should satisfy the timing needs of most applications, ie.\n");
-					printf("PTB-WARNING: robust and jitter-free deterministic timestamps. However, all reported timestamps may have a\n");
-					printf("PTB-WARNING: constant offset of up to the duration of the vertical blanking interval (max 1 msec worst case)\n");
-					printf("PTB-WARNING: of your display. Read 'help BeampositionQueries' on how you can remove that bias by some manual\n");
-					printf("PTB-WARNING: intervention, should you need that last bit of accuracy. A second drawback is increased cpu load,\n");
-					printf("PTB-WARNING: which may cause louder air-fan noise due to heat production and lower battery runtime of laptops.\n");
-					printf("PTB-WARNING: Check your vendors website for driver updates regularly, so you can get rid of this workaround asap.\n\n");
+				if (verbosity > 2) {
+					printf("PTB-INFO: Seems beamposition queries are unsupported whenever the display is in a vertical retrace state.\n");
+					printf("PTB-INFO: I will enable a work-around which should satisfy the timing needs of most applications, ie.\n");
+					printf("PTB-INFO: robust and jitter-free deterministic timestamps. However, all reported timestamps may have a\n");
+					printf("PTB-INFO: constant offset of up to the duration of the vertical blanking interval (max 1 msec worst case)\n");
+					printf("PTB-INFO: of your display. Read 'help BeampositionQueries' on how you can remove that bias by some manual\n");
+					printf("PTB-INFO: intervention, should you need that last bit of accuracy. A second drawback is increased cpu load,\n");
+					printf("PTB-INFO: which may cause louder air-fan noise due to heat production and lower battery runtime of laptops.\n");
 				}
 				
 				// Enable beampos workaround by default:
@@ -963,7 +976,7 @@ void PsychTestDDrawBeampositionQueries(void)
 				// Force it on:
 				if (verbosity > 2) {
 					printf("PTB-INFO: Automatic startup test of beamposition queries couldn't detect any beamposition problems on your system,\n");
-					printf("PTB-INFO: but  by setting the special flag Screen('Preference', 'ConserveVRAM', 4096); somewhere in your script,\n");
+					printf("PTB-INFO: but by setting the special flag Screen('Preference', 'ConserveVRAM', 4096); somewhere in your script,\n");
 					printf("PTB-INFO: you requested that the workaround for beamposition problems is always unconditionally enabled.\n");
 					printf("PTB-INFO: Therefore i will enable the work-around: This should satisfy the timing needs of most applications, ie.\n");
 					printf("PTB-INFO: robust and jitter-free deterministic timestamps. However, all reported timestamps may have a\n");
@@ -971,7 +984,6 @@ void PsychTestDDrawBeampositionQueries(void)
 					printf("PTB-INFO: of your display. Read 'help BeampositionQueries' on how you can remove that bias by some manual\n");
 					printf("PTB-INFO: intervention, should you need that last bit of accuracy. A second drawback is increased cpu load,\n");
 					printf("PTB-INFO: which may cause louder air-fan noise due to heat production and lower battery runtime of laptops.\n");
-					printf("PTB-INFO: Check your vendors website for driver updates regularly, so you can get rid of this workaround asap.\n\n");
 				}
 				
 				// Enable beampos workaround by default:
