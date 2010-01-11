@@ -134,7 +134,12 @@ void PsychRebindARBExtensionsToCore(void)
     if (NULL == glGetShaderInfoLog) glGetShaderInfoLog = glGetInfoLogARB;
     if (NULL == glGetProgramInfoLog) glGetProgramInfoLog = glGetInfoLogARB;
     if (NULL == glValidateProgram) glValidateProgram = glValidateProgramARB;
-    
+    if (NULL == glGenQueries) glGenQueries = glGenQueriesARB;
+    if (NULL == glDeleteQueries) glDeleteQueries = glDeleteQueriesARB;
+    if (NULL == glBeginQuery) glBeginQuery = glBeginQueryARB;
+    if (NULL == glEndQuery) glEndQuery = glEndQueryARB;
+    if (NULL == glGetQueryObjectuiv) glGetQueryObjectuiv = glGetQueryObjectuivARB;
+	
     // Misc other stuff to remap...
     if (NULL == glDrawRangeElements) glDrawRangeElements = glDrawRangeElementsEXT;
     return;
@@ -531,6 +536,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
     (*windowRecord)->PipelineFlushDone = false;
     (*windowRecord)->backBufferBackupDone = false;
     (*windowRecord)->nr_missed_deadlines = 0;
+	(*windowRecord)->flipCount = 0;
     (*windowRecord)->IFIRunningSum = 0;
     (*windowRecord)->nrIFISamples = 0;
     (*windowRecord)->VBL_Endline = -1;
@@ -1257,6 +1263,9 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 				// hook-chains:
 				PsychShutdownImagingPipeline(windowRecord, TRUE);
 				
+				// Call cleanup routine of text renderers to cleanup anything text related for this windowRecord:
+				PsychCleanupTextRenderer(windowRecord);
+
 				// Sync and idle the pipeline again:
                 glFinish();
 
@@ -1321,8 +1330,8 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 	// Output count of missed deadlines. Don't bother for 1 missed deadline -- that's an expected artifact of the measurement...
     if (PsychIsOnscreenWindow(windowRecord) && (windowRecord->nr_missed_deadlines>1)) {
 		if(PsychPrefStateGet_Verbosity()>1) {
-			printf("\n\nINFO: PTB's Screen('Flip') command seems to have missed the requested stimulus presentation deadline\n");
-			printf("INFO: a total of %i times during this session.\n\n", windowRecord->nr_missed_deadlines);
+			printf("\n\nINFO: PTB's Screen('Flip', %i) command seems to have missed the requested stimulus presentation deadline\n", windowRecord->windowIndex);
+			printf("INFO: a total of %i times out of a total of %i flips during this session.\n\n", windowRecord->nr_missed_deadlines, windowRecord->flipCount);
 			printf("INFO: This number is fairly accurate (and indicative of real timing problems in your own code or your system)\n");
 			printf("INFO: if you provided requested stimulus onset times with the 'when' argument of Screen('Flip', window [, when]);\n");
 			printf("INFO: If you called Screen('Flip', window); without the 'when' argument, this count is more of a ''mild'' indicator\n");
@@ -1433,6 +1442,12 @@ void PsychReleaseFlipInfoStruct(PsychWindowRecordType *windowRecord)
 	// Any threads attached?
 	if (flipRequest->flipperThread) {
 		// Yes. Cancel and destroy / release it, also release all mutex locks:
+
+		// Disable realtime scheduling, e.g., Vista-MMCSS: Important to do this,
+		// as at least Vista et al. does not reset MMCSS scheduling, even if the
+		// thread dies later on, causing wreakage for all future calls of this
+		// function in a running session! (WTF?!?)
+		PsychSetThreadPriority(&(flipRequest->flipperThread), 0, 0);
 
 		// Set opmode to "terminate please":
 		flipRequest->opmode = -1;
@@ -1708,6 +1723,9 @@ psych_bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
 		// Unpack struct and execute synchronous flip:
 		flipRequest->vbl_timestamp = PsychFlipWindowBuffers(windowRecord, flipRequest->multiflip, flipRequest->vbl_synclevel, flipRequest->dont_clear, flipRequest->flipwhen, &(flipRequest->beamPosAtFlip), &(flipRequest->miss_estimate), &(flipRequest->time_at_flipend), &(flipRequest->time_at_onset));
 
+		// Call hookchain with callbacks to be performed after successfull flip completion:
+		PsychPipelineExecuteHook(windowRecord, kPsychScreenFlipImpliedOperations, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
+
 		// Done, and all return values filled in struct. We leave asyncstate at its zero setting, ie., idle and simply return:
 		return(TRUE);
 	}
@@ -1760,7 +1778,33 @@ psych_bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
 			// Additionally try to schedule flipperThread MMCSS: This will lift it roughly into the
 			// same scheduling range as HIGH_PRIORITY_CLASS, even if we are non-admin users
 			// on Vista and Windows-7 and later, however with a scheduler safety net applied.
-			PsychSetThreadPriority(&(flipRequest->flipperThread), 10, 2);
+			// For some braindead reasons, apparently only one thread can be scheduled in class 10,
+			// so we need to make sure the masterthread is not MMCSS scheduled, otherwise our new
+			// request will fail:
+			#if PSYCH_SYSTEM == PSYCH_WINDOWS
+				// On Windows, we have to set flipperThread to +2 RT priority levels while
+				// throwing ourselves off RT priority scheduling. This is a brain-dead requirement
+				// of Vista et al's MMCSS scheduler which only allows one of our threads being
+				// scheduled like that :(
+				PsychSetThreadPriority(0x1, 0, 0);
+				PsychSetThreadPriority(&(flipRequest->flipperThread), 10, 2);
+			#else
+				// Boost priority of flipperThread wrt. to us, ie., the PTB master thread
+				// by at least 2 units:
+				
+				// Query our (masterthread) schedulingmode and priority:
+				int policy;
+				struct sched_param sp;
+				pthread_getschedparam(pthread_self(), &policy, &sp);
+				
+				// If we're a regular SCHED_OTHER non-RT thread, then flipperThread will be
+				// RT scheduled with priority 0 + 2. Otherwise it will be RT scheduled with
+				// whatever our priority is + 2, so it can preempt us whenever this is needed:
+				if (policy == SCHED_OTHER) sp.sched_priority = 0;
+				
+				// Set final priority as RT with 2 levels above our priority:
+				PsychSetThreadPriority(&(flipRequest->flipperThread), 10, sp.sched_priority + 2);
+			#endif
 			
 			//printf("ENTERING THREADCREATEFINISHED MUTEX\n"); fflush(NULL);
 			
@@ -1922,6 +1966,9 @@ psych_bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
 		// Decrement the asyncFlipOpsActive count:
 		asyncFlipOpsActive--;
 
+		// Call hookchain with callbacks to be performed after successfull flip completion:
+		PsychPipelineExecuteHook(windowRecord, kPsychScreenFlipImpliedOperations, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
+
 		// Now we are in the same condition as after first time init. The thread is waiting for new work,
 		// we hold the lock so we can read out the flipRequest struct or fill it with a new request,
 		// and all information from the finalized flip is available in the struct.
@@ -1995,12 +2042,13 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	double time_at_swapcompletion=0;		// Timestamp taken after swap completion -- initially identical to time_at_vbl.
 	int line_pre_swaprequest = -1;			// Scanline of display immediately before swaprequest.
 	int line_post_swaprequest = -1;			// Scanline of display immediately after swaprequest.
-	int min_line_allowed = 20;				// The scanline up to which "out of VBL" swaps are accepted: A fudge factor for broken drivers...
+	int min_line_allowed = 50;				// The scanline up to which "out of VBL" swaps are accepted: A fudge factor for broken drivers...
 	psych_uint64 dwmPreOnsetVBLCount, preFlipFrameId; 
 	psych_uint64 dwmPostOnsetVBLCount, postFlipFrameId; 
 	double dwmPreOnsetVBLTime, dwmOnsetVBLTime;
 	double dwmCompositionRate = 0;
 	int	   dwmrc;
+	unsigned int gpuTimeElapsed;			// Elapsed GPU render time in Nanoseconds.
 	psych_bool flipcondition_satisfied;	
     int vbltimestampmode = PsychPrefStateGet_VBLTimestampingMode();
     PsychWindowRecordType **windowRecordArray=NULL;
@@ -2113,6 +2161,10 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         glDrawPixels(1,1,GL_RED,GL_UNSIGNED_BYTE, &id);
     }
  
+	// End time measurement for any previously submitted rendering commands if a
+	// GPU rendertime query was requested (See Screen('GetWindowInfo', ..); for infoType 5.
+	if (windowRecord->gpuRenderTimeQuery) glEndQuery(GL_TIME_ELAPSED_EXT);
+
     // Pausing until a specific deadline requested?
     if (flipwhen>0) {
         // We shall not swap at next VSYNC, but at the VSYNC immediately following the
@@ -2236,6 +2288,10 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 		}
 	#endif
     
+	// Execute the hookchain for non-OpenGL operations that need to happen immediately before the bufferswap, e.g.,
+	// sending out control signals or commands to external hardware to somehow sync it up to imminent bufferswaps:
+	PsychPipelineExecuteHook(windowRecord, kPsychPreSwapbuffersOperations, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
+	
 	// Take a measurement of the beamposition at time of swap request:
 	line_pre_swaprequest = (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber);
 
@@ -2246,18 +2302,30 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	// should pass between consecutive bufferswaps. 2 msecs is chosen because the VBL period of most displays
 	// at most settings does not last longer than 2 msecs (usually way less than 1 msec), and this would still allow
 	// for an update rate of 500 Hz -- more than any current display can do.
-	if ((windowRecord->time_at_last_vbl > 0) && (vbl_synclevel!=2) && (time_at_swaprequest - windowRecord->time_at_last_vbl < 0.002)) {
+	// We also don't allow swap submission in the top area of the video scanout cycle between scanline 1 and
+	// scanline min_line_allowed: Some broken drivers would still execute a swap within this forbidden top area
+	// of the video display although video scanout has already started - resulting in tearing!
+	if ((windowRecord->time_at_last_vbl > 0) && (vbl_synclevel!=2) &&
+		((time_at_swaprequest - windowRecord->time_at_last_vbl < 0.002) || ((line_pre_swaprequest < min_line_allowed) && (line_pre_swaprequest > 0)))) {
 		// Less than 2 msecs passed since last bufferswap, although swap in sync with retrace requested.
 		// Some drivers seem to have a bug where a bufferswap happens anywhere in the VBL period, even
 		// if already a swap happened in a VBL --> Multiple swaps per refresh cycle if this routine is
 		// called fast enough, ie. multiple times during one single VBL period. Not good!
 		// An example is the ATI Mobility Radeon X1600 in 2nd generation MacBookPro's under OS/X 10.4.10
 		// and 10.4.11 -- probably most cards operated by the same driver have the same problem...
-		if (verbosity > 9) printf("PTB-DEBUG: Swaprequest too close to last swap vbl (%f secs). Delaying...\n", time_at_swaprequest - windowRecord->time_at_last_vbl);
+		if (verbosity > 9) printf("PTB-DEBUG: Swaprequest too close to last swap vbl (%f secs) or between forbidden scanline 1 and %i. Delaying...\n", time_at_swaprequest - windowRecord->time_at_last_vbl, min_line_allowed);
 
 		// We try to enforce correct behaviour by waiting until at least 2 msecs have elapsed before the next
 		// bufferswap:
 		PsychWaitUntilSeconds(windowRecord->time_at_last_vbl + 0.002);
+
+		// We also wait until beam leaves the forbidden area between scanline 1 and min_line_allowed, where
+		// some broken drivers allow a swap to happen although the beam is already scanning out active
+		// parts of the display:
+		do {
+			// Query beampos again:
+			line_pre_swaprequest = (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber);
+		} while ((line_pre_swaprequest < min_line_allowed) && (line_pre_swaprequest > 0));
 
 		// Take a measurement of the beamposition at time of swap request:
 		line_pre_swaprequest = (int) PsychGetDisplayBeamPosition(displayID, windowRecord->screenNumber);
@@ -2336,6 +2404,10 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	// Take postswap request timestamp:
 	PsychGetAdjustedPrecisionTimerSeconds(&time_post_swaprequest);
 
+	// Store timestamp of swaprequest submission:
+	windowRecord->time_at_swaprequest = time_at_swaprequest;
+	windowRecord->time_post_swaprequest = time_post_swaprequest;
+	
     // Pause execution of application until start of VBL, if requested:
     if (sync_to_vbl) {
 		// Skip our classic sync-token-pixelwrite + glFinish() method etc. on a
@@ -2709,9 +2781,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 			// of VBL, get acknowledged and timestamped by us somewhere in the middle of VBL, but
 			// the postflip timestamping via IRQ may carry a timestamp at end of VBL.
 			// ==> Swap would have happened correctly within VBL and postflip timestamp would
-			// be valid, just the order would be unexpected. We set a slack of 2 msecs, because
+			// be valid, just the order would be unexpected. We set a slack of 2.5 msecs, because
 			// the duration of a VBL interval is usually no longer than that.
-			if (postflip_vbltimestamp - time_at_swapcompletion > 0.002) {
+			if (postflip_vbltimestamp - time_at_swapcompletion > 0.0025) {
 				// VBL irq queries broken! Disable them.
 				if (verbosity > 0) {
 					printf("PTB-ERROR: VBL kernel-level timestamp queries broken on your setup [Impossible order of events]!\n");
@@ -2755,6 +2827,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         windowRecord->time_at_last_vbl = 0;
 		windowRecord->rawtime_at_swapcompletion = 0;
     }
+
+	// Increment the "flips successfully completed" counter:
+	windowRecord->flipCount++;
 
     // The remaining code will run asynchronously on the GPU again and prepares the back-buffer
     // for drawing of next stim.
@@ -2822,6 +2897,19 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 		windowRecord->inTableSize = 0;
 		windowRecord->loadGammaTableOnNextFlip = 0;
 	 }
+
+	// Any GPU rendertime queries submitted whose results we shall collect?
+	if (windowRecord->gpuRenderTimeQuery) {
+		// Yes: Wait blocking on query object to return results:
+		glGetQueryObjectuiv(windowRecord->gpuRenderTimeQuery, GL_QUERY_RESULT, &gpuTimeElapsed);
+		
+		// Destory query object:
+		glDeleteQueries(1, &windowRecord->gpuRenderTimeQuery);
+		windowRecord->gpuRenderTimeQuery = 0;
+
+		// Convert result in Nanoseconds back to seconds, and assign it:
+		windowRecord->gpuRenderTime = (double) gpuTimeElapsed / (double) 1e9;
+	}
 
     // We take a second timestamp here to mark the end of the Flip-routine and return it to "userspace"
     PsychGetAdjustedPrecisionTimerSeconds(time_at_flipend);
@@ -4426,7 +4514,7 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	// so use at most 7 letters!
 	memset(&(windowRecord->gpuCoreId[0]), 0, 8);
 	
-	if (strstr(glGetString(GL_VENDOR), "ATI") || strstr(glGetString(GL_VENDOR), "AMD")) { ati = TRUE; sprintf(windowRecord->gpuCoreId, "R100"); }
+	if (strstr(glGetString(GL_VENDOR), "ATI") || strstr(glGetString(GL_VENDOR), "AMD") || strstr(glGetString(GL_RENDERER), "AMD")) { ati = TRUE; sprintf(windowRecord->gpuCoreId, "R100"); }
 	if (strstr(glGetString(GL_VENDOR), "NVIDIA")) { nvidia = TRUE; sprintf(windowRecord->gpuCoreId, "NV10"); }
 	
 	while (glGetError());
@@ -4444,8 +4532,8 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	
 	if (verbose) {
 		printf("PTB-DEBUG: Interrogating Low-level renderer capabilities for onscreen window with handle %i:\n", windowRecord->windowIndex);
-		printf("Indicator variables: FBO's %i, ATI_texture_float %i, ARB_texture_float %i, Vendor %s.\n",
-				glewIsSupported("GL_EXT_framebuffer_object"),glewIsSupported("GL_ATI_texture_float"), glewIsSupported("GL_ARB_texture_float"), glGetString(GL_VENDOR));
+		printf("Indicator variables: FBO's %i, ATI_texture_float %i, ARB_texture_float %i, Vendor %s, Renderer %s.\n",
+				glewIsSupported("GL_EXT_framebuffer_object"),glewIsSupported("GL_ATI_texture_float"), glewIsSupported("GL_ARB_texture_float"), glGetString(GL_VENDOR), glGetString(GL_RENDERER));
 		printf("Indicator variables: maxcolorattachments = %i, maxrectangletexturesize = %i, maxnativealuinstructions = %i.\n", maxcolattachments, maxtexsize, maxaluinst);
 	}
 	

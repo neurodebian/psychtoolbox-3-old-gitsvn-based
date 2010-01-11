@@ -1,4 +1,4 @@
-function BitsPlusIdentityClutTest(whichScreen)
+function BitsPlusIdentityClutTest(whichScreen, dpixx)
 % Test proper function of the T-Lock mechanism, proper loading of identity
 % gamma tables into the GPU, and for bad interference of dithering hardware
 % with the DVI stream. This test is meant for Mono++ mode of Bits+, it
@@ -15,7 +15,7 @@ function BitsPlusIdentityClutTest(whichScreen)
 %
 % Usage:
 %
-% BitsPlusIdentityClutTest([whichScreen=max]);
+% BitsPlusIdentityClutTest([whichScreen=max][usedpixx=0]);
 %
 % How to test:
 %
@@ -74,6 +74,10 @@ if nargin < 1 || isempty(whichScreen)
     whichScreen = max(Screen('Screens'));
 end
 
+if nargin < 2
+    dpixx = 0;
+end
+
 % Disable text anti-aliasing for this test:
 oldAntialias = Screen('Preference', 'TextAntiAliasing', 0);
 
@@ -90,14 +94,19 @@ try
     % from previously running scripts can bleed through:
     PsychImaging('AddTask', 'FinalFormatting', 'DisplayColorCorrection', 'ClampOnly');
 
-    % Use Mono++ mode with overlay:
-    PsychImaging('AddTask', 'General', 'EnableBits++Mono++OutputWithOverlay');
-
+    if dpixx
+        % Use Mono++ mode with overlay:
+        PsychImaging('AddTask', 'General', 'EnableDataPixxM16OutputWithOverlay');
+    else
+        % Use Mono++ mode with overlay:
+        PsychImaging('AddTask', 'General', 'EnableBits++Mono++OutputWithOverlay');
+    end
+    
     % Open the window, assign a gray background color with a 50% intensity gray:
     [win, screenRect] = PsychImaging('OpenWindow', whichScreen, 0.5);
 
     % Get handle to overlay:
-    overlaywin = BitsPlusPlus('GetOverlayWindow', win);
+    overlaywin = PsychImaging('GetOverlayWindow', win);
 
     HideCursor;
 
@@ -146,6 +155,7 @@ try
 
     [nx, ny] = DrawFormattedText(overlaywin, mytext, 'center', 30, 255);
 
+    [nx, ny] = DrawFormattedText(overlaywin, 'COLORFUL0\n', 'center', ny, 250);
     [nx, ny] = DrawFormattedText(overlaywin, 'COLORFUL1\n', 'center', ny, 251);
     [nx, ny] = DrawFormattedText(overlaywin, 'COLORFUL2\n', 'center', ny, 252);
     [nx, ny] = DrawFormattedText(overlaywin, 'COLORFUL3\n', 'center', ny, 253);
@@ -178,12 +188,12 @@ try
     ovllut(101:250, 1) = linspace(0,1,150)';
     ovllut(101:250, 2:3) = 0;
 
-    % Build random colors in slots 251:254:
-    ovllut(251:254,:) = rand(4,3);
+    % Build random colors in slots 251:255:
+    ovllut(251:255,:) = rand(5,3);
 
     % Last slot is blue:
-    ovllut(255, :) = [0 , 0, 1];
-
+    ovllut(256, :) = [0 , 0, 1];
+    
     angle = 0;
     lutidx = -1;
 
@@ -212,7 +222,7 @@ try
 
         % Colored text cycles every 30 frames:
         if mod(angle, 30) == 0
-            ovllut(251:254, :) = circshift(ovllut(251:254, :), 1);
+            ovllut(251:255, :) = circshift(ovllut(251:255, :), 1);
         end
 
         % Color in low slots gets re-randomized:

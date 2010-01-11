@@ -50,7 +50,9 @@ function [secs, keyCode, deltaSecs] = KbWait(deviceNumber, forWhat)
 % KbWait tests the first USB-HID keyboard device by default. Optionally
 % you can pass in a 'deviceNumber' to test a different keyboard if multiple
 % keyboards are connected to your machine.  If deviceNumber is -1, all
-% keyboard devices will be checked.  The device numbers to be checked are
+% keyboard devices will be checked.  If deviceNumber is -2, all keypad
+% devices (if any) will be checked. If deviceNumber is -3, all keyboard and
+% keypad devices will be checked. The device numbers to be checked are
 % determined only on the first call to the function.  If these numbers
 % change, the function can be reset using "clear KbWait".
 % _________________________________________________________________________
@@ -74,8 +76,13 @@ function [secs, keyCode, deltaSecs] = KbWait(deviceNumber, forWhat)
 % 3/03/08   mk   Added option 'forWhat' to optionally wait for key release
 %                or isolated keystrokes, and optional return argument 'keyCode'
 %                to return keyCode vector, just as KbCheck does.
-
-persistent kbs
+%
+% 12/27/09  mk   Remove all the redundant code for 'deviceNumber' specific
+%                behaviour. This is already covered by code in KbCheck!
+%                This also fixes a bug reported in forum message 10468
+%                where KbReleaseWait(-1) didn't wait for all keys on all
+%                keyboards to be released.
+% 12/18/09  rpw  Added documentation about keypad devices on OS/X.
 
 % Time (in seconds) to wait between "failed" checks, in order to not
 % overload the system in realtime mode. 5 msecs seems to be an ok value...
@@ -90,7 +97,7 @@ if nargin == 0
 end
 
 % Wait for keystroke?
-if (forWhat == 2) | (forWhat == 3)
+if (forWhat == 2) | (forWhat == 3) %#ok<OR2>
     % Wait for keystroke, ie., first make sure all keys are released, then
     % wait for a keypress:
     
@@ -111,43 +118,12 @@ if (forWhat == 2) | (forWhat == 3)
     end
 end
 
-if isempty(deviceNumber)
-    while(1)
-        [isDown, secs, keyCode, deltaSecs] = KbCheck;
-        if isDown == ~forWhat
-            return;
-        end
-        % Wait for yieldInterval to prevent system overload.
-        WaitSecs(yieldInterval);
+while(1)
+    [isDown, secs, keyCode, deltaSecs] = KbCheck(deviceNumber);
+    if isDown == ~forWhat
+        return;
     end
-else
-    if deviceNumber == -1 & IsOSX
-        if isempty(kbs) % only poll for keyboards on the first function call
-            devices=PsychHID('Devices');
-            kbs = find([devices(:).usageValue] == 6);
-            if isempty(kbs)
-                error('No keyboard devices were found.')
-            end
-        end
-        
-        while(1)
-            for i = kbs
-                [isDown, secs, keyCode, deltaSecs] = KbCheck(i);
-                if isDown == ~forWhat
-                    return;
-                end
-            end
-            % Wait for yieldInterval to prevent system overload.
-            WaitSecs(yieldInterval);
-        end
-    else
-        while(1)
-            [isDown, secs, keyCode, deltaSecs] = KbCheck(deviceNumber);
-            if isDown == ~forWhat
-                return;
-            end
-            % Wait for yieldInterval to prevent system overload.
-            WaitSecs(yieldInterval);
-        end
-    end
+
+    % Wait for yieldInterval to prevent system overload.
+    WaitSecs('YieldSecs', yieldInterval);
 end
