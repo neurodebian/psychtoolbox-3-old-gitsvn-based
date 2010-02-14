@@ -50,8 +50,19 @@ function varargout = PsychDataPixx(cmd, varargin)
 % connection, then the real physical connection to the device is closed and
 % the driver is reset.
 %
+% If you used PsychImaging() to make use of Datapixx graphics mode, it will
+% automatically close that connection once the corresponding onscreen
+% window is closed. As a simple rule, you only need to call the 'Close'
+% function if you also called the 'Open' function before.
+%
 % Call this command as last command in your script! All further
 % PsychDataPixx() commands will be invalid after a 'Close' call!
+%
+%
+% status = PsychDataPixx('GetStatus' [,newstatus]);
+% - Retrieve a struct 'status' with the complete driver internal state.
+% Optionally assign new state 'newstatus' to driver. Only assign a new
+% state if you *really* know what you're doing!
 %
 %
 % oldmode = PsychDataPixx('LogOnsetTimestamps', mode);
@@ -134,9 +145,17 @@ function varargout = PsychDataPixx(cmd, varargin)
 % - Clear the log with all currently acquired timestamps.
 %
 %
+% tgetsecs = PsychDataPixx('FastBoxsecsToGetsecs', t);
+% - Map given timestamp 't' in Datapixx clock time to Psychtoolbox GetSecs
+% time and return it in 'tgetsecs'. This mapping is only precise if you
+% call PsychDataPixx('GetPreciseTime'); frequently. For a more accurate
+% remapping use the following PsychDataPixx('BoxsecsToGetsecs', t);
+% instead, which is more time consuming to execute though.
+%
+%
 % [tgetsecs, sd, ratio] = PsychDataPixx('BoxsecsToGetsecs', t);
 % - Perform remapping of a vector of Datapixx timestamps 't', ie.,
-% timestamps expressed int Datapixx clock time, into Psychtoolbox GetSecs
+% timestamps expressed in Datapixx clock time, into Psychtoolbox GetSecs
 % timestamps 'tgetsecs'. Return measures of accuracy of remapping.
 %
 % This must be called while the device is still open! It performs the same
@@ -149,8 +168,7 @@ function varargout = PsychDataPixx(cmd, varargin)
 % timestamps in 't' to PTB timestamps in 'tgetsecs'. 'sd' is the standard
 % deviation of the best-fit function wrt. to fitting error. 'ratio' is an
 % estimate of the clock speed difference between the host clock and the
-% Datapixx clock. Ideally it would be 1.0, but in reality small deviations
-% can occur.
+% Datapixx clock.
 %
 %
 % PsychDataPixx('RequestPsyncedUpdate');
@@ -159,6 +177,33 @@ function varargout = PsychDataPixx(cmd, varargin)
 % Screen('AsyncFlipBegin'). This will emit the neccessary PSYNC pixel
 % sequence at next flip and tell the device to apply all pending settings
 % on reception of that PSYNC token.
+%
+%
+% count = PsychDataPixx('FlipCount');
+% - Return "serial number" of the last executed visual stimulus update via
+% one of the Screen "Flip" commands.
+%
+%
+% PsychDataPixx('ExecuteAtFlipCount', targetFlipCount, commandString);
+% - Request execution of 'commandString' via eval() function in sync with
+% the Screen('Flip') or Screen('AsyncFlipBegin') command which will
+% cause the stimulus onset with "serial number" 'targetFlipCount'. You can
+% ask for the current "serial number" by calling current = PsychDataPixx('FlipCount');
+% Providing an empty 'targetFlipCount' means to execute at next flip.
+%
+% Datapixx related commands in 'commandString' will be scheduled for
+% execution on the device at next visual stimulus onset by use of the psync
+% mechanism.
+% 
+% Not all commands are allowed inside 'commandString'! Any call to Screen()
+% or any OpenGL command is forbidden. Datapixx commands which could block
+% execution to wait for the Datapixx , e.g., Datapixx('RegWrRd') are
+% problematic, and the calls Datapixx('RegWrPixelSync') and
+% Datapixx('RegWrRdPixelSync') are strictly forbidden!
+%
+% This function is mostly used by other higher-level DataPixxToolbox
+% functions, e.g., for I/O (sound, digital or analog), in order to
+% synchronize their operation and schedules to visual stimulus updates.
 %
 %
 % PsychDataPixx('LoadIdentityClut', win);
@@ -172,6 +217,18 @@ function varargout = PsychDataPixx(cmd, varargin)
 % - Retrieve and optionally set a new level of 'verbosity' for driver debug
 % output. verbosity can be 0 for no output, 1 for only errors, 2 for
 % additionally warnings, 3 for additional info, 4 for very verbose output.
+%
+%
+% oldtimeout = PsychDataPixx('PsyncTimeoutFrames' [, timeoutFrames]);
+% -- Query and/or set timeout (in video refresh cycles) for recognition of
+% PSYNC codes by the device. By default, the timeout is set to the
+% equivalent of 5 minutes, which means: If the device is instructed to wait
+% for a PSYNC marker token in the video stream, but doesn't receive the
+% expected token within 5 minutes, it will continue processing as if the
+% token was received. This is used to prevent device-hangs on programming
+% errors or other malfunctions. The default setting of 5 minutes is very
+% generous. You can override this default and set an arbitrary timeout
+% between 1 and 65535 video refresh cycles with this function.
 %
 %
 %
@@ -237,23 +294,7 @@ function varargout = PsychDataPixx(cmd, varargin)
 %
 %
 
-% Open issues:
-%
-% * PSYNC mechanism needs a way to disable the timeout completely.
-%
-% * PSYNC needs a way to restrict PSYNC code detection to 1st scanline or
-%   subregion of framebuffer.
-%
-% * Use of callback in cmd == -1 is unsafe/impossible for async flips! Need
-%   to execute that code inside the Postflipoperations callback (0) on the
-%   main thread, so it always works. For that we need to be able to disable
-%   PSYNC timeouts completely though, which requires a firmware
-%   modification to the device.
-%
-% * Scanline which contains PSYNC code, or a programmable scanline(-range)
-%   should be blankable to black by the device, so the PSYNC pixelsequence
-%   doesn't show on the display --> Distracting and gives cues about
-%   experiment conditions!
+% Possible improvements:
 %
 % * More options for different subfunctions? More subfunctions for
 %   high-level stuff? Response box functionality should probably go into
@@ -262,7 +303,19 @@ function varargout = PsychDataPixx(cmd, varargin)
 
 % History:
 % 19.12.2009  mk  Written. First iteration.
-%
+% 20.01.2010  mk  Switch psync-command to preflip operations: Now done as
+%                 part of preflip ops, potentially long before the swap
+%                 deadline, not from the prebufferswap callback anymore.
+%                 This should improve timing precision of scheduled
+%                 stimulus onset and allows to use PSYNC mechanism also for
+%                 async-flips, because now it is thread-safe. We now make
+%                 use of the 16-bit timeout value for Psync and set it to a
+%                 default 5 minutes, but possible to override by usercode.
+%                 We also setup the device to only accept psync in the
+%                 first scanline of the display and to blank that scanline
+%                 to black.
+%                 --> No remaining limitations for use with PTB and no
+%                 visual artifacts from psync mechanism :-)
 
 %
 % Need GL constant for low-level OpenGL calls. Already initialized by
@@ -285,6 +338,7 @@ if isempty(dpx)
     dpx.logonsettimestamps = 0;
     dpx.timestampLogCount = 0;
     dpx.onsetTimestampLog = [];
+    dpx.timeout = [];
 
     % Allocate 2 hours worth of timestamps at 200 Hz flip rate:
     dpx.timestampLogPreallocSize = 2 * 3600 * 200;
@@ -314,36 +368,53 @@ if isempty(dpx)
     % Datapixx already open?
     if doDatapixx('IsReady')
         % Yup: Some external client holds an open connection. Artificially
-        % increase our refcount to prevent us from accidentally closing it
-        % down:
+        % increase our refcount to prevent us from accidentally closing
+        % that connection down when we close our connections:
         dpx.refcount = 1;
     end
-end
-
-if cmd == -1
-    % Fast callback from within Screen: Called immediately before
-    % bufferswap. No OpenGL calls or any kind of time consuming ops
-    % allowed! This must return as quickly as possible as any delay here will
-    % impair stimulus onset timing!!
-    if dpx.needpsync
-        % Emit psync - synced register writecommand:
-        doDatapixx('RegWrPixelSync', dpx.psync);
-
-        % Set "psync work to do" flag to "psync pending"
-        dpx.needpsync = 2;
-    end
-
-    return;
+    
+    % Init flip-schedule to empty, ie., one free slot. It will
+    % automatically grow if more than 1 slot is ever needed:
+    dpx.targetswapcounts = -1;
+    dpx.scheduledcommands = cell(1,1);
+    
+    % No windowhandle:
+    dpx.window = [];    
 end
 
 if cmd == 0
     % Fast callback from within Screen - This one is issued each time
     % before scheduling a doublebuffer-swap on the Datapixx display device.
-    % It has to perform any work scheduled for the next stimulus onset:
+    % Done as part of preflip operations on the main thread. There can be
+    % an arbitrarily long unknown delay between invocation of this callback
+    % and the actual bufferswap, but there will be no graphics related
+    % activity at all for the display between return from this callback and actual
+    % bufferswap -- the backbuffer is in its final state, ready for display
+    % at next bufferswap.
+    %
+    % The callback has to perform any work scheduled for the next stimulus
+    % onset that is related to the Datapixx:
 
     if isempty(GL)
         fprintf('PsychDataPixx: FATAL ERROR! OpenGL struct GL not initialized in Screen callback!! Driver bug?!?\n');
         return;
+    end
+
+    % Find all work-to-be-done items for target swapcount of next flip:
+    worklets = find(dpx.targetswapcounts == dpx.swapcount + 1);
+    if ~isempty(worklets)
+        % Iterate over all work items on the todo-list:
+        for workletidx = worklets
+            % Execute!
+            eval(dpx.scheduledcommands{workletidx});
+            
+            % Done. Free slot in schedule:
+            dpx.scheduledcommands{workletidx} = [];
+            dpx.targetswapcounts(workletidx) = -1;
+        end
+        
+        % Need PSYNC'ed submission of these commands to DataPixx:
+        dpx.needpsync = 1;
     end
     
     % We always unconditionally draw scanline 1 in all-black, so PSYNC may
@@ -365,6 +436,8 @@ if cmd == 0
         % Define psync code:
         dpx.psync = [ 255 0 0 ; 0 255 0 ; 0 0 255 ; 255 255 0 ; 255 0 255 ; 0 255 255 ; 255 255 255 ; 0 0 0 ]'; 
 
+        % Make code unique for this frame, so no two consecutive psync
+        % updates ever have the same psync token:
         % bitand(bitshift(x, -0), 255)
         dpx.psync(2, 8) = mod(dpx.swapcount + 1, 256);
         
@@ -372,18 +445,16 @@ if cmd == 0
         glRasterPos2i(10, 1);
         glDrawPixels(size(dpx.psync, 2), 1, GL.RGB, GL.UNSIGNED_BYTE, uint8(dpx.psync));
 
-        if 0
-            % Emit psync - synced register writecommand:
-            doDatapixx('RegWrPixelSync', dpx.psync);
+        % Following is asyncflip-safe, as opposed to the old implementation
+        % which would only work for syncflips:
 
-            % Set "psync work to do" flag to "psync pending"
-            dpx.needpsync = 2;
-        else
-            % Emit actual psync command later in PsychDataPixx(-1)
-            % fastcall. Need to set dpx.needpsync flag in case it isn't set
-            % already:
-            dpx.needpsync = 1;
-        end
+        % Emit psync - synced register writecommand:
+        % Set device timeout for PSYNC detection to dpx.timeout video
+        % refresh cycles:
+        doDatapixx('RegWrPixelSync', dpx.psync, dpx.timeout);
+
+        % Set "psync work to do" flag to "psync pending"
+        dpx.needpsync = 2;
     end
     
     % Return control to Screen():
@@ -392,12 +463,15 @@ end
 
 if cmd == 1
     % Fast callback from within Screen's imaging pipeline for setting a new
-    % clut in device at next doublebufferswap:
+    % hardware clut in device at next doublebufferswap:
     
+    % Upload clut to device:
     doDatapixx('SetVideoClut', varargin{1});
+    
+    % Request PSYNC'ed application at next stimulus onset:
     dpx.needpsync = 1;
 
-    if 0
+    if dpx.verbosity > 5
         fprintf('CLUT UPDATE!\n\n');
         disp(varargin{1});
         fprintf('------------\n\n');
@@ -408,20 +482,26 @@ if cmd == 1
 end
 
 if cmd == 2
-    % Fast callback from within Screen's imaging pipeline immediately after
-    % successfull completion of a bufferswap:
+    % Fast callback from within Screen's imaging pipeline some arbitrary
+    % time after successfull completion of a bufferswap, but certainly
+    % before any other graphics related activity for the onscreen window
+    % will happen. This is called at end of execution of Screen('Flip') or
+    % Screen('Asyncflipend') or successfull completion of
+    % Screen('Asyncflipcheckend'):
 
     % Reset "psync work to do" flag to "none":
     dpx.needpsync = 0;
 
-    % Increment swapcompleted count:
+    % Increment swap-completed count:
     % Could do this to query for true flip count: dpx.swapcount = varargin{1}
     % But this is better for now, as the above doesn't start with value 1
     % at our first invocation, but is already at around 7 due to prior
     % flips of setup code - Avoid the hassle, keep it simple:
     dpx.swapcount = dpx.swapcount + 1;
     
+    % Were there any onset timestamps requested for the finished swap?
     if dpx.needonsettimestamp
+        % Yes. Get'em from device:
         doDatapixx('RegWrRd');
         dpx.lasttOnset = doDatapixx('GetMarker');
         dpx.lastLoggedOnsetFramecount = dpx.swapcount;
@@ -445,13 +525,21 @@ if cmd == 2
 end
 
 if cmd == 3
-    % Callback from within Screen at window close time:
+    % Callback from within Screen at window close time as part of
+    % Screen('Close', window), Screen('CloseAll') or auto-close on error or
+    % Screen shutdown. Called with the OpenGL subsystem already offline:
+    
+    % Just call the 'ResetOnWindowClose' routine for now:
     cmd = 'ResetOnWindowClose';
 end
 
 if strcmpi(cmd, 'ResetOnWindowClose')
-    fprintf('PsychDataPixx: Closing device connection for this onscreen window...\n');
-
+    % Shutdown and cleanup operations when the onscreen window is closed
+    % that displays on the Datapixx:
+    if dpx.verbosity > 3
+        fprintf('PsychDataPixx: Closing device connection for this onscreen window...\n');
+    end
+    
     % Immediately load a standard identity CLUT into the device:
     linear_lut =  repmat(linspace(0, 1, 256)', 1, 3);
     doDatapixx('SetVideoClut', linear_lut);
@@ -463,9 +551,15 @@ if strcmpi(cmd, 'ResetOnWindowClose')
     doDatapixx('SetVideoHorizontalSplit', 2);
     doDatapixx('SetVideoVerticalStereo', 2);
     
+    % Disable Pixelsyncline:
+    doDatapixx('SetVideoPixelSyncLine', 0, 0, 0);
+    
     % Apply all changes immediately:
     doDatapixx('RegWrRd');
 
+    % Delete windowhandle:
+    dpx.window = [];
+    
     % Perform standard close op if needed:
     cmd = 'Close';
 end
@@ -477,6 +571,18 @@ if strcmpi(cmd, 'Verbosity')
     if nargin >= 2 && ~isempty(varargin{1})
         % Assign new verbosity:
         dpx.verbosity = varargin{1}; %#ok<NASGU>
+    end
+    
+    return;
+end
+
+if strcmpi(cmd, 'PsyncTimeoutFrames')
+    % Return old timeout in frames:
+    varargout{1} = dpx.timeout;
+    
+    if nargin >= 2 && ~isempty(varargin{1})
+        % Assign new verbosity:
+        dpx.timeout = varargin{1}; %#ok<NASGU>
     end
     
     return;
@@ -536,7 +642,22 @@ if strcmpi(cmd, 'GetPreciseTime')
     % Perform a clocksync between host and device, return triplet of
     % hosttime, corresponding DataPixx device clock time and a confidence
     % interval for the accuracy of clock sync. Return all three:
-    varargout{1} = syncClocks;
+    res = syncClocks;
+    varargout{1} = res(1);
+    varargout{2} = res(2);
+    varargout{3} = res(3);
+    return;
+end
+
+if strcmpi(cmd, 'GetStatus')
+    % Return copy of internal driver status structure:
+    varargout{1} = dpx;
+    
+    % Optionally assign driver status from external input argument:
+    if nargin > 1 && ~isempty(varargin{1})
+        dpx = varargin{1};
+    end
+    
     return;
 end
 
@@ -563,6 +684,16 @@ if strcmpi(cmd, 'GetTimestampLog')
     
     % Get a copy of the current timestamp log of flip onset timestamps:
     varargout{1} = dpx.onsetTimestampLog(:, 1:dpx.timestampLogCount);
+    return;
+end
+
+if strcmpi(cmd, 'FastBoxsecsToGetsecs')
+    if nargin < 2 || isempty(varargin{1})
+        error('PsychDataPixx: FastBoxsecsToGetsecs: Vector with timestamps to remap missing!');
+    end
+
+    % Return result of fast remapping, based on last syncClocks run:
+    varargout{1} = box2GetSecsTime(varargin{1});
     return;
 end
 
@@ -615,6 +746,54 @@ if strcmpi(cmd, 'RequestPsyncedUpdate')
     return;
 end
 
+if strcmpi(cmd, 'IsBusy')
+    varargout{1} = dpx.needpsync > 1;
+    return;
+end
+
+if strcmpi(cmd, 'FlipCount')
+    varargout{1} = dpx.swapcount;
+    return;
+end
+
+if strcmpi(cmd, 'WindowHandle')
+    varargout{1} = dpx.window;
+    return;
+end
+
+if strcmpi(cmd, 'ExecuteAtFlipCount')
+    if nargin < 2
+        error('PsychDataPixx: ExecuteAtFlip: TargetFlipcount argument missing!');
+    end
+    
+    % Assign swapcount of next flip if no target swapcount given, or
+    % referring to the past:
+    if isempty(varargin{1}) || (varargin{1} <= dpx.swapcount)
+        tcount = dpx.swapcount + 1;
+    else
+        tcount = varargin{1};
+    end
+    
+    if nargin < 3 || isempty(varargin{2})
+        error('PsychDataPixx: ExecuteAtFlip: CommandString argument missing!');        
+    end
+    
+    % Try to find free slot in schedule, otherwise define a new one, ie.,
+    % grow schedule to accomodate additional need:
+    freeslot = min(find(dpx.targetswapcounts == -1)); %#ok<MXFND>
+    if isempty(freeslot)
+        freeslot = length(dpx.targetswapcounts) + 1;
+    end
+    
+    % Add 'tcount' as target swapcount for execution of given command:
+    dpx.targetswapcounts(freeslot) = tcount;
+    
+    % Add given command at corresponding slot of schedule:
+    dpx.scheduledcommands{freeslot} = varargin{2};
+    
+    return;
+end
+
 if strcmpi(cmd, 'LoadIdentityClut')
     % Load an identity CLUT into DataPixx at next Screen('Flip'). This is
     % just a little convenience wrapper around 'LoadNormalizedGammaTable':
@@ -629,7 +808,7 @@ end
 
 if strcmpi(cmd, 'Close')
     % Close of device connection requested.
-    
+        
     % Drop refcount:
     dpx.refcount = dpx.refcount - 1;
     
@@ -703,17 +882,38 @@ if strcmpi(cmd, 'SetVideoVerticalStereo')
 end
 
 if strcmpi(cmd, 'PerformPostWindowOpenSetup')
-    % This is called from within PsychImagings PostConfiguration
+    % This is called from within PsychImaging()'s PostConfiguration
     % subroutine. It performs all remaining setup work to be done after the
     % onscreen window is open and the imaging pipeline mostly setup:
     
     % Retrieve window handle to onscreen window:
     win = varargin{1};
 
+    if ~isempty(dpx.window)
+        error('PsychDataPixx: Tried to open 2nd onscreen window on device while onscreen window already open. There can be only one onscreen window open on the DataPixx display device!');
+    end
+    
+    % Store windowhandle of our window for future use:
+    dpx.window = win;
+    
     % Load the graphics hardwares gamma table with an identity mapping,
     % so it doesn't interfere with PSYNC code recognition:
     LoadIdentityClut(win);
 
+    % Setup reasonable default PSYNC timeout:
+    if isempty(dpx.timeout)
+        % Query framerate and calculate a timeout for the device of 5 minutes
+        % by default:
+        dpx.timeout = Screen('Framerate', win);
+        if dpx.timeout == 0
+            % OS returns unknown framerate: This means 60 Hz...
+            dpx.timeout = 60 * 60 * 5;
+        else
+            % dpx.timeout fps * 60 secs/minute * 5 minutes:
+            dpx.timeout = dpx.timeout * 60 * 5;
+        end
+    end
+    
     % Retrieve window status:
     winfo = Screen('GetWindowInfo', win);
     
@@ -727,15 +927,18 @@ if strcmpi(cmd, 'PerformPostWindowOpenSetup')
     % mechanism:
     dpx.blackline = uint8(zeros(3, dpixstatus.horizontalResolution));    
 
+    % Tell Datapixx to only accept PSYNC codes in the first scanline (line 0)
+    % of the display, and to unconditionally blank that scanline to
+    % black, so we avoid distraction visual cues from the PSYNC pixels:
+    doDatapixx('SetVideoPixelSyncLine', 0, 1, 1);
+    doDatapixx('RegWrRd');
+    
     % Attach a callback into the datapixx driver at the end of the
     % left finalizer blit chain to trigger pending preflip operations for
     % DataPixx device:
     Screen('Hookfunction', win, 'AppendMFunction', 'LeftFinalizerBlitChain', 'Final preflip callback into PsychDataPixx driver.', 'PsychDataPixx(0);');
     Screen('HookFunction', win, 'Enable', 'LeftFinalizerBlitChain');
 
-    Screen('Hookfunction', win, 'AppendMFunction', 'PreSwapbuffersOperations', 'Callback into PsychDataPixx driver immediately before bufferswap.', 'PsychDataPixx(-1);');
-    Screen('HookFunction', win, 'Enable', 'PreSwapbuffersOperations');
-    
     % Attach a postflip callback for things like timestamp and status
     % collection from the device after flip completion:
     % Screen('Hookfunction', win, 'AppendMFunction', 'ScreenFlipImpliedOperations', 'Postflip callback into PsychDataPixx driver.', 'evalin(''base'', ''PsychDataPixx(2, IMAGINGPIPE_FLIPCOUNT);'');');
