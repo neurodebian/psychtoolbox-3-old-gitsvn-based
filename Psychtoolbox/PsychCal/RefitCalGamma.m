@@ -12,6 +12,8 @@
 %                   was not well fit by the traditional gamma model.  The work is done in
 %                   function CalibrateFitGamma.  See comments there.
 % 11/20/09 dhb      More terms in crtSumPow.
+% 3/07/10  dhb      Call CalibrateFitLinMod as well.
+% 3/08/10  dhb      Update list of fit type options.
 
 % Enter load code
 defaultFileName = 'monitor';
@@ -39,8 +41,9 @@ fprintf('Old gamma fit type was: %s\n',cal.describe.gamma.fitType);
 oldType = cal.describe.gamma.fitType;
 fprintf('Possible fit types are defined by routine CalibrateFitGamma\n');
 fprintf('See "help CalibrateFitGamma for most up to date options\n');
-fprintf('Current (September 25, 2008) options are:\n');
+fprintf('Current (March 08, 2010) options are:\n');
 fprintf('\tsimplePower\n');
+fprintf('\tcrtLinear\n');
 fprintf('\tcrtPolyLinear\n');
 fprintf('\tcrtGamma\n');
 fprintf('\tcrtSumPow\n');
@@ -68,6 +71,7 @@ if (cal.describe.dacsize ~= oldDacsize)
 end
 
 % Now refit
+cal = CalibrateFitLinMod(cal);
 cal = CalibrateFitGamma(cal,2^cal.describe.dacsize);
 
 % And some plots

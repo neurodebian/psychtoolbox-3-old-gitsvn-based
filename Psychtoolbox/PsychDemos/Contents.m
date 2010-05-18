@@ -12,6 +12,7 @@
 %    ArcDemo                 - Demonstrate the 'FrameArc', 'FillArc' functions.
 %    AudioTunnel3DDemo       - Very sketchy demo on how to use OpenAL for 3D spatialized sound.
 %    AudioTunnel3DDemo       - Another sketchy demo on how to use OpenAL for 3D spatialized sound.
+%    BasicAMAndMixScheduleDemo - Demonstrates basic use of sound schedules, volume controls, amplitude modulation and audio mixing of multiple voices.
 %    BasicSoundFeedbackDemo  - Demonstrates a audio feedback loop via PsychPortAudio(). See DelayedSoundFeedbackDemo for a more research grade approach.
 %    BasicSoundInputDemo     - Demonstrate basic usage of PsychPortAudio() for sound capture.
 %    BasicSoundOutputDemo    - Demonstrate basic usage of PsychPortAudio() for sound playback.
@@ -74,6 +75,7 @@
 %    PsychRTBoxDemo          - Demonstrates basic use of the RTBox reaction time button response box.
 %    QuicktimeDemos          - Subfolder: Demos on how to use Quicktime movie playback.
 %    RenderDemo              - Render CIE xyY as a color patch.
+%    SadowskiDemo            - Shows the "Sadowski" color afterimage effect.
 %    SimpleVoiceTriggerDemo  - Demo of a simple voice trigger with PsychPortAudio.
 %    SpriteDemo              - Animates an image that follows the mouse.
 %    StereoDemo              - Drive stereo-displays e.g., CrystalEyes.

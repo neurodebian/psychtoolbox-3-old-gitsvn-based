@@ -143,21 +143,21 @@ static char useString[] = "info = Screen('GetWindowInfo', windowPtr [, infoType=
 static char synopsisString[] = 
 	"Returns a struct with miscellaneous info for the specified onscreen window."
 	"\"windowPtr\" is the handle of the onscreen window for which info should be returned. "
-	"\"infoType\" If left out or set to zero, all available information for the 'windowPtr' is returned. "
-	"If set to 1, only the rasterbeam position is returned (or -1 if unsupported).\n"
-	"If set to 2, information about the window server is returned (or -1 if unsupported).\n"
+	"\"infoType\" If left out or set to zero, all available information for the 'windowPtr' is returned. \n\n"
+	"If set to 1, only the rasterbeam position is returned (or -1 if unsupported).\n\n"
+	"If set to 2, information about the window server is returned (or -1 if unsupported).\n\n"
 	"If set to 3, low-level window server settings are changed according to 'auxArg1'. Do *not* use, "
-	"unless you really know what you're doing and have read the relevant PTB source code!\n"
-    "If set to 4, returns a single value with the current activity status of asynchronous flips.\n"
+	"unless you really know what you're doing and have read the relevant PTB source code!\n\n"
+    "If set to 4, returns a single value with the current activity status of asynchronous flips. "
+	"1 if a Screen('AsyncFlipBegin') was called and the flip is still active, ie., hasn't "
+	"been finished with a matching Screen('AsyncFlipEnd') or Screen('AsyncFlipCheckEnd');, 0 otherwise."
+    "You can call this function with an infoType of zero only if no async flips are active. This is why "
+    "you need to use the special infoType 4 to find out if async flips are active.\n\n"
 	"If set to 5, will start measurement of GPU time for render operations. The clock will start "
 	"on the next drawing command after this call. The clock will stop at next bufferswap with call "
 	"to Screen('Flip', ..); After the flip, the elapsed rendertime will be returned in the 'GPULastFrameRenderTime' "
 	"field of the struct that you get when calling with infoType=0. Not all GPU's support this function. If the "
-	"function is unsupported, a value of zero will be returned in the info struct.\n"
-	"1 if a Screen('AsyncFlipBegin') was called and the flip is still active, ie., hasn't "
-	"been finished with a matching Screen('AsyncFlipEnd') or Screen('AsyncFlipCheckEnd');, 0 otherwise."
-    "You can call this function with an infoType of zero only if no async flips are active. This is why "
-    "you need to use the special infoType 4 to find out if async flips are active.\n"
+	"function is unsupported, a value of zero will be returned in the info struct.\n\n"
 	"The info struct contains all kinds of information. Just check its output to see what "
 	"is returned. Most of this info is not interesting for normal users, mostly provided "
 	"for internal use by M-Files belonging to Psychtoolbox itself, e.g., display tests.\n\n"
@@ -167,6 +167,8 @@ static char synopsisString[] =
 	"LastVBLTimeOfFlip: VBL timestamp of last finished Screen('Flip') operation.\n"
 	"TimeAtSwapRequest: Timestamp taken prior to submission of the low-level swap command. Useful for micro-benchmarking.\n"
 	"TimePostSwapRequest: Timestamp taken after submission of the low-level swap command. Useful for micro-benchmarking.\n"
+	"VBLTimePostFlip: Optional flip completion timestamp from VBLANK timestamping. Useful for micro-benchmarking.\n"
+	"OSSwapTimestamp: Optional flip completion timestamp from OS-Builtin timestamping. Useful for micro-benchmarking.\n"
 	"GPULastFrameRenderTime: Duration of all rendering operations in the last frame, as measured by GPU, if infoType 5 was used.\n"
 	"RawSwapTimeOfFlip: Raw (uncorrected by high-precision timestamping) timestamp of last finished Screen('Flip') operation.\n"
 	"LastVBLTime: System time when last vertical blank happened, or the same as "
@@ -183,6 +185,8 @@ static char synopsisString[] =
 	"FlipCount: Total number of flip command executions, ie., of stimulus updates.\n"
 	"GuesstimatedMemoryUsageMB: Estimated memory usage of window or texture in Megabytes. Can be very inaccurate or unavailable!\n"
 	"VBLStartLine, VBLEndline: Start/Endline of vertical blanking interval. The VBLEndline value is not available/valid on all GPU's.\n"
+	"SwapGroup: Swap group id of the swap group to which this window is assigned. Zero for none.\n"
+	"SwapBarrier: Swap barrier id of the swap barrier to which this windows swap group is assigned. Zero for none.\n"
 	"\n"
 	"The following settings are derived from a builtin detection heuristic, which works on most common GPU's:\n\n"
 	"GPUCoreId: Symbolic name string that roughly describes the name of the GPU core of the graphics card. This string is arbitrarily\n"
@@ -205,12 +209,12 @@ static char seeAlsoString[] = "OpenWindow, Flip, NominalFrameRate";
 PsychError SCREENGetWindowInfo(void) 
 {
     const char *FieldNames[]={ "Beamposition", "LastVBLTimeOfFlip", "LastVBLTime", "VBLCount", "TimeAtSwapRequest", "TimePostSwapRequest", "RawSwapTimeOfFlip",
-							   "GPULastFrameRenderTime", "StereoMode", "ImagingMode", "MultiSampling", "MissedDeadlines", "FlipCount", "StereoDrawBuffer",
+							   "VBLTimePostFlip", "OSSwapTimestamp", "GPULastFrameRenderTime", "StereoMode", "ImagingMode", "MultiSampling", "MissedDeadlines", "FlipCount", "StereoDrawBuffer",
 							   "GuesstimatedMemoryUsageMB", "VBLStartline", "VBLEndline", "VideoRefreshFromBeamposition", "GLVendor", "GLRenderer", "GLVersion", "GPUCoreId", 
 							   "GLSupportsFBOUpToBpc", "GLSupportsBlendingUpToBpc", "GLSupportsTexturesUpToBpc", "GLSupportsFilteringUpToBpc", "GLSupportsPrecisionColors",
-							   "GLSupportsFP32Shading", "BitsPerColorComponent", "IsFullscreen", "SpecialFlags" };
+							   "GLSupportsFP32Shading", "BitsPerColorComponent", "IsFullscreen", "SpecialFlags", "SwapGroup", "SwapBarrier" };
 							   
-	const int  fieldCount = 31;
+	const int  fieldCount = 35;
 	PsychGenericScriptType	*s;
 
     PsychWindowRecordType *windowRecord;
@@ -374,6 +378,15 @@ PsychError SCREENGetWindowInfo(void)
 		PsychSetStructArrayDoubleElement("Beamposition", 0, beamposition, s);
 
 		// Time of last vertical blank when a double-buffer swap occured:
+		if ((windowRecord->flipCount > 0) && (windowRecord->time_at_last_vbl == 0) && (PsychPrefStateGet_VBLTimestampingMode() == 4)) {
+			// If time_at_last_vbl for an already finished or at least pending flip isn't available and
+			// we have support for OS-Builtin timestamping enabled, we try to employ OS-Builtin timestamping
+			// to get a timestamp for the most recent pending or finished flip. If this fails or is unsupported,
+			// it will have no effect:
+			PsychOSGetSwapCompletionTimestamp(windowRecord, 0, &(windowRecord->time_at_last_vbl));
+		}
+
+		// Return it - or the value zero if it is (still) undefined/unavailable:
 		PsychSetStructArrayDoubleElement("LastVBLTimeOfFlip", 0, windowRecord->time_at_last_vbl, s);
 
 		// Uncorrected timestamp of flip swap completion:
@@ -384,6 +397,12 @@ PsychError SCREENGetWindowInfo(void)
 
 		// Timestamp immediately after call to PsychOSFlipWindowBuffers() returns, i.e., time at swap request submission completion:
 		PsychSetStructArrayDoubleElement("TimePostSwapRequest", 0, windowRecord->time_post_swaprequest, s);
+
+		// Timestamp immediately after call to PsychOSFlipWindowBuffers() returns, i.e., time at swap request submission completion:
+		PsychSetStructArrayDoubleElement("VBLTimePostFlip", 0, windowRecord->postflip_vbltimestamp, s);
+
+		// Timestamp immediately after call to PsychOSFlipWindowBuffers() returns, i.e., time at swap request submission completion:
+		PsychSetStructArrayDoubleElement("OSSwapTimestamp", 0, windowRecord->osbuiltin_swaptime, s);
 
 		// Result from last GPU rendertime query as triggered by infoType 5: Zero if undefined.
 		PsychSetStructArrayDoubleElement("GPULastFrameRenderTime", 0, windowRecord->gpuRenderTime, s);
@@ -427,6 +446,10 @@ PsychError SCREENGetWindowInfo(void)
 		// Video refresh interval duration from beamposition method:
 		PsychSetStructArrayDoubleElement("VideoRefreshFromBeamposition", 0, windowRecord->ifi_beamestimate, s);
     
+		// Swap group assignment and swap barrier assignment, if any:
+		PsychSetStructArrayDoubleElement("SwapGroup", 0, windowRecord->swapGroup, s);
+		PsychSetStructArrayDoubleElement("SwapBarrier", 0, windowRecord->swapBarrier, s);
+	
         // Which basic GPU architecture is this?
 		PsychSetStructArrayStringElement("GPUCoreId", 0, windowRecord->gpuCoreId, s);
 		

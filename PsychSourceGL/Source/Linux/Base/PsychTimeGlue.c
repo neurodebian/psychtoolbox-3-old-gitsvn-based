@@ -14,7 +14,7 @@
   	HISTORY:
 
   	2/20/06       mk		Wrote it. Derived from Windows version.  
-	1/03/09		  mk		Add generic Mutex locking support as service to ptb modules. Add PsychYieldIntervalSeconds().
+1/03/09		  mk		Add generic Mutex locking support as service to ptb modules. Add PsychYieldIntervalSeconds().
 
   	DESCRIPTION:
 	
@@ -227,6 +227,59 @@ void PsychGetPrecisionTimerTicksMinimumDelta(psych_uint32 *delta)
   // in our implementation.
   clock_getres(CLOCK_REALTIME, &res);
   *delta = (psych_uint32) ((((double) res.tv_sec) + ((double) res.tv_nsec / 1e9)) * 1e6);
+}
+
+/* PsychOSGetLinuxMonotonicTime() -- Linux only.
+ *
+ * Return CLOCK_MONOTONIC time (usually system uptime) in seconds.
+ * Return zero on failure.
+ *
+ * Some subsystems return time not in gettimeofday() time aka CLOCK_REALTIME time,
+ * but in CLOCK_MONOTONIC time. In such cases we need to query this time to compute
+ * proper offsets for remapping into the gettimeofday() timebase which is used
+ * everywhere in PTB.
+ *
+ * An example is ALSA audio support in PsychPortAudio: ALSA drivers are free to
+ * return their audio timestamps in CLOCK_REALTIME time or CLOCK_MONOTONIC time,
+ * so we need to dynamically check, adapt and remap if neccessary.
+ *
+ */ 
+double PsychOSGetLinuxMonotonicTime(void)
+{
+	struct timespec ts;
+	if (0!= clock_gettime(CLOCK_MONOTONIC, &ts)) return(0.0);
+	return((double) ts.tv_sec + ((double) ts.tv_nsec / (double) 1e9));
+}
+
+/* PsychOSMonotonicToRefTime(t)
+ *
+ * Map given input time value monotonicTime to PTB reference time if
+ * neccessary, pass-through otherwise.
+ *
+ * Can conditionally convert from CLOCK_MONOTONIC time to reftime, e.g.,
+ * to CLOCK_REALTIME aka gettimeofday().
+ *
+ */
+double PsychOSMonotonicToRefTime(double monotonicTime)
+{
+	double now, tMonotonic;
+	// Get current reftime:
+	PsychGetAdjustedPrecisionTimerSeconds(&now);
+	// Get current CLOCK_MONOTONIC time:
+	tMonotonic = PsychOSGetLinuxMonotonicTime();
+	// Given input monotonicTime time value closer to tMonotonic than to GetSecs time?
+	if (fabs(monotonicTime - tMonotonic) < fabs(monotonicTime - now)) {
+		// Timestamps are in monotonic time! Need to remap.
+		// tMonotonic shall be the offset between GetSecs and monotonic time,
+		// i.e., the offset that needs to be added to monotonic timestamps to
+		// remap them to GetSecs time:
+		tMonotonic = now - tMonotonic;
+		
+		// Correct timestamp by adding corrective offset:
+		monotonicTime += tMonotonic;
+	}
+
+	return(monotonicTime);
 }
 
 void PsychGetPrecisionTimerSeconds(double *secs)

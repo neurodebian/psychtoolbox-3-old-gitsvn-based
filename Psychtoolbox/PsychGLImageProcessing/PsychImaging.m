@@ -684,6 +684,8 @@ function [rc, winRect] = PsychImaging(cmd, varargin)
 %             Also support a new 'General' task 'UseDataPixx'. (MK)
 % 04.03.2010  Bugfixes and workarounds to 'ColorCorrection' setup code. (MK)
 %
+% 26.04.2010  Disable workarounds from 04.03.2010, as Screen() is fixed now. (MK)
+%
 
 persistent configphase_active;
 persistent reqs;
@@ -1412,8 +1414,8 @@ end
 
 % Custom color correction for display wanted?
 if ~isempty(find(mystrcmp(reqs, 'DisplayColorCorrection')))
-    % Yes. Need full pipeline in any case, ie fast backing store:
-    imagingMode = mor(imagingMode, kPsychNeedFastBackingStore);
+    % Yes. Need full pipeline in any case, ie fast backing store and output conversion:
+    imagingMode = mor(imagingMode, kPsychNeedFastBackingStore, kPsychNeedOutputConversion);
 end
 
 % Replication of left half of window into right half needed?
@@ -2152,10 +2154,10 @@ if ~isempty(floc)
             if ~icmformatting_downstream
                 % Ok, shader is our final color correction shader, properly
                 % setup. Attach it to proper chain:
-                % HACK FIXME BUG: 'AllViews' -> Move back to
+                % MK Resolved 26.4.2010: HACK FIXME BUG: 'AllViews' -> Move back to
                 % 'FinalFormatting' below, once Screens() pipeline is
                 % fixed!!
-                if mystrcmp(reqs{row, 1}, 'LeftView') || mystrcmp(reqs{row, 1}, 'AllViews')
+                if mystrcmp(reqs{row, 1}, 'LeftView') %|| mystrcmp(reqs{row, 1}, 'AllViews')
                     % Need to attach to left view:
                     if leftcount > 0
                         % Need a bufferflip command:
@@ -2177,10 +2179,10 @@ if ~isempty(floc)
                     rightcount = rightcount + 1;
                 end
 
-                % HACK FIXME BUG: 'AllViews' -> Move back to
+                % MK Resolved 26.4.2010: HACK FIXME BUG: 'AllViews' -> Move back to
                 % 'FinalFormatting' below, once Screens() pipeline is
                 % fixed!!
-                if mystrcmp(reqs{row, 1}, 'FinalFormatting') %|| mystrcmp(reqs{row, 1}, 'AllViews')                    
+                if mystrcmp(reqs{row, 1}, 'FinalFormatting') || mystrcmp(reqs{row, 1}, 'AllViews')                    
                     % Need to attach to final formatting:
                     if ~handlebitspluplus && ~handlebrightside
                         % Standard case:
@@ -2235,6 +2237,9 @@ if ~isempty(floc)
                         % FlipFBO's for ourselves, unless there is already
                         % such a command at the current insertPos:
                         if outputcount > 0
+                            % Need to test slot right before us:
+                            insertPos = insertPos - 1;
+                            
                             % Test what's there at the moment:
                             [dummy testNameString ] = Screen('HookFunction', win, 'Query', 'FinalOutputFormattingBlit', insertPos);
                             if (dummy == - 1) || ~mystrcmp(testNameString, 'Builtin:FlipFBOs')
@@ -2243,7 +2248,7 @@ if ~isempty(floc)
                                 Screen('HookFunction', win, insertSlot, 'FinalOutputFormattingBlit', 'Builtin:FlipFBOs', '');
                             end
                         end
-                        
+                       
                         % BrightSide setup?
                         if handlebrightside
                             % Tell BrightSide driver that it is called from us, so it can adapt to
@@ -2252,7 +2257,8 @@ if ~isempty(floc)
                         end
                     end
 
-                    % One more slot occupied by us, so increment outputcount:
+                    % One more slot occupied by us, so increment
+                    % outputcount:
                     outputcount = outputcount + 1;
 
                     % And enable the chain if it ain't enabled already:
@@ -2262,6 +2268,8 @@ if ~isempty(floc)
                 % Perform post-link setup of color correction method after
                 % shader attached to pipe:
                 PsychColorCorrection('ApplyPostGLSLLinkSetup', win, reqs{row, 1});
+
+                % Screen('HookFunction', win, 'Dump', 'FinalOutputFormattingBlit');
             end
         end
     end

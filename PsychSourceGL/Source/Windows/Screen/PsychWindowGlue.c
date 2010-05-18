@@ -2169,6 +2169,68 @@ psych_bool PsychOSSetPresentParameters(PsychWindowRecordType *windowRecord, psyc
 	return(FALSE);
 }
 
+/* PsychOSGetSwapCompletionTimestamp()
+ *
+ * Retrieve a very precise timestamp of doublebuffer swap completion by means
+ * of OS specific facilities. This function is optional. If the underlying
+ * OS/drier/GPU combo doesn't support a high-precision, high-reliability method
+ * to query such timestamps, the function should return -1 as a signal that it
+ * is unsupported or (temporarily) unavailable. Higher level timestamping code
+ * should use/prefer timestamps returned by this function over other timestamps
+ * provided by other mechanisms if possible. Calling code must be prepared to
+ * use alternate timestamping methods if this method fails or returns a -1
+ * unsupported error. Calling code must expect this function to block until
+ * swap completion.
+ *
+ * Input argument targetSBC: Swapbuffers count for which to wait for. A value
+ * of zero means to block until all pending bufferswaps for windowRecord have
+ * completed, then return the timestamp of the most recently completed swap.
+ *
+ * A value of zero is recommended.
+ *
+ * Returns: Highly precise and reliable swap completion timestamp in seconds of
+ * system time in variable referenced by tSwap, and msc value of completed swap,
+ * or a negative value on error (-1 == unsupported, -2 == Query failed).
+ *
+ */
+psych_int64 PsychOSGetSwapCompletionTimestamp(PsychWindowRecordType *windowRecord, psych_int64 targetSBC, double* tSwap)
+{
+	// Unsupported on Windows:
+	return(-1);
+}
+
+/*
+    PsychOSScheduleFlipWindowBuffers()
+    
+    Schedules a double buffer swap operation for given window at a given
+	specific target time or target refresh count in a specified way.
+	
+	This uses OS specific API's and algorithms to schedule the asynchronous
+	swap. This function is optional, target platforms are free to not implement
+	it but simply return a "not supported" status code.
+	
+	Arguments:
+	
+	windowRecord - The window to be swapped.
+	tWhen        - Requested target system time for swap. Swap shall happen at first
+				   VSync >= tWhen.
+	targetMSC	 - If non-zero, specifies target msc count for swap. Overrides tWhen.
+	divisor, remainder - If set to non-zero, msc at swap must satisfy (msc % divisor) == remainder.
+	specialFlags - Additional options. Unused so far.
+	
+	Return value:
+	 
+	Value greater than or equal to zero on success: The target msc for which swap is scheduled.
+	Negative value: Error. Function failed. -1 == Function unsupported on current system configuration.
+	-2 ... -x == Error condition.
+	
+*/
+psych_int64 PsychOSScheduleFlipWindowBuffers(PsychWindowRecordType *windowRecord, double tWhen, psych_int64 targetMSC, psych_int64 divisor, psych_int64 remainder, unsigned int specialFlags)
+{
+	// On Windows this function is unsupported:
+	return(-1);
+}
+
 /*
     PsychOSFlipWindowBuffers()
     
@@ -2270,4 +2332,89 @@ void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, psych_bool cop
   	 if (wglGetCurrentContext() != windowRecord->targetSpecific.glusercontextObject) {
 		 wglMakeCurrent(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.glusercontextObject);
     }
+}
+
+/* PsychOSSetupFrameLock - Check if framelock / swaplock support is available on
+ * the given graphics system implementation and try to enable it for the given
+ * pair of onscreen windows.
+ *
+ * If possible, will try to add slaveWindow to the swap group and/or swap barrier
+ * of which masterWindow is already a member, putting slaveWindow into a swap-lock
+ * with the masterWindow. If masterWindow isn't yet part of a swap group, create a
+ * new swap group and attach masterWindow to it, before joining slaveWindow into the
+ * new group. If masterWindow is part of a swap group and slaveWindow is NULL, then
+ * remove masterWindow from the swap group.
+ *
+ * The swap lock mechanism used is operating system and GPU dependent. Many systems
+ * will not support framelock/swaplock at all.
+ *
+ * Returns TRUE on success, FALSE on failure.
+ */
+psych_bool PsychOSSetupFrameLock(PsychWindowRecordType *masterWindow, PsychWindowRecordType *slaveWindow)
+{
+	GLuint maxGroups, maxBarriers, targetGroup;
+	psych_bool rc = FALSE;
+
+	// MS-Windows: Only NV_swap_group support. Try it.
+	
+	// NVidia swap group extension supported?
+	if(glewIsSupported("WGL_NV_swap_group") && (NULL != wglQueryMaxSwapGroupsNV)) {
+		// Yes. Check if given GPU really supports it:
+		if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group supported. Querying available groups...\n");
+
+		if (wglQueryMaxSwapGroupsNV(masterWindow->targetSpecific.deviceContext, &maxGroups, &maxBarriers) && (maxGroups > 0)) {
+			// Yes. What to do?
+			if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group supported. Implementation supports up to %i swap groups. Trying to join or unjoin group.\n", maxGroups);
+
+			if (NULL == slaveWindow) {
+				// Asked to remove master from swap group:
+				wglJoinSwapGroupNV(masterWindow->targetSpecific.deviceContext, 0);
+				masterWindow->swapGroup = 0;
+				return(TRUE);
+			}
+			else {
+				// Non-NULL slaveWindow: Shall attach to swap group.
+				// Master already part of a swap group?
+				if (0 == masterWindow->swapGroup) {
+					// Nope. Try to attach it to first available one:
+					targetGroup = (GLuint) PsychFindFreeSwapGroupId(maxGroups);
+					
+					if ((targetGroup == 0) || !wglJoinSwapGroupNV(masterWindow->targetSpecific.deviceContext, targetGroup)) {
+						// Failed!
+						if (PsychPrefStateGet_Verbosity() > 1) {
+							printf("PTB-WARNING: Tried to enable framelock support for master-slave window pair, but masterWindow failed to join swapgroup %i! Skipped.\n", targetGroup);
+						}
+						
+						return(FALSE);
+					}
+					
+					// Sucess for master!
+					masterWindow->swapGroup = targetGroup;
+				}
+				
+				// Now try to join the masters swapgroup with the slave:
+				if (!wglJoinSwapGroupNV(slaveWindow->targetSpecific.deviceContext, masterWindow->swapGroup)) {
+					// Failed!
+					if (PsychPrefStateGet_Verbosity() > 1) {
+						printf("PTB-WARNING: Tried to enable framelock support for master-slave window pair, but slaveWindow failed to join swapgroup %i of master! Skipped.\n", masterWindow->swapGroup);
+					}
+					
+					return(FALSE);
+				}
+				
+				// Success! Now both windows are in a common swapgroup and framelock should work!
+				slaveWindow->swapGroup = masterWindow->swapGroup;
+				
+				if (PsychPrefStateGet_Verbosity() > 1) {
+					printf("PTB-INFO: Framelock support for master-slave window pair via NV_swap_group extension enabled! Joined swap group %i.\n", masterWindow->swapGroup);
+				}
+				
+				return(TRUE);
+			}
+		}
+	}
+
+	if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group unsupported or join operation failed.\n");
+
+	return(rc);
 }

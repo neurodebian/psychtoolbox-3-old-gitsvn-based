@@ -40,6 +40,10 @@
 // Number of currently open onscreen windows:
 static int x11_windowcount = 0;
 
+// Typedef and fcn-pointer for optional Mesa get swap interval call:
+typedef int (*PFNGLXGETSWAPINTERVALMESAPROC)(void);
+PFNGLXGETSWAPINTERVALMESAPROC glXGetSwapIntervalMESA = NULL;
+
 /** PsychRealtimePriority: Temporarily boost priority to highest available priority on Linux.
     PsychRealtimePriority(true) enables realtime-scheduling (like Priority(>0) would do in Matlab).
     PsychRealtimePriority(false) restores scheduling to the state before last invocation of PsychRealtimePriority(true),
@@ -80,7 +84,7 @@ psych_bool PsychRealtimePriority(psych_bool enable_realtime)
 	  if(!PsychPrefStateGet_SuppressAllWarnings()) {
 	    printf("PTB-INFO: Failed to enable realtime-scheduling [%s]!\n", strerror(errno));
 	    if (errno==EPERM) {
-	      printf("PTB-INFO: You need to run Matlab with root-privileges for this to work.\n");
+	      printf("PTB-INFO: You need to run Matlab or Octave with root-privileges for this to work.\n");
 	    }
 	  }
 	  errno=0;
@@ -489,6 +493,25 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   fflush(NULL);
 
   // Check for availability of VSYNC extension:
+  
+  // First we try if the MESA variant of the swap control extensions is available. It has two advantages:
+  // First, it also provides a function to query the current swap interval. Second it allows to set a
+  // zero swap interval to dynamically disable sync to retrace, just as on OS/X and Windows:
+  if (strstr(glXQueryExtensionsString(dpy, scrnum), "GLX_MESA_swap_control")) {
+	// Bingo! Bind Mesa variant of setup call to sgi setup call, just to simplify the code
+	// that actually uses the setup call -- no special cases or extra code needed there :-)
+	// This special glXSwapIntervalSGI() call will simply accept an input value of zero for
+	// disabling vsync'ed bufferswaps as a valid input parameter:
+	glXSwapIntervalSGI = glXGetProcAddressARB("glXSwapIntervalMESA");
+	
+	// Additionally bind the Mesa query call:
+	glXGetSwapIntervalMESA = (PFNGLXGETSWAPINTERVALMESAPROC) glXGetProcAddressARB("glXGetSwapIntervalMESA");
+	printf("PTB-INFO: Using GLX_MESA_swap_control extension for control of vsync.\n");
+  }
+  else {
+	// Unsupported. Disable the get call:
+	glXGetSwapIntervalMESA = NULL;
+  }
 
   // Special case: Buggy ATI driver: Supports the VSync extension and glXSwapIntervalSGI, but provides the
   // wrong extension namestring "WGL_EXT_swap_control" (from MS-Windows!), so GLEW doesn't auto-detect and
@@ -500,7 +523,7 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
 
   // Extension finally supported?
   if (glXSwapIntervalSGI==NULL || ( strstr(glXQueryExtensionsString(dpy, scrnum), "GLX_SGI_swap_control")==NULL &&
-	  strstr(glGetString(GL_EXTENSIONS), "WGL_EXT_swap_control")==NULL )) {
+	  strstr(glGetString(GL_EXTENSIONS), "WGL_EXT_swap_control")==NULL && strstr(glXQueryExtensionsString(dpy, scrnum), "GLX_MESA_swap_control")==NULL )) {
 	  // No, total failure to bind extension:
 	  glXSwapIntervalSGI = NULL;
 	  printf("PTB-WARNING: Your graphics driver doesn't allow me to control syncing wrt. vertical retrace!\n");
@@ -511,8 +534,9 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   fflush(NULL);
 
   // ATI Radeon X1000 or later AND first opened onscreen window?
-  if ((x11_windowcount == 1) && strstr(glGetString(GL_VENDOR), "ATI") && strstr(glGetString(GL_RENDERER), "Radeon")) {
-	  if (strstr(glGetString(GL_RENDERER), "X") || strstr(glGetString(GL_RENDERER), "HD")) {
+  if ((x11_windowcount == 1) && ( (strstr(glGetString(GL_VENDOR), "ATI") && (strstr(glGetString(GL_RENDERER), "Radeon") || strstr(glGetString(GL_RENDERER), "Fire"))) ||
+								  (strstr(glGetString(GL_VENDOR), "Advanced Micro Devices") && strstr(glGetString(GL_RENDERER), "Mesa DRI R")) )) {
+	  if (strstr(glGetString(GL_RENDERER), "X") || strstr(glGetString(GL_RENDERER), "HD") || strstr(glGetString(GL_RENDERER), "Mesa DRI")) {
 	  	// Probably an X1000 or later or an HD 2000/3000/later series chip.
 		// Try to map its PCI register space to allow for our implementation of
 		// beamposition queries:
@@ -629,7 +653,7 @@ double  PsychOSGetVBLTimeAndCount(PsychWindowRecordType *windowRecord, psych_uin
 		if (PsychGetKernelTimebaseFrequencyHz() > 10000) {
 			// Convert ust into regular GetSecs timestamp:
 			// At least we hope this conversion is correct...
-			return( ((double) ust) / PsychGetKernelTimebaseFrequencyHz() );
+			return( PsychOSMonotonicToRefTime(((double) ust) / PsychGetKernelTimebaseFrequencyHz()) );
 		}
 		else {
 			// Last VBL timestamp unavailable:
@@ -657,6 +681,354 @@ double  PsychOSGetVBLTimeAndCount(PsychWindowRecordType *windowRecord, psych_uin
 	}
 }
 
+/* PsychOSGetSwapCompletionTimestamp()
+ *
+ * Retrieve a very precise timestamp of doublebuffer swap completion by means
+ * of OS specific facilities. This function is optional. If the underlying
+ * OS/drier/GPU combo doesn't support a high-precision, high-reliability method
+ * to query such timestamps, the function should return -1 as a signal that it
+ * is unsupported or (temporarily) unavailable. Higher level timestamping code
+ * should use/prefer timestamps returned by this function over other timestamps
+ * provided by other mechanisms if possible. Calling code must be prepared to
+ * use alternate timestamping methods if this method fails or returns a -1
+ * unsupported error. Calling code must expect this function to block until
+ * swap completion.
+ *
+ * Input argument targetSBC: Swapbuffers count for which to wait for. A value
+ * of zero means to block until all pending bufferswaps for windowRecord have
+ * completed, then return the timestamp of the most recently completed swap.
+ *
+ * A value of zero is recommended.
+ *
+ * Returns: Precise and reliable swap completion timestamp in seconds of
+ * system time in variable referenced by 'tSwap', and msc value of completed swap,
+ * or a negative value on error (-1 == unsupported, -2/-3 == Query failed).
+ *
+ */
+psych_int64 PsychOSGetSwapCompletionTimestamp(PsychWindowRecordType *windowRecord, psych_int64 targetSBC, double* tSwap)
+{
+	psych_int64 ust, msc, sbc;
+	msc = -1;
+
+	#ifdef GLX_OML_sync_control
+
+	if (PsychPrefStateGet_Verbosity() > 11) printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: Checking for glXWaitForSbcOML() support.\n");
+	
+	// Extension unsupported? Return -1 in that case:
+	if (NULL == glXWaitForSbcOML) return(-1);
+
+	// Workaround for broken XServer 1.8: Special value targetSBC == 0 is not honored,
+	// so we need to supply a reasonable targetSBC to avoid malfunction.
+	// windowRecord->target_sbc is set up properly in PsychOSScheduleFlipWindowBuffers()
+	// if the kPsychNeedOpenMLWorkaround2 is enabled. By default it is zero:
+	if (targetSBC < windowRecord->target_sbc) targetSBC = windowRecord->target_sbc;
+	if (PsychPrefStateGet_Verbosity() > 11) printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: Supported. Calling with targetSBC = %i.\n", (int) targetSBC);
+
+	// Broken XServer which needs special attention?
+	if (windowRecord->specialflags & kPsychNeedOpenMLWorkaround2) {
+		if (!glXGetSyncValuesOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, &ust, &msc, &sbc)) return(-3);
+
+		// Target swap already completed?
+		if (sbc >= targetSBC) {
+			// We're screwed. Output warning and fallback to query unsupported status.
+			// The "unsupported" return code will trigger use of fallback path in calling
+			// code, so we may be able to recover...
+			if (PsychPrefStateGet_Verbosity() > 11) {
+				printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: Too late for glXWaitForSbcOML() query (sbc %i >= targetSBC %i)! Failing with rc = -1.\n", (int) sbc, (int) targetSBC);
+			}
+			return(-1);
+		}
+	}
+
+	// Extension supported: Perform query and error check.
+	if (!glXWaitForSbcOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, targetSBC, &ust, &msc, &sbc)) return(-2);
+
+	// Success. Translate ust into system time in seconds:
+	if (tSwap) *tSwap = PsychOSMonotonicToRefTime(((double) ust) / PsychGetKernelTimebaseFrequencyHz());
+
+	// Update cached reference values for future swaps:
+	windowRecord->reference_ust = ust;
+	windowRecord->reference_msc = msc;
+	windowRecord->reference_sbc = sbc;
+
+	if (PsychPrefStateGet_Verbosity() > 11) printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: Success! refust = %i, refmsc = %i, refsbc = %i.\n", (int) ust, (int) msc, (int) sbc);
+	#endif
+	
+	// Return msc of swap completion:
+	return(msc);
+}
+
+/* PsychOSInitializeOpenML() - Linux specific function.
+ *
+ * Performs basic initialization of the OpenML OML_sync_control extension.
+ * Performs basic and extended correctness tests and disables extension if it
+ * is unreliable, or enables workarounds for partially broken extensions.
+ *
+ * Called from PsychDetectAndAssignGfxCapabilities() as part of the PsychOpenOffscreenWindow()
+ * procedure for a window with OpenML support.
+ *
+ */
+void PsychOSInitializeOpenML(PsychWindowRecordType *windowRecord)
+{
+	#ifdef GLX_OML_sync_control
+
+	psych_int64 ust, msc, sbc, oldmsc, oldust, finalmsc;
+	psych_bool failed = FALSE;
+	
+	// Enable rendering context of window:
+	PsychSetGLContext(windowRecord);
+
+	// Perform a wait for 3 video refresh cycles to get valid (ust,msc,sbc)
+	// values for initialization of windowRecord's cached values:
+	if (!glXGetSyncValuesOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, &ust, &msc, &sbc) ||
+		!glXWaitForMscOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, msc + 3, 0, 0, &ust, &msc, &sbc)) {
+		
+		// Basic OpenML functions failed?!? Not good! Disable OpenML, warn user:
+		windowRecord->gfxcaps &= ~kPsychGfxCapSupportsOpenML;
+		
+		if (PsychPrefStateGet_Verbosity() > 0) {
+			printf("PTB-ERROR: At least one test call for OpenML OML_sync_control extension failed! Will disable OpenML and revert to fallback implementation.\n");
+		}
+
+		return;
+	}
+
+	// Have a valid (ust, msc) baseline. Store it in windowRecord for future use:
+	windowRecord->reference_ust = ust;
+	windowRecord->reference_msc = msc;
+	windowRecord->reference_sbc = sbc;
+
+	// Perform correctness test for glXGetSyncValuesOML() over a time span
+	// of 6 video refresh cycles. This checks for a limitation that is present
+	// in all shipping Linux kernels up to at least version 2.6.34, possibly
+	// also in 2.6.35 depending on MK's progress with this feature:
+	finalmsc = msc + 6;
+	oldmsc = msc;
+	oldust = ust;
+	
+	while ((msc < finalmsc) && !failed) {
+		// Wait a quarter millisecond:
+		PsychWaitIntervalSeconds(0.000250);
+		
+		// Query current (msc, ust):
+		if (!glXGetSyncValuesOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, &ust, &msc, &sbc)) {
+			// Query failed!
+			failed = TRUE;
+		}
+		
+		// Has msc changed since last query due to a regular msc increment, i.e., a new video refresh interval?
+		if (msc != oldmsc) {
+			// Yes. Update reference values for test:
+			oldmsc = msc;
+			oldust = ust;
+		}
+		
+		// ust must be equal to oldust at this point, either because a msc increment has updated
+		// the ust for the new vblank interval in lock-step and our code above has updated oldust
+		// accordingly, or because no msc increment has happened, in which case ust should stay
+		// unchanged as well, ie., ust == oldust. If ust and oldust are different then that means
+		// that ust has changed its value in the middle of a refresh interval without an intervening
+		// vblank. This would happen if glXGetSyncValuesOML() is defective and doesn't return ust
+		// timestamps locked to vblank / msc increments, but simply system time values.
+		if (ust != oldust) {
+			// Failure of glXGetSyncValuesOML()! This is a broken implementation which needs
+			// our workaround:
+			failed = TRUE;			
+		}
+
+		// Repeat test loop:
+	}
+	
+	// Failed or succeeded?
+	if (failed) {
+		// Failed! Enable workaround and optionally warn user:
+		windowRecord->specialflags |= kPsychNeedOpenMLWorkaround1;
+		
+		if (PsychPrefStateGet_Verbosity() > 1) {
+			printf("PTB-WARNING: OpenML OML_sync_control implementation with defective glXGetSyncValuesOML() function detected! Enabling workaround and hoping for the best...\n");
+		}
+	}
+
+	// Running on a broken XServer of version < 1.8.2? Need to enable our workarounds if so:
+	if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-Info: Running on '%s' XServer, Vendor release %i.\n", XServerVendor(windowRecord->targetSpecific.deviceContext), (int) XVendorRelease(windowRecord->targetSpecific.deviceContext));
+	if (XVendorRelease(windowRecord->targetSpecific.deviceContext) < 10802000) windowRecord->specialflags |= kPsychNeedOpenMLWorkaround2;
+
+	if ((windowRecord->specialflags & kPsychNeedOpenMLWorkaround2) && (PsychPrefStateGet_Verbosity() > 1)) {
+		printf("PTB-WARNING: OpenML OML_sync_control implementation with defective XServer-1.8.x detected! Enabling workarounds and hoping for the best...\n");
+	}
+	
+	#else
+		// Disable extension:
+		windowRecord->gfxcaps &= ~kPsychGfxCapSupportsOpenML;	
+	#endif
+
+	return;
+}
+
+/*
+    PsychOSScheduleFlipWindowBuffers()
+    
+    Schedules a double buffer swap operation for given window at a given
+	specific target time or target refresh count in a specified way.
+	
+	This uses OS specific API's and algorithms to schedule the asynchronous
+	swap. This function is optional, target platforms are free to not implement
+	it but simply return a "not supported" status code.
+	
+	Arguments:
+	
+	windowRecord - The window to be swapped.
+	tWhen        - Requested target system time for swap. Swap shall happen at first
+				   VSync >= tWhen.
+	targetMSC	 - If non-zero, specifies target msc count for swap. Overrides tWhen.
+	divisor, remainder - If set to non-zero, msc at swap must satisfy (msc % divisor) == remainder.
+	specialFlags - Additional options, a bit field consisting of single bits that can be or'ed together:
+				   1 = Constrain swaps to even msc values, 2 = Constrain swaps to odd msc values. (Used for frame-seq. stereo field selection)
+	
+	Return value:
+	 
+	Value greater than or equal to zero on success: The target msc for which swap is scheduled.
+	Negative value: Error. Function failed. -1 == Function unsupported on current system configuration.
+	-2 ... -x == Error condition.
+	
+*/
+psych_int64 PsychOSScheduleFlipWindowBuffers(PsychWindowRecordType *windowRecord, double tWhen, psych_int64 targetMSC, psych_int64 divisor, psych_int64 remainder, unsigned int specialFlags)
+{
+	psych_int64 ust, msc, sbc, rc;
+	double tNow, tMsc;
+	
+	// Linux: If this is implemented then it is implemented via the OpenML OML_sync_control extension.
+	// Is the extension supported by the system and enabled by Psychtoolbox? If not, we return
+	// a "not-supported" status code of -1 and turn into a no-op:
+	if (!(windowRecord->gfxcaps & kPsychGfxCapSupportsOpenML)) return(-1);
+	
+	// Extension supported and enabled. Use it.
+	#ifdef GLX_OML_sync_control
+
+	// Enable rendering context of window:
+	PsychSetGLContext(windowRecord);
+
+	// Non-Zero targetMSC provided to directy specify the msc on which swap should happen?
+	// If so, then we can skip computation and directly call with that targetMSC:
+	if (targetMSC == 0) {
+		// No: targetMSC shall be computed from given tWhen system target time.
+		// Get current (msc,ust) reference values for computation.
+		
+		// Get current values for (msc, ust, sbc) the textbook way: Return error code -2 on failure:
+		if (!glXGetSyncValuesOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, &ust, &msc, &sbc)) return(-2);
+		
+		// glXGetSyncValuesOML() known to return totally bogus ust timestamps? Or ust <= 0 returned,
+		// which means a temporary (EAGAIN style) failure?
+		if ((windowRecord->specialflags & kPsychNeedOpenMLWorkaround1) || (ust <= 0)) {
+			// Useless ust returned. We need to recover a useable reference (msc, ust) pair via
+			// trickery instead. Check if tWhen is at least 4 video refresh cycles in the future.
+			if ((ust <= 0) && (PsychPrefStateGet_Verbosity() > 11)) printf("PTB-DEBUG:PsychOSScheduleFlipWindowBuffers: Invalid ust %i returned by query. Current msc = %i.\n", (int) ust, (int) msc);
+
+			PsychGetAdjustedPrecisionTimerSeconds(&tNow);
+			if (((tWhen - tNow) / windowRecord->VideoRefreshInterval) > 4.0) {
+				// Yes. We have some time until deadline. Use a blocking wait for at
+				// least 2 video refresh cycles. glXWaitForMscOML() doesn't have known
+				// issues iff it has to wait for a msc that is in the future, ie., it has
+				// to perform a blocking wait. In that case it will return a valid (msc, ust)
+				// pair on return from blocking wait. Wait until msc+2 is reached and retrieve
+				// updated (msc, ust):
+				if (PsychPrefStateGet_Verbosity() > 11) printf("PTB-DEBUG:PsychOSScheduleFlipWindowBuffers: glXWaitForMscOML until msc = %i, now msc = %i.\n", (int) msc + 2, (int) msc);
+				if (!glXWaitForMscOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, msc + 2, 0, 0, &ust, &msc, &sbc)) return(-3);
+			}
+			else {
+				// No. Swap deadline is too close to current time. We have no option other than
+				// simply using the last cached values in our windowRecord and hoping that they
+				// will be good enough:
+				ust = windowRecord->reference_ust;
+				msc = windowRecord->reference_msc;
+				sbc = windowRecord->reference_sbc;
+			}
+		}
+		
+		// Have a valid (ust, msc) baseline. Store it in windowRecord for future use:
+		windowRecord->reference_ust = ust;
+		windowRecord->reference_msc = msc;
+		windowRecord->reference_sbc = sbc;
+		
+		// Compute targetMSC for given baseline and target time tWhen:
+		tMsc = PsychOSMonotonicToRefTime(((double) ust) / PsychGetKernelTimebaseFrequencyHz());
+		targetMSC = msc + ((psych_int64)(floor((tWhen - tMsc) / windowRecord->VideoRefreshInterval) + 1));
+	}
+	
+	// Clamp targetMSC to a positive non-zero value:
+	if (targetMSC <= 0) targetMSC = 1;
+
+	// Swap at specific even or odd frame requested? This is useful for frame-sequential stereo
+	// presentation that shall start its presentation at a specific eye-view:
+	if (specialFlags & (0x1 | 0x2)) {
+		// Yes. Setup (divisor,remainder) constraint so that
+		// 0x1 maps to even target frames, and 0x2 maps to odd
+		// target frames:
+		divisor = 2;
+		remainder = (specialFlags & 0x1) ? 0 : 1;
+		// Make sure initial targetMSC obeys (divisor,remainder) constraint:
+		targetMSC += (targetMSC % divisor == remainder) ? 0 : 1; 
+	}
+
+	// Workaround for broken DRI2 swap & sync bits in XServer 1.8 needed?
+	if (windowRecord->specialflags & kPsychNeedOpenMLWorkaround2) {
+		// Yes :(
+		
+		// First workaround: Need to compute the expected targetSBC value for later glXWaitForSbcOML()
+		// queries, as the special targetSBC == 0 value is not honored in 1.8. This is used in
+		// PsychOSGetSwapCompletionTimestamp().
+		// Query current sbc, target post swap request will be sbc + 1:
+		if (!glXGetSyncValuesOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, &ust, &msc, &(windowRecord->target_sbc))) return(-5);
+		windowRecord->target_sbc++;
+
+		// Second workaround: glXSwapBuffersMscOML() is broken. It honors divisor, remainder,
+		// but ignores targetMSC. We setup divisor and remainder so that remainder encodes our
+		// desired targetMSC and proper scheduling is achieved via the (divisor, remainder) constraint.
+		// We delay the glXSwapBuffersMscOML() call until the current msc is >= last known swap target msc + 1.
+		// This should make sure that the (divisor,remainder) handling inside the current Intel and Radeon DDX
+		// gets triggered and we're kind'a good. The very first swap will always be spoiled though...
+		if (msc < windowRecord->lastSwaptarget_msc + 1) {
+			// Ok, need to delay for the trickery to work:
+			if (!glXWaitForMscOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, windowRecord->lastSwaptarget_msc + 1, 0, 0, &ust, &msc, &sbc)) return(-6);
+			if (PsychPrefStateGet_Verbosity() > 12) printf("PTB-DEBUG:PsychOSScheduleFlipWindowBuffers: Delayed swap submission until glXWaitForMscOML until msc == %i >= lastSwaptarget + 1.\n", (int) msc);
+		}
+		
+		// Set divisor to max 32-bit int value, so it is non-zero (--> DDX's will use (divisor,remainder) logic)
+		// but has no real effect as (msc % divisor) == msc for any msc < 2^32-1, that is for any real-world msc.
+		divisor = 0xffffffff;
+		
+		// Set remainder to the desired targetMSC. The targetMSC value gets ignored by broken XServer, but
+		// the (divisor, remainder) logic will compute an effective that is:
+		//      targetMSC = msc - (msc % divisor) + remainder
+		// <=>  targetMSC = msc - msc + remainder
+		// <=>  targetMSC = remainder.
+		// Therefore if we set remainder == targetMSC, then stuff should kind'a work.
+		remainder = targetMSC;
+	}
+
+	if (PsychPrefStateGet_Verbosity() > 12) printf("PTB-DEBUG:PsychOSScheduleFlipWindowBuffers: Submitting swap request for targetMSC = %i, divisor = %i, remainder = %i.\n", (int) targetMSC, (int) divisor, (int) remainder);
+
+	// Ok, we have a valid final targetMSC. Schedule a bufferswap for that targetMSC, taking a potential
+	// (divisor, remainder) constraint into account:
+	rc = glXSwapBuffersMscOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, targetMSC, divisor, remainder);
+
+	// Failed? Return -4 error code if so:
+	if (rc == -1) return(-4);
+
+	// Need to keep track of most recent lastSwaptarget_msc for workaround to work.
+	// Luckily another bug in the broken XServer just causes 'rc' to return exactly
+	// the info we need ;-)
+	if (windowRecord->specialflags & kPsychNeedOpenMLWorkaround2) windowRecord->lastSwaptarget_msc = rc;
+	
+	#else
+		// No op branch in case OML_sync_control isn't enabled at compile time:
+		return(-1);
+	#endif
+
+	// Successfully scheduled the swap request: Return targetMSC for which it was scheduled:
+	return(targetMSC);
+}
+
 /*
     PsychOSFlipWindowBuffers()
     
@@ -681,6 +1053,8 @@ void PsychOSFlipWindowBuffers(PsychWindowRecordType *windowRecord)
 /* Enable/disable syncing of buffer-swaps to vertical retrace. */
 void PsychOSSetVBLSyncLevel(PsychWindowRecordType *windowRecord, int swapInterval)
 {
+  int error, myinterval;
+
   // Enable rendering context of window:
   PsychSetGLContext(windowRecord);
 
@@ -689,9 +1063,22 @@ void PsychOSSetVBLSyncLevel(PsychWindowRecordType *windowRecord, int swapInterva
 
   // Try to set requested swapInterval if swap-control extension is supported on
   // this Linux machine. Otherwise this will be a no-op...
-  // if (PTBglXSwapIntervalSGI) PTBglXSwapIntervalSGI(swapInterval);
-  if (glXSwapIntervalSGI) glXSwapIntervalSGI(swapInterval);
+  // Note: On Mesa, glXSwapIntervalSGI() is actually a redirected call to glXSwapIntervalMESA()!
+  if (glXSwapIntervalSGI) {
+	  error = glXSwapIntervalSGI(swapInterval);
+	  if (error) {
+		  if (PsychPrefStateGet_Verbosity()>1) printf("\nPTB-WARNING: FAILED to %s synchronization to vertical retrace!\n\n", (swapInterval > 0) ? "enable" : "disable");
+	  }
+  }
 
+  // If Mesa query is supported, double-check if the system accepted our settings:
+  if (glXGetSwapIntervalMESA) {
+	  myinterval = glXGetSwapIntervalMESA();
+	  if (myinterval != swapInterval) {
+		  if (PsychPrefStateGet_Verbosity()>1) printf("\nPTB-WARNING: FAILED to %s synchronization to vertical retrace (System ignored setting [Req %i != Actual %i])!\n\n", (swapInterval > 0) ? "enable" : "disable", swapInterval, myinterval);
+	  }
+  }
+  
   return;
 }
 
@@ -755,4 +1142,125 @@ void PsychOSSetUserGLContext(PsychWindowRecordType *windowRecord, psych_bool cop
   if (glXGetCurrentContext() != windowRecord->targetSpecific.glusercontextObject) {
     glXMakeCurrent(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, windowRecord->targetSpecific.glusercontextObject);
   }
+}
+
+/* PsychOSSetupFrameLock - Check if framelock / swaplock support is available on
+ * the given graphics system implementation and try to enable it for the given
+ * pair of onscreen windows.
+ *
+ * If possible, will try to add slaveWindow to the swap group and/or swap barrier
+ * of which masterWindow is already a member, putting slaveWindow into a swap-lock
+ * with the masterWindow. If masterWindow isn't yet part of a swap group, create a
+ * new swap group and attach masterWindow to it, before joining slaveWindow into the
+ * new group. If masterWindow is part of a swap group and slaveWindow is NULL, then
+ * remove masterWindow from the swap group.
+ *
+ * The swap lock mechanism used is operating system and GPU dependent. Many systems
+ * will not support framelock/swaplock at all.
+ *
+ * Returns TRUE on success, FALSE on failure.
+ */
+psych_bool PsychOSSetupFrameLock(PsychWindowRecordType *masterWindow, PsychWindowRecordType *slaveWindow)
+{
+	GLuint maxGroups, maxBarriers, targetGroup;
+	psych_bool rc = FALSE;
+	
+	// GNU/Linux: Try NV_swap_group support first, then SGI swap group support.
+
+	// NVidia swap group extension supported?
+	if(glewIsSupported("GLX_NV_swap_group") && (NULL != glXQueryMaxSwapGroupsNV)) {
+		// Yes. Check if given GPU really supports it:
+		if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group supported. Querying available groups...\n");
+
+		if (glXQueryMaxSwapGroupsNV(masterWindow->targetSpecific.deviceContext, PsychGetXScreenIdForScreen(masterWindow->screenNumber), &maxGroups, &maxBarriers) && (maxGroups > 0)) {
+			// Yes. What to do?
+			if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group supported. Implementation supports up to %i swap groups. Trying to join or unjoin group.\n", maxGroups);
+
+			if (NULL == slaveWindow) {
+				// Asked to remove master from swap group:
+				glXJoinSwapGroupNV(masterWindow->targetSpecific.deviceContext, masterWindow->targetSpecific.windowHandle, 0);
+				masterWindow->swapGroup = 0;
+				return(TRUE);
+			}
+			else {
+				// Non-NULL slaveWindow: Shall attach to swap group.
+				// Master already part of a swap group?
+				if (0 == masterWindow->swapGroup) {
+					// Nope. Try to attach it to first available one:
+					targetGroup = (GLuint) PsychFindFreeSwapGroupId(maxGroups);
+					
+					if ((targetGroup == 0) || !glXJoinSwapGroupNV(masterWindow->targetSpecific.deviceContext, masterWindow->targetSpecific.windowHandle, targetGroup)) {
+						// Failed!
+						if (PsychPrefStateGet_Verbosity() > 1) {
+							printf("PTB-WARNING: Tried to enable framelock support for master-slave window pair, but masterWindow failed to join swapgroup %i! Skipped.\n", targetGroup);
+						}
+						
+						goto try_sgi_swapgroup;
+					}
+					
+					// Sucess for master!
+					masterWindow->swapGroup = targetGroup;
+				}
+				
+				// Now try to join the masters swapgroup with the slave:
+				if (!glXJoinSwapGroupNV(slaveWindow->targetSpecific.deviceContext, slaveWindow->targetSpecific.windowHandle,  masterWindow->swapGroup)) {
+					// Failed!
+					if (PsychPrefStateGet_Verbosity() > 1) {
+						printf("PTB-WARNING: Tried to enable framelock support for master-slave window pair, but slaveWindow failed to join swapgroup %i of master! Skipped.\n", masterWindow->swapGroup);
+					}
+					
+					goto try_sgi_swapgroup;
+				}
+				
+				// Success! Now both windows are in a common swapgroup and framelock should work!
+				slaveWindow->swapGroup = masterWindow->swapGroup;
+				
+				if (PsychPrefStateGet_Verbosity() > 1) {
+					printf("PTB-INFO: Framelock support for master-slave window pair via NV_swap_group extension enabled! Joined swap group %i.\n", masterWindow->swapGroup);
+				}
+				
+				return(TRUE);
+			}
+		}
+	}
+
+// If we reach this point, then NV_swap groups are unsupported, or setup failed.
+try_sgi_swapgroup:
+
+	// Try if we have more luck with SGIX_swap_group extension:
+	if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group unsupported or join operation failed. Trying GLX_SGIX_swap_group support...\n");
+
+	// SGIX swap group extension supported?
+	if(glewIsSupported("GLX_SGIX_swap_group") && (NULL != glXJoinSwapGroupSGIX)) {
+		// Yes. What to do?
+		if (NULL == slaveWindow) {
+			// Asked to remove master from swap group:
+			glXJoinSwapGroupSGIX(masterWindow->targetSpecific.deviceContext, masterWindow->targetSpecific.windowHandle, None);
+			masterWindow->swapGroup = 0;
+			return(TRUE);
+		}
+		else {
+			// Non-NULL slaveWindow: Shall attach to swap group.
+
+			// Sucess for master by definition. Master is member of its own swapgroup, obviously...
+			masterWindow->swapGroup = 1;
+			
+			// Now try to join the masters swapgroup with the slave. This can't fail in a non-fatal way.
+			// Either it succeeds, or the whole runtime will abort with some GLX command stream error :-I
+			glXJoinSwapGroupSGIX(slaveWindow->targetSpecific.deviceContext, slaveWindow->targetSpecific.windowHandle,  masterWindow->targetSpecific.windowHandle);
+			
+			// Success! Now both windows are in a common swapgroup and framelock should work!
+			slaveWindow->swapGroup = masterWindow->swapGroup;
+			
+			if (PsychPrefStateGet_Verbosity() > 1) {
+				printf("PTB-INFO: Framelock support for master-slave window pair via GLX_SGIX_swap_group extension enabled!\n");
+			}
+			
+			return(TRUE);
+		}
+	}
+	
+	if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group and GLX_SGIX_swap_group unsupported or join operations failed.\n");
+	
+	return(rc);
 }

@@ -250,7 +250,7 @@ function varargout = PsychColorCorrection(cmd, varargin)
 % default to the range 0.0 - 1.0.
 %
 %
-% PsychColorCorrection('SetGainMatrix', window, matrix [, precision=2]);
+% PsychColorCorrection('SetGainMatrix', window, matrix [, viewId][, precision=2]);
 %
 % - Set gain matrix for method 'GainMatrix'.
 % If matrix is a 2D matrix, the gain will be applied to all color
@@ -1118,13 +1118,14 @@ function [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBin
         viewId = 'AllViews';
     end 
     
-    % FIXME: HACK FOR BUG IN IMG PIPE!! if strcmpi(viewId, 'AllViews') || strcmpi(viewId, 'FinalFormatting')
-    if strcmpi(viewId, 'FinalFormatting')
+    % MK Resolved 26.4.2010: FIXME: HACK FOR BUG IN IMG PIPE!! 
+    if strcmpi(viewId, 'AllViews') || strcmpi(viewId, 'FinalFormatting')
+    %if strcmpi(viewId, 'FinalFormatting')
         chain = 'FinalOutputFormattingBlit';
     end
     
-    % FIXME: HACK FOR BUG IN IMG PIPE!! if strcmpi(viewId, 'LeftView')
-    if strcmpi(viewId, 'LeftView') || strcmpi(viewId, 'AllViews')
+    % MK Resolved 26.4.2010: FIXME: HACK FOR BUG IN IMG PIPE!! if strcmpi(viewId, 'LeftView')
+    if strcmpi(viewId, 'LeftView') %|| strcmpi(viewId, 'AllViews')
         chain = 'StereoLeftCompositingBlit';
     end
 
@@ -1142,7 +1143,7 @@ function [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBin
 
     % Shader found?
     if slot == -1
-        % FIXME: HACK FOR BUG IN IMG PIPE!!
+        % MK Resolved 26.4.2010: Doesn't hurt here. FIXME: HACK FOR BUG IN IMG PIPE!!
         if strcmpi(viewId, 'AllViews')
             % Special case 'AllViews': We searched 'LeftView' and failed.
             % Let's retry with 'FinalFormatting' view before we give up:

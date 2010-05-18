@@ -46,6 +46,7 @@ PsychError PsychModuleInit(void)
 	// Register synopsis and named subfunctions.
 	PsychErrorExit(PsychRegister("Verbosity", &PSYCHPORTAUDIOVerbosity));
 	PsychErrorExit(PsychRegister("Open", &PSYCHPORTAUDIOOpen));
+	PsychErrorExit(PsychRegister("OpenSlave", &PSYCHPORTAUDIOOpenSlave));
 	PsychErrorExit(PsychRegister("Close", &PSYCHPORTAUDIOClose));
 	PsychErrorExit(PsychRegister("Start", &PSYCHPORTAUDIOStartAudioDevice));
 	PsychErrorExit(PsychRegister("RescheduleStart", &PSYCHPORTAUDIORescheduleStart));
@@ -66,7 +67,8 @@ PsychError PsychModuleInit(void)
 	PsychErrorExit(PsychRegister("DeleteBuffer", &PSYCHPORTAUDIODeleteBuffer));
 	PsychErrorExit(PsychRegister("SetOpMode", &PSYCHPORTAUDIOSetOpMode));
 	PsychErrorExit(PsychRegister("DirectInputMonitoring", &PSYCHPORTAUDIODirectInputMonitoring));
-	
+	PsychErrorExit(PsychRegister("Volume", &PSYCHPORTAUDIOVolume));
+
 	// Setup synopsis help strings:
 	InitializeSynopsis();   //Scripting glue won't require this if the function takes no arguments.
 
