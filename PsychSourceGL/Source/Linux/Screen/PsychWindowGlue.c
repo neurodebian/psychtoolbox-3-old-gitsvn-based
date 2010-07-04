@@ -334,8 +334,8 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
       // that doesn't support AUX-buffers. In that case we retry without requesting AUX buffers
       // and output a proper warning instead of failing. For 99% of all applications one can
       // do without AUX buffers anyway...
-      printf("PTB-WARNING: Couldn't enable AUX buffers on onscreen window due to limitations of your gfx-hardware or driver. Some features may be disabled or limited...\n");
-      fflush(NULL);
+      //printf("PTB-WARNING: Couldn't enable AUX buffers on onscreen window due to limitations of your gfx-hardware or driver. Some features may be disabled or limited...\n");
+      //fflush(NULL);
       
       // Terminate attrib array where the GLX_AUX_BUFFERS entry used to be...
       attrib[attribcount-3] = None;
@@ -879,16 +879,16 @@ void PsychOSInitializeOpenML(PsychWindowRecordType *windowRecord)
 		windowRecord->specialflags |= kPsychNeedOpenMLWorkaround1;
 		
 		if (PsychPrefStateGet_Verbosity() > 1) {
-			printf("PTB-WARNING: OpenML OML_sync_control implementation with defective glXGetSyncValuesOML() function detected! Enabling workaround and hoping for the best...\n");
+			printf("PTB-WARNING: OpenML OML_sync_control implementation with defective glXGetSyncValuesOML() function detected! Enabling workaround for ok performance.\n");
 		}
 	}
 
-	// Running on a broken XServer of version < 1.8.2? Need to enable our workarounds if so:
+	// Running on a broken XServer of version < 1.8.2-RC2? Need to enable our workarounds if so:
 	if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-Info: Running on '%s' XServer, Vendor release %i.\n", XServerVendor(windowRecord->targetSpecific.deviceContext), (int) XVendorRelease(windowRecord->targetSpecific.deviceContext));
-	if (XVendorRelease(windowRecord->targetSpecific.deviceContext) < 10802000) windowRecord->specialflags |= kPsychNeedOpenMLWorkaround2;
+	if (XVendorRelease(windowRecord->targetSpecific.deviceContext) < 10801902) windowRecord->specialflags |= kPsychNeedOpenMLWorkaround2;
 
 	if ((windowRecord->specialflags & kPsychNeedOpenMLWorkaround2) && (PsychPrefStateGet_Verbosity() > 1)) {
-		printf("PTB-WARNING: OpenML OML_sync_control implementation with defective XServer-1.8.x detected! Enabling workarounds and hoping for the best...\n");
+		printf("PTB-WARNING: OpenML OML_sync_control implementation with defective XServer version < 1.8.2-RC2 detected! Enabling workarounds and hoping for the best...\n");
 	}
 	
 	#else
