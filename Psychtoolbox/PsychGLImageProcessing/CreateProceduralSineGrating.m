@@ -1,5 +1,5 @@
-function [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width, height, backgroundColorOffset)
-% [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width, height [, backgroundColorOffset =(0,0,0,0)])
+function [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width, height, backgroundColorOffset, radius, contrastPreMultiplicator)
+% [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width, height [, backgroundColorOffset =(0,0,0,0)] [, radius=inf][, contrastPreMultiplicator=1])
 %
 % Creates a procedural texture that allows to draw sine grating stimulus patches
 % in a very fast and efficient manner on modern graphics hardware.
@@ -14,6 +14,17 @@ function [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width
 % 'backgroundColorOffset' Optional, defaults to [0 0 0 0]. A RGBA offset
 % color to add to the final RGBA colors of the drawn grating, prior to
 % drawing it.
+%
+% 'radius' Optional parameter. If specified, a circular aperture of
+% 'radius' pixels is applied to the grating. By default, no aperture is
+% applied.
+%
+% 'contrastPreMultiplicator' Optional, defaults to 1. This value is
+% multiplied as a scaling factor to the requested contrast value. If you
+% specify contrastPreMultiplicator = 0.5 then the per grating 'contrast'
+% value will correspond to what practitioners of the field usually
+% understand to be the contrast value of a grating.
+%
 %
 % The function returns a procedural texture handle 'gratingid' that you can
 % pass to the Screen('DrawTexture(s)', windowPtr, gratingid, ...) functions
@@ -37,7 +48,7 @@ function [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width
 % cycles per pixel, 'contrast' is the contrast of your grating.
 %
 % For a zero degrees grating:
-% g(x,y) = modulatecolor * contrast * sin(x*2*pi*freq + phase) + Offset.
+% g(x,y) = modulatecolor * contrast * contrastPreMultiplicator * sin(x*2*pi*freq + phase) + Offset.
 %
 % Make sure to use the Screen('DrawTextures', ...); function properly to
 % draw many different gratings simultaneously - this is much faster!
@@ -45,6 +56,8 @@ function [gratingid, gratingrect] = CreateProceduralSineGrating(windowPtr, width
 
 % History:
 % 11/25/2007 Written. (MK)
+% 08/09/2010 Add support for optional circular aperture. (MK)
+% 09/03/2010 Add 'contrastPreMultiplicator' as suggested by Xiangrui Li (MK).
 
 % Global GL struct: Will be initialized in the LoadGLSLProgramFromFiles
 % below:
@@ -65,8 +78,22 @@ else
     end
 end
 
-% Load standard grating shader:
-gratingShader = LoadGLSLProgramFromFiles('BasicSineGratingShader', 1);
+if nargin < 5 || isempty(radius)
+    % Don't apply circular aperture if no radius given:
+    radius = inf;
+end
+
+if nargin < 6 || isempty(contrastPreMultiplicator)
+    contrastPreMultiplicator = 1.0;
+end
+
+if isinf(radius)
+    % Load standard grating shader:
+    gratingShader = LoadGLSLProgramFromFiles('BasicSineGratingShader', 1);
+else
+    % Load grating shader with circular aperture support:
+    gratingShader = LoadGLSLProgramFromFiles({'BasicSineGratingShader.vert.txt', 'ApertureSineGratingShader.frag.txt'}, 1);
+end
 
 % Setup shader:
 glUseProgram(gratingShader);
@@ -75,6 +102,15 @@ glUseProgram(gratingShader);
 % patch [tw/2, th/2]:
 glUniform2f(glGetUniformLocation(gratingShader, 'Center'), width/2, height/2);
 glUniform4f(glGetUniformLocation(gratingShader, 'Offset'), backgroundColorOffset(1),backgroundColorOffset(2),backgroundColorOffset(3),backgroundColorOffset(4));
+
+if ~isinf(radius)
+    % Set radius of circular aperture:
+    glUniform1f(glGetUniformLocation(gratingShader, 'Radius'), radius);
+end
+
+% Apply contrast premultiplier:
+glUniform1f(glGetUniformLocation(gratingShader, 'contrastPreMultiplicator'), contrastPreMultiplicator);
+
 glUseProgram(0);
 
 % Create a purely virtual procedural texture 'gaborid' of size width x height virtual pixels.
