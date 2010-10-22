@@ -10,6 +10,7 @@
 %   AssertMex               - Detect missing mex file and exit with error.
 %   AssertOpenGL            - Require that Psychtoolbox be based on OpenGL.
 %   AssertOSX               - Require that Psychtoolbox be based on OS X.
+%   BackupCluts             - Make internal backup of (given) Cluts, for later restoration via RestoreCluts.
 %   BlackIndex              - Returns number that will produce the color black.
 %   CatStr                  - Concatenate array or cell array of strings.
 %   CenterMatOnPoint        - Returns indices to center a matrix on a point.
@@ -29,6 +30,7 @@
 %   FunctionFolder          - Get full path to folder containing passed function.
 %   GetEchoNumber           - Get a number typed on-screen.
 %   GetEchoString           - Get a string typed on-screen.
+%   GetKbChar               - Simple, limited replacement for GetChar(), using KbCheck for character input.
 %   GetMyCaller             - Returns the name of the calling function.
 %   GetNumber               - Get a number typed at the keyboard.
 %   GetString               - Get a string typed at the keyboard.
