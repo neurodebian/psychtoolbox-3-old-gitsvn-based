@@ -19,13 +19,11 @@ function PlayMoviesWithoutGapDemoOSX(moviename)
 % engine. How well this feature works depends strongly on the computational
 % horsepower of your machine. Slow machines will probably stutter...
 %
-% This demo needs MacOS-X 10.3.9 or 10.4.x with Quicktime-7 installed!
 
 % History:
 % 7/5/06  mk  Wrote it.
 
-% Async movie loading is only OS-X for now...
-AssertOSX;
+AssertOpenGL;
 
 if nargin < 1
     moviename = '*.mov'
@@ -56,6 +54,9 @@ try
         
     % Return full list of movie files from directory+pattern:
     moviefiles=dir(moviename);
+    for i=1:size(moviefiles,1)
+        moviefiles(i).name = [ pwd filesep moviefiles(i).name ];
+    end
     
     % Playbackrate defaults to 1:
     rate=1;

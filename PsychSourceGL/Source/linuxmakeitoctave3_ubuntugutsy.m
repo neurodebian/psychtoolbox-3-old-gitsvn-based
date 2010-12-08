@@ -17,7 +17,7 @@ fprintf('Building plugin type %i ...\n\n', mode);
 
 if mode==0
     % Build Screen.mex:
-    mex -v -g --output ../Projects/Linux/build/Screen.mex -DPTBVIDEOCAPTURE_LIBDC -DPTBOCTAVE3MEX -I/usr/X11R6/include -ICommon/Base -ICommon/Screen -ILinux/Base -ILinux/Screen -L/usr/X11R6/lib Common/Base/*.cc Linux/Base/*.c Linux/Screen/*.c Common/Screen/*.c Common/Base/*.c -lc -lrt -lGL -lX11 -lXext /usr/lib/libXxf86vm.a /usr/lib/libGLU.a /usr/lib/libdc1394.a /usr/lib/libraw1394.a /usr/lib/libusb-1.0.a 
+    mex -v -g --output ../Projects/Linux/build/Screen.mex -DPTB_USE_GSTREAMER -DPTBVIDEOCAPTURE_LIBDC -DPTBOCTAVE3MEX -I/usr/X11R6/include -I/usr/include/gstreamer-0.10 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/libxml2 -ICommon/Base -ICommon/Screen -ILinux/Base -ILinux/Screen -L/usr/X11R6/lib  Common/Base/*.cc Linux/Base/*.c Linux/Screen/*.c Common/Screen/*.c Common/Base/*.c -lc -lrt -lGL -lX11 -lXext -lgstreamer-0.10 -lgstbase-0.10 -lgstapp-0.10 -lgobject-2.0 -lgmodule-2.0 -lxml2 -lgthread-2.0 -lglib-2.0 /usr/lib/libXxf86vm.a /usr/lib/libGLU.a /usr/lib/libdc1394.a /usr/lib/libraw1394.a /usr/lib/libusb-1.0.a 
     unix('mv /home/kleinerm/projects/OpenGLPsychtoolbox/trunk/PsychSourceGL/Projects/Linux/build/Screen.mex /home/kleinerm/projects/OpenGLPsychtoolbox/trunk/Psychtoolbox/PsychBasic/Octave3LinuxFiles/');
     striplibsfrommexfile([PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/Screen.mex']);
 end;
@@ -68,6 +68,13 @@ if mode==6
     unix('mv moglcore.mex /home/kleinerm/projects/OpenGLPsychtoolbox/trunk/Psychtoolbox/PsychBasic/Octave3LinuxFiles/');
     cd(curdir);
     striplibsfrommexfile([PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/moglcore.mex']);
+end;
+
+if mode==7
+    % Build PsychKinectCore.mex:
+    mex -v -g --output ../Projects/Linux/build/PsychKinectCore.mex -DPTBMODULE_PsychKinectCore -DPTBOCTAVE3MEX -I/usr/include/libusb-1.0 -I/usr/include/libfreenect -ICommon/Base -ILinux/Base -ICommon/PsychKinect -ICommon/Screen Common/Base/*.cc Linux/Base/*.c Common/Base/*.c Common/PsychKinect/*.c -lc -lrt -lfreenect -lusb-1.0
+    unix('mv /home/kleinerm/projects/OpenGLPsychtoolbox/trunk/PsychSourceGL/Projects/Linux/build/PsychKinectCore.mex /home/kleinerm/projects/OpenGLPsychtoolbox/trunk/Psychtoolbox/PsychBasic/Octave3LinuxFiles/');
+    striplibsfrommexfile([PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/PsychKinectCore.mex']);
 end;
 
 return;

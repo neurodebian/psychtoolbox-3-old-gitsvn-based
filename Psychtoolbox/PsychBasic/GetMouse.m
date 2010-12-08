@@ -1,11 +1,16 @@
-function [x,y,buttons] = GetMouse(windowPtrOrScreenNumber)
-% [x,y,buttons] = GetMouse([windowPtrOrScreenNumber])
+function [x,y,buttons,focus] = GetMouse(windowPtrOrScreenNumber)
+% [x,y,buttons,focus] = GetMouse([windowPtrOrScreenNumber])
 %
 % Returns the current (x,y) position of the cursor and the up/down state
 % of the mouse buttons. "buttons" is a 1xN matrix where N is the number of
 % mouse buttons. Each element of the matrix represents one mouse button.
 % The element is true (1) if the corresponding mouse button is pressed and
-% false (0) otherwise. 
+% false (0) otherwise.
+%
+% If an optional windowPtr argument for an onscreen window is provided,
+% GetMouse will also return the window focus state as optional 4th
+% return argument 'focus'. 'focus' is 1 if the window has input focus
+% and zero otherwise. 
 %
 % % Test if any mouse button is pressed. 
 % if any(buttons)
@@ -105,6 +110,7 @@ function [x,y,buttons] = GetMouse(windowPtrOrScreenNumber)
 %               which worked except for button state queries.
 % 09/20/06 mk   Updated help section for Windows: GetMouse now also works without onscreen windows.
 % 09/01/10 mk   Restrict number of mouse buttons on Windows and Linux to 3.
+% 11/03/10 mk   Return window focus state 'focus' as optional 4th return argument.
 
 % We Cache the value of numMouseButtons between calls to GetMouse, so we
 % can skip the *very time-consuming* detection code on successive calls.
@@ -135,15 +141,20 @@ if isempty(numMouseButtons)
     end;
 end;
 
-%read the mouse position and  buttons
-[globalX, globalY, rawButtons]=Screen('GetMouseHelper', numMouseButtons);
-buttons=logical(rawButtons);
-
-%renormalize to screen coordinates from display space
 if nargin < 1
     windowPtrOrScreenNumber = [];
 end
 
+%read the mouse position and  buttons
+if ~isempty(windowPtrOrScreenNumber)
+	[globalX, globalY, rawButtons, focus] = Screen('GetMouseHelper', numMouseButtons, windowPtrOrScreenNumber);
+else
+	[globalX, globalY, rawButtons, focus] = Screen('GetMouseHelper', numMouseButtons);
+end
+
+buttons=logical(rawButtons);
+
+%renormalize to screen coordinates from display space
 if ~isempty(windowPtrOrScreenNumber)
     screenRect=Screen('GlobalRect',windowPtrOrScreenNumber);
     x=globalX-screenRect(RectLeft);

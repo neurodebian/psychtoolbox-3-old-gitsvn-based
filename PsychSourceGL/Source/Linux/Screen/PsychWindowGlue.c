@@ -114,9 +114,22 @@ psych_bool PsychRealtimePriority(psych_bool enable_realtime)
     else {
       // Transition from RT to whatever-it-was-before scheduling requested: We just reestablish the backed-up old
       // policy: If the old policy wasn't Non-RT, then we don't switch back...
-      sched_setscheduler(0, oldPriority, &oldparam);      
+      if (oldPriority != realtime_class) oldparam.sched_priority = 0;
+
+      if (sched_setscheduler(0, oldPriority, &oldparam)) {
+	// Failed!
+	if(!PsychPrefStateGet_SuppressAllWarnings()) {
+	  printf("PTB-INFO: Failed to disable realtime-scheduling [%s]!\n", strerror(errno));
+	  if (errno==EPERM) {
+	    printf("PTB-INFO: You need to run Matlab or Octave with root-privileges for this to work.\n");
+	  }
+	}
+	errno=0;
+      }
     }
-    
+
+    //printf("PTB-INFO: Realtime scheduling %sabled\n", enable_realtime ? "en" : "dis");
+
     // Success.
     old_enable_realtime = enable_realtime;
     return(TRUE);
@@ -391,7 +404,10 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   // This will prevent setting the override_redirect attribute, which would lock out the
   // desktop window compositor:
   if (windowLevel < 2000) fullscreen = FALSE;
-  
+
+  // Also disable fullscreen mode for GUI-like windows:
+  if (windowRecord->specialflags & kPsychGUIWindow) fullscreen = FALSE;  
+
   // Setup window attributes:
   attr.background_pixel = 0;  // Background color defaults to black.
   attr.border_pixel = 0;      // Border color as well.
@@ -1256,4 +1272,30 @@ try_sgi_swapgroup:
 	if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: NV_swap_group and GLX_SGIX_swap_group unsupported or join operations failed.\n");
 	
 	return(rc);
+}
+
+// Perform OS specific processing of Window events:
+void PsychOSProcessEvents(PsychWindowRecordType *windowRecord, int flags)
+{
+	Window rootRet;
+	unsigned int depth_return, border_width_return, w, h;
+	int x, y;
+
+	// Trigger event queue dispatch processing for GUI windows:
+	if (windowRecord == NULL) {
+		// No op, so far...
+		return;
+	}
+	
+	// GUI windows need to behave GUIyee:
+	if ((windowRecord->specialflags & kPsychGUIWindow) && PsychIsOnscreenWindow(windowRecord)) {
+		// Update windows rect and globalrect, based on current size and location:
+		XGetGeometry(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, &rootRet, &x, &y,
+			     &w, &h, &border_width_return, &depth_return);
+		XTranslateCoordinates(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, rootRet,
+				      0,0, &x, &y, &rootRet);
+		PsychMakeRect(windowRecord->globalrect, x, y, x + (int) w - 1, y + (int) h - 1);
+		PsychNormalizeRect(windowRecord->globalrect, windowRecord->rect);
+		PsychSetupView(windowRecord);
+	}
 }

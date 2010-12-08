@@ -1,8 +1,9 @@
-function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
+function [rc, varargout] = moglmorpher(cmd, arg1, arg2, arg3, arg4, arg5)
 %
 % Matlab OpenGL Morpher - Performs linear morphs between different 3D shapes and
 % renders the resulting shape via OpenGL. Supports high-performance GPU
-% based morphing on recent graphics hardware.
+% based morphing on recent graphics hardware. Also performs linear morphing
+% (linear combinations) between different texture images.
 %
 % The moglmorpher computes linear combinations of shapes and their corresponding
 % surface normal vectors and texture coordinate assignments. It then renders the
@@ -17,7 +18,8 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 % left to the calling parent routines, focusing solely on high performance morphing
 % and rendering of generic triangle meshes. This allows for maximum flexibility.
 %
-% For a specific example of usage, have a look at MorphDemo.m
+% For a specific examples of usage, have a look at MorphDemo.m and
+% MorphTextureDemo.m.
 %
 % IMPORTANT: At the end of your script, you must call moglmorpher('reset')
 % to release all ressources and reset moglmorpher into a well-defined
@@ -69,20 +71,20 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 % meshid = moglmorpher('addMesh', obj);
 % -- Add a new shape to the collection of shapes to be morphed. 'obj'
 % is a single struct that defines the object: Subfields are obj.faces,
-% obj.vertices, obj.texcoords, obj.normals. Their meaning is the same as
-% the corresponding parameters in the following 'addMesh' subcommand. The
-% 'obj' syntax is provided for convenience, as 'obj' in the same format as
-% provided by LoadOBJFile, i.e. obj = LoadOBJFile('myfile.obj') will load
-% the geometry in 'myfile.obj' into obj, which can then be passed to
-% moglmorpher via moglmorpher('addMesh', obj{1}); to add the first mesh
-% from 'myfile.obj' into the morpher.
+% obj.vertices, obj.texcoords, obj.normals, obj.colors. Their meaning is
+% the same as the corresponding parameters in the following 'addMesh'
+% subcommand. The 'obj' syntax is provided for convenience, as 'obj' in the
+% same format as provided by LoadOBJFile, i.e. obj =
+% LoadOBJFile('myfile.obj') will load the geometry in 'myfile.obj' into
+% obj, which can then be passed to moglmorpher via moglmorpher('addMesh',
+% obj{1}); to add the first mesh from 'myfile.obj' into the morpher.
 %
 %
-% meshid = moglmorpher('addMesh', faces, vertices [, texcoords] [, normals]);
+% meshid = moglmorpher('addMesh', faces, vertices [, texcoords] [, normals] [, colors]);
 % -- Add a new shape to the collection of shapes to be morphed. faces == Index
 % list that defines the topology of the shape: faces is a 3 by n vector. Each of
 % the n columns defines one 3D triangle face, the 3 indices in the column are
-% indices into the vertices, texcoords and normals vectors that define the
+% indices into the vertices, texcoords, colors and normals vectors that define the
 % properties of the vertices.
 %
 % vertices == A 3-by-m vector that defines the shape of the object: Each of the
@@ -94,6 +96,16 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 %
 % texcoords == A 2-by-m vector of 2D texture coordinates for each corresponding vertex.
 % This vector is optional and only needed if you want to apply textures to the object.
+%
+% colors == A 3-by-m or 4-by-m vector whose single columns define the
+% (red,green,blue [,alpha]) vertex color components of each vertex in
+% 'vertices' of unit normal surface vectors. The colors vector is optional
+% and only needed if you want to do lighting calculations on your object.
+% Most of the time you won't use vertex colors, but instead assign a
+% texture for more flexibility and ease of use.
+% Note: The current implementation doesn't support morphing of vertex
+% colors. Instead it will simply use the vertex 'color' vector of the last
+% added mesh for the morphed output -- a fixed assignment of vertex colors.
 %
 % The size and dimension of all provided vectors must match (==be identical) for all
 % shapes. This is required, because otherwise the linear combination of shapes and
@@ -132,8 +144,9 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 %
 % finalresult = sum_for_i=1_to_count(shape(i) * weights(i));
 % The shape (vertices) and normal vectors are linearly combined. The texture coordinates are
-% not altered by the morph. If you set the optional argument morphnormals to zero, then
-% normals are not touched by morphing either.
+% not altered by the morph, neither are the vertex colors. If you set the
+% optional argument morphnormals to zero, then normals are not touched by
+% morphing either.
 %
 %
 % moglmorpher('render');
@@ -173,6 +186,29 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 % meshes.
 %
 %
+% [vertices, normals] = moglmorpher('getGeometry');
+% -- Returns current vector of 'vertices' and (optionally) normals as used
+% for rendering meshes. Call this after (at least one call to)
+% 'computeMorph' or 'renderMorph' to retrieve the current morphed mesh.
+% vertices and normals are 3-by-n matrices, each column encoding the three
+% components (x,y,z) of a single 3D vertex position or vertex normal.
+%
+%
+% [texid, gltexid, gltextarget] = moglmorpher('morphTexture', windowPtr, morphWeights, keyTextures);
+% -- Compute a linear combination of the Psychtoolbox textures stored in
+% vector 'keyTextures', using the values in vector 'morphWeights' as
+% weights. Return handles to the computed (morphed) texture. 'texid' is a
+% Psychtoolbox texture handle (e.g., for use with Screen('DrawTexture')),
+% gltexid is an OpenGL texture handle and gltextarget is an OpenGL texture
+% target. The texture could be used for rendering, e.g., onto a surface via
+% glBindTexture(gltextarget, gltexid); and disabled again via
+% glBindTexture(gltextarget, 0);
+%
+% Input textures must be rectangle textures and the output texture will be
+% a rectangle texture. The morphed texture 'texid' is owned by moglmorpher.
+% You must not close it or bad things will happen!
+%
+%
 % moglmorpher('reset');
 % -- Resets the moglmorpher - deletes all internal data structures.
 %
@@ -182,6 +218,7 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 %
 % History:
 % Sometimes 2006 - Written (MK).
+%
 % 10.09.2007  Added code for high-performance GPU based morhping. (MK).
 %             This makes use of FBOs, PBOs and VBOs plus the PTB imaging
 %             pipeline to perform all morphing on the GPU, ie., all data
@@ -189,6 +226,14 @@ function rc = moglmorpher(cmd, arg1, arg2, arg3, arg4)
 %             and host<->GPU bus --> Should provide significant speedups
 %             for large meshes or many meshes. Observed speedup on
 %             MacBookPro with ATI Radeon X1600 over Matlab7.4 is 3x.
+%
+% 03.11.2010  Add function 'getGeometry' to retrieve current (morphed) mesh
+%             geometry. (MK).
+%
+% 03.11.2010  Add function 'morphTextue' to morph textures as well (MK).
+%
+% 03.11.2010  Add support for static vertex colors (non-morphable for now) (MK).
+%
 
 % The GL OpenGL constant definition struct is shared with all other modules:
 global GL;
@@ -198,11 +243,13 @@ global GL;
 % Count of stored keyframe meshes:
 persistent objcount;
 persistent updatecount;
+persistent resynccount;
 
 % Renderbuffers for morphed vertices, normals and texcoords:
 persistent vertices;
 persistent normals;
 persistent texcoords;
+persistent vertcolors;
 
 % Indexarray for triangles - defines mesh topology:
 persistent faces;
@@ -214,6 +261,7 @@ persistent maxvertex;
 % Flags to enable/disable use of textures and normals:
 persistent usetextures;
 persistent usenormals;
+persistent usecolors;
 
 % Data type for OpenGL data, GL_FLOAT or GL_DOUBLE.
 persistent usetype;
@@ -221,6 +269,8 @@ persistent usetype;
 % Arrays which contain all keyshapes (vertices and normals):
 persistent keyvertices;
 persistent keynormals;
+persistent realVertexCount;
+persistent realNormalCount;
 
 % glDrawRangeElements() command supported?
 persistent drawrangeelements;
@@ -236,6 +286,7 @@ persistent keyshapes;
 persistent masterkeyshapetex;
 persistent morphbuffer;
 persistent vbo;
+persistent colorvbo;
 persistent ibo;
 
 persistent vbovertexstart;
@@ -258,6 +309,12 @@ persistent oldWeightLength;
 persistent isbuggyatidriver;
 persistent useSparseMorph;
 
+% Texture morphing:
+persistent texmorphbuffer;
+persistent texmorphOperator;
+persistent texmorphshader;
+persistent texshadermorphweight;
+
 % Sanity check:
 if nargin < 1
     help moglmorpher;
@@ -266,7 +323,7 @@ end;
 
 % Special subcommand: The only one to be called without open onscreen
 % window:
-if strcmp(cmd, 'ForceGPUMorphingEnabled')
+if strcmpi(cmd, 'ForceGPUMorphingEnabled')
     if nargin < 2
         error('You must supply the enable flag for subfunction ForceGPUMorphingEnabled!');
     end;
@@ -370,7 +427,7 @@ if isempty(gpubasedmorphing)
             Screen('BeginOpenGL', targetwindow);
         end
 
-        if (bitand(winfo.ImagingMode, kPsychNeedFastBackingStore)==0) & (winfo.ImagingMode~= kPsychNeedFastOffscreenWindows)
+        if (bitand(winfo.ImagingMode, kPsychNeedFastBackingStore)==0) && (winfo.ImagingMode~= kPsychNeedFastOffscreenWindows)
             fprintf('\n\nmoglmorpher: HINT: Your hardware supports fast GPU based morphing, but i cannot use it.\n');
             fprintf('moglmorpher: HINT: Please set the optional "imagingMode" flag of Screen(''OpenWindow'', ...)\n');
             fprintf('moglmorpher: HINT: at least equal to "kPsychNeedFastOffscreenWindows" in order to enable fast mode.\n\n');
@@ -388,10 +445,14 @@ end
 % Initialize count of keyshapes:
 if isempty(objcount)
     objcount = 0;
-    usetextures = 0;
+    usetextures = 0
     usenormals = 0;
+    usecolors = 0;
     updatecount = 0;
+    resynccount = 0;
     useSparseMorph = 0;
+    realVertexCount = 0;
+    realNormalCount = 0;
     
     % Check if addition is supported for floating-point single precision
     % numbers. If so, we cast all data arrays to single precision (float)
@@ -428,10 +489,10 @@ if isempty(drawrangeelements)
 end;
 
 % Subcommand dispatcher:
-if strcmp(cmd, 'reset')
+if strcmpi(cmd, 'reset')
    % Reset ourselves:
    
-   if (gpubasedmorphing > 0) & (objcount > 0)
+   if (gpubasedmorphing > 0) && (objcount > 0)
        % Query current OpenGL state:
        [targetwindow, IsOpenGLRendering] = Screen('GetOpenGLDrawMode');
 
@@ -494,6 +555,11 @@ if strcmp(cmd, 'reset')
        glDeleteBuffers(1, ibo);
        ibo = [];
        
+       if ~isempty(colorvbo)
+           glDeleteBuffers(1, colorvbo);
+           colorvbo = [];
+       end
+       
        weighttexgl = [];
        oldWeightLength = -1;
        
@@ -515,18 +581,38 @@ if strcmp(cmd, 'reset')
    vertices = [];
    normals = [];
    texcoords = [];
+   vertcolors = [];
    faces = [];
    keyvertices = [];
    keynormals = [];
    win = [];
    useSparseMorph = [];
+   realVertexCount = [];
+   realNormalCount = [];
+   resynccount = [];
+   
+   if ~isempty(texmorphbuffer)
+       Screen('Close', texmorphbuffer);
+       texmorphbuffer = [];
+   end
 
+   if ~isempty(texmorphOperator)
+       Screen('Close', texmorphOperator);
+       texmorphOperator = [];
+   end
+
+   if ~isempty(texmorphshader)
+       glDeleteProgram(texmorphshader);
+       texmorphshader = [];
+       texshadermorphweight = [];
+   end
+   
    rc = 0;
    
    return;
 end;
 
-if strcmp(cmd, 'getMeshCount')
+if strcmpi(cmd, 'getMeshCount')
     % Return count of stored keyshapes:
     rc = objcount;
     return;
@@ -553,7 +639,7 @@ if strcmpi(cmd, 'assumeSparseMorphWeights')
     return;
 end
 
-if strcmp(cmd, 'addMesh')
+if strcmpi(cmd, 'addMesh')
     % A new mesh should be added as keyshape to the collection of key-meshes.
 
     if nargin <2
@@ -578,6 +664,11 @@ if strcmp(cmd, 'addMesh')
             argcount = 5;
             arg4 = obj.normals;
         end;
+
+        if isfield(obj, 'colors') && ~isempty(obj.colors)
+            argcount = 6;
+            arg5 = obj.colors;
+        end;    
     end;
     
     % Sanity checks:
@@ -598,12 +689,16 @@ if strcmp(cmd, 'addMesh')
             error('Mismatch between size of current vertex coords. array and array of new mesh!');
         end;
 
-        if usetextures & (argcount<4 | isempty(arg3) | (size(texcoords)~=size(arg3)))
+        if usetextures && (argcount<4 || isempty(arg3) || any(size(texcoords)~=size(arg3)))
             error('Mismatch between size of current texture coords. array and array of new mesh or missing texcoords array!');
         end;
         
-        if usenormals & (argcount<5 | isempty(arg4) | (size(normals)~=size(arg4)))
+        if usenormals && (argcount<5 || isempty(arg4) || any(size(normals)~=size(arg4)))
             error('Mismatch between size of current normals array and array of new mesh or missing normals array!');
+        end;
+
+        if usecolors && (argcount<6 || isempty(arg5) || any(size(vertcolors)~=size(arg5)))
+            error('Mismatch between size of current vertex colors array and array of new mesh or missing colors array!');
         end;
     end;
         
@@ -627,6 +722,21 @@ if strcmp(cmd, 'addMesh')
         usenormals = 1;
     end;
 
+    % Store true size of arrays:
+    realVertexCount = size(vertices, 2);
+    if usenormals
+        realNormalCount = size(normals, 2);
+    else
+        realNormalCount = 0;
+    end
+    
+    % 5th (optional) argument is vertex colors array:
+    if argcount>5 && ~isempty(arg5)
+        vertcolors = double(arg5);
+        usecolors = 1;
+    end;
+    
+    
     % Assign vertex array and normals array to new slot in keyshape vector:
     objcount = objcount + 1;
     
@@ -642,6 +752,7 @@ if strcmp(cmd, 'addMesh')
             vertices = moglsingle(vertices);
             texcoords = moglsingle(texcoords);
             normals = moglsingle(normals);
+            vertcolors = moglsingle(vertcolors);
         end;
         
         keyvertices(:,:,objcount)=vertices(:,:);
@@ -837,6 +948,19 @@ if strcmp(cmd, 'addMesh')
             Screen('EndOpenGL', win);
         end
         
+        if usecolors
+            buffersize = size(vertcolors,1) * size(vertcolors,2) * 4;
+            if objcount == 1
+                colorvbo = glGenBuffers(1);
+                glBindBuffer(GL.ARRAY_BUFFER, colorvbo);
+                glBufferData(GL.ARRAY_BUFFER, buffersize, 0, GL.STATIC_DRAW);
+            else
+                glBindBuffer(GL.ARRAY_BUFFER, colorvbo);                
+                glBufferSubData(GL.ARRAY_BUFFER, 0, buffersize, moglsingle(vertcolors));
+            end
+            glBindBuffer(GL.ARRAY_BUFFER, 0);
+        end
+        
         clear invertices;
         
         if IsOpenGLRendering
@@ -853,13 +977,88 @@ if strcmp(cmd, 'addMesh')
     return;
 end;
 
-if strcmp(cmd, 'renderMesh')
+if strcmpi(cmd, 'getGeometry')
+    % Return current internal vertex and normals array:
+
+    if updatecount <= 1
+        error('Tried to retrieve morphed geometry/normals, but "computeMorph" not yet called at least once!');
+    end;
+
+    % Compute intense resync of GPU's VBO with our cached copies needed?
+    if resynccount < updatecount
+        % Yes: Do it.
+        % In cpu only mode, we have our results already in internal persistent
+        % matrices "vertices" and "normals", so nothing complex to do.
+        % In gpu mode, we need to fetch data from the GPU aka the vbo we use:
+        if gpubasedmorphing
+            % Query current OpenGL state:
+            [targetwindow, IsOpenGLRendering] = Screen('GetOpenGLDrawMode');
+
+            if IsOpenGLRendering
+                % Disable OpenGL mode:
+                Screen('EndOpenGL', targetwindow);
+            end
+
+            % Get [w,h] width x height of 2D morphbuffer in "data pixels". Each
+            % datapixel is either a 4D-vertex coordinate or a 4D-normal vector,
+            % the 4th component being padding:
+            [w, h] = Screen('WindowSize', morphbuffer(1));
+
+            % Total buffer size is w*h elements, each with 4 components (4D)
+            % and each component being a 4-Byte float value. As half of this
+            % amount is vertex data and the other half is normal data, we
+            % divide by 2 to get amount of vertex / normal data to retrieve:
+            buffersize = w * h * 4 * 4 / 2;
+
+            Screen('BeginOpenGL', morphbuffer(1));
+
+            % Bind vbo with current (morphed) geometry (positions and normals):
+            glBindBuffer(GL.ARRAY_BUFFER, vbo);
+
+            vertices = zeros(4, buffersize / 4 / 4);
+            vertices = moglsingle(vertices);
+            glGetBufferSubData(GL.ARRAY_BUFFER, vbovertexstart, buffersize, vertices);
+            vertices = vertices(1:3, 1:realVertexCount);
+
+            if nargout > 1 && usenormals
+                normals = zeros(4, buffersize / 4 / 4);
+                normals = moglsingle(normals);
+                glGetBufferSubData(GL.ARRAY_BUFFER, vbonormalstart, buffersize, normals);
+                normals = normals(1:3, 1:realNormalCount);
+            end
+
+            % Done. Unbind vbo:
+            glBindBuffer(GL.ARRAY_BUFFER, 0);
+
+            Screen('EndOpenGL', morphbuffer(1));
+
+            if IsOpenGLRendering
+                % Reenable OpenGL mode:
+                Screen('BeginOpenGL', targetwindow);
+            end
+        end
+        
+        % Resynced:
+        resynccount = updatecount;
+    end
+    
+    % Return our internal arrays with current morph/render results:
+    rc = vertices;
+    
+    if nargout > 1 && usenormals
+        varargout{1} = normals;
+    end
+    
+    return;
+end
+
+if strcmpi(cmd, 'renderMesh')
     % A single mesh should be rendered.
     if nargin < 2
         error('You need to supply the handle of the mesh to be rendered!');
     end;
     
-    if arg1 <1 | arg1>objcount
+    if arg1 <1 || arg1>objcount
         error('Handle for non-existent keyshape provided!');
     end;
     
@@ -906,7 +1105,7 @@ if strcmp(cmd, 'renderMesh')
     cmd = 'render';
 end;
 
-if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
+if strcmpi(cmd, 'renderMorph') || strcmpi(cmd, 'computeMorph')
     % A morph (linear combination) of all meshes should be computed and then rendered.
     if nargin < 2
         error('You need to supply the morph-weight vector!');
@@ -949,7 +1148,7 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
         end;
 
         % Perform morphing of normals as well. This is not strictly correct.
-        if usenormals & morphnormals
+        if usenormals && morphnormals
             normals(:,:) = keynormals(:,:,1) * arg1(1);
             for i=2:length(arg1)
                 if abs(arg1(i)) > 0
@@ -1009,7 +1208,7 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
         end
 
         % Which path to use?
-        if isempty(masterkeyshapetex) | (useSparseMorph > 0)
+        if isempty(masterkeyshapetex) || (useSparseMorph > 0)
             % Iterative path. Used when number and size of keyshapes
             % doesn't fit into hardware constraints for a single shape
             % texture.
@@ -1128,7 +1327,7 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
         end
         
         % Do we have normals, and if so, do we want to morph them?
-        if ~morphnormals & usenormals
+        if ~morphnormals && usenormals
             % We have normals, but don't wanna morph them: Only read back
             % half of the morphbuffers height, so we omit copying the new
             % morphed normals to the normal-array section of our VBO:
@@ -1159,7 +1358,7 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
     updatecount = updatecount + 1;
 
     % Just morph or render as well?
-    if strcmp(cmd, 'renderMorph')
+    if strcmpi(cmd, 'renderMorph')
         % Set command code for rendering current content of renderbuffers:
         cmd = 'render';
     else
@@ -1169,17 +1368,23 @@ if strcmp(cmd, 'renderMorph') | strcmp(cmd, 'computeMorph')
     end;
 end;
 
-if strcmp(cmd, 'renderNormals')
-
-    if gpubasedmorphing
-        % NOT YET IMPLEMENTED: Skip with warning:
-        warning('moglmorpher: Subcommand "renderNormals" not yet implemented for GPU based morphing!');
-        return;
-    end
+if strcmpi(cmd, 'renderNormals')
     
     if updatecount < 1
         error('Tried to render normals in renderbuffer, but renderbuffer not yet filled!');
     end;
+    
+    if gpubasedmorphing
+        % NOT YET IMPLEMENTED: Skip with warning:
+        % warning('moglmorpher: Subcommand "renderNormals" not yet implemented for GPU based morphing!');
+        % return;
+
+        if resynccount < updatecount
+            % Recursive call to ourselves to update our internal vertices and
+            % normals matrices with readback data from the GPU's VBO:
+            [vertices, normals] = moglmorpher('getGeometry');
+        end
+    end
 
     if (size(vertices,2)~=size(normals,2))
         error('renderNormals: Sorry this function only works if count of normals equals count of vertices. Aborted!');
@@ -1204,13 +1409,13 @@ if strcmp(cmd, 'renderNormals')
     return;
 end;
 
-if strcmp(cmd, 'render') | strcmp(cmd, 'renderToDisplaylist')
+if strcmpi(cmd, 'render') || strcmpi(cmd, 'renderToDisplaylist')
     % Render current content of renderbuffers via OpenGL:
     if updatecount < 1
         error('Tried to render content of renderbuffers, but renderbuffers not yet filled!');
     end;
 
-    if strcmp(cmd, 'renderToDisplaylist')
+    if strcmpi(cmd, 'renderToDisplaylist')
         % Create new display list and direct all rendering into it:
         rc = glGenLists(1);
         glNewList(rc, GL.COMPILE);
@@ -1241,6 +1446,13 @@ if strcmp(cmd, 'render') | strcmp(cmd, 'renderToDisplaylist')
             glEnableClientState(GL.TEXTURE_COORD_ARRAY);
             % Set pointer to start of texcoord array:
             glTexCoordPointer(size(texcoords, 1), usetype, 0, texcoords);
+        end;
+
+        if usecolors
+            % Enable client-side texture coordinate arrays:
+            glEnableClientState(GL.COLOR_ARRAY);
+            % Set pointer to start of vertex color array:
+            glColorPointer(size(vertcolors, 1), usetype, 0, vertcolors);
         end;
 
         % Render mesh, using topology given by 'faces':
@@ -1287,28 +1499,29 @@ if strcmp(cmd, 'render') | strcmp(cmd, 'renderToDisplaylist')
             glDisableClientState(GL.NORMAL_ARRAY);
         end
 
+        if usecolors
+            % Enable client-side texture coordinate arrays:
+            glEnableClientState(GL.COLOR_ARRAY);
+
+            % We use a separate dedicated VBO for vertex colors:
+            glBindBuffer(GL.ARRAY_BUFFER, colorvbo);
+
+            % Set pointer to start of vertex color buffer:
+            glColorPointer(size(vertcolors, 1), usetype, 0, 0);
+        else
+            glDisableClientState(GL.COLOR_ARRAY);
+        end
+        
         % Bind face index VBO 'ibo':
         glBindBuffer(GL.ELEMENT_ARRAY_BUFFER_ARB, ibo);
 
         % Render mesh, using topology given by 'faces':
-        if drawrangeelements
-            % Faster rendering-path, needs OpenGL-1.2 or higher:
-            if (size(faces,1)==3)
-                glDrawRangeElements(GL.TRIANGLES, minvertex, maxvertex, size(faces,2) * 3, GL.UNSIGNED_INT, 0);
-            elseif size(faces,1)==4
-                glDrawRangeElements(GL.QUADS, minvertex, maxvertex, size(faces,2) * 4, GL.UNSIGNED_INT, 0);
-            else
-                error('Invalid number of rows in face index array!');
-            end;
+        if (size(faces,1)==3)
+            glDrawRangeElements(GL.TRIANGLES, minvertex, maxvertex, size(faces,2) * 3, GL.UNSIGNED_INT, 0);
+        elseif size(faces,1)==4
+            glDrawRangeElements(GL.QUADS, minvertex, maxvertex, size(faces,2) * 4, GL.UNSIGNED_INT, 0);
         else
-            % Slower rendering path, needed to support OpenGL-1.1 renderers as well:
-            if (size(faces,1)==3)
-                glDrawElements(GL.TRIANGLES, size(faces,2) * 3, GL.UNSIGNED_INT, 0);
-            elseif size(faces,1)==4
-                glDrawElements(GL.QUADS, size(faces,2) * 4, GL.UNSIGNED_INT, 0);
-            else
-                error('Invalid number of rows in face index array!');
-            end;
+            error('Invalid number of rows in face index array!');
         end;
 
         % Unbind our VBOs:
@@ -1324,6 +1537,7 @@ if strcmp(cmd, 'render') | strcmp(cmd, 'renderToDisplaylist')
     glDisableClientState(GL.VERTEX_ARRAY);
     glDisableClientState(GL.NORMAL_ARRAY);
     glDisableClientState(GL.TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL.COLOR_ARRAY);
 
     if rc>-1
         % Finalize our new display list:
@@ -1333,11 +1547,11 @@ if strcmp(cmd, 'render') | strcmp(cmd, 'renderToDisplaylist')
     return;
 end;
 
-if strcmp(cmd, 'getVertexPositions')   
+if strcmpi(cmd, 'getVertexPositions')   
    % Calling routine wants projected screen space vertex positions of all vertices
    % in our current renderbuffer.
    
-   if nargin < 2 | isempty(arg1)
+   if nargin < 2 || isempty(arg1)
       error('win Windowhandle missing in call to getVertexPositions!')
    end;
    
@@ -1376,7 +1590,7 @@ if strcmp(cmd, 'getVertexPositions')
    reqbuffersize = ntotal * 4 * 4; % numVertices * 4 float/vertex * 4 bytes/float.
    
    % Feedback buffer already allocated in proper size?
-   if feedbackptr~=0 & feedbacksize < reqbuffersize
+   if feedbackptr~=0 && feedbacksize < reqbuffersize
       % Allocated, but too small for our purpose. Delete & Reallocate:
       moglfree(feedbackptr);
       feedbackptr=0;
@@ -1443,6 +1657,155 @@ if strcmp(cmd, 'getVertexPositions')
    
    % Done. Return array in rc:
    return;
+end;
+
+% Take vector of textures and matching vector of morphWeights and linearly
+% combine those textures according to the weights. Return handles to
+% resulting texture:
+if strcmpi(cmd, 'morphTexture')
+    if nargin < 3 || isempty(arg1) || isempty(arg2) || isempty(arg3)
+        error('morphTexture: At least one of the required arguments windowPtr, weights or keytextures is missing!');
+    end
+
+    if ~gpubasedmorphing
+        highprec = 0;
+    else
+        highprec = 1;
+    end
+
+    win = arg1;
+    weights = arg2;
+    texkeyshapes = arg3;
+
+    refrect = Screen('Rect', texkeyshapes(1));
+    for i=2:length(texkeyshapes)
+        if ~isequal(refrect, Screen('Rect', texkeyshapes(i)))
+            error('morphTexture: Not all passed keytextures have the same size (width x height) as required!');
+        end
+    end
+
+    if length(weights) > length(texkeyshapes)
+        error('morphTexture: Vector of weights has more components than vector of keytextures!');
+    end
+
+    % Buffers exist, but don't match the size of the keytextures?
+    if ~isempty(texmorphbuffer) && ~isequal(refrect, Screen('Rect', texmorphbuffer(1)))
+        % Release current buffers:
+        Screen('Close', texmorphbuffer);
+        texmorphbuffer = [];
+    end
+
+    % (Re-)Create morph buffers if they don't already exist:
+    if isempty(texmorphbuffer)
+        if highprec
+            % Create float buffers of matching size:
+            texmorphbuffer(1) = Screen('OpenOffscreenWindow', win, [0 0 0 0], refrect, 128);
+            texmorphbuffer(2) = Screen('OpenOffscreenWindow', win, [0 0 0 0], refrect, 128);
+
+            % Setup proper blend mode:
+            Screen('Blendfunction', texmorphbuffer(1), GL_ONE, GL_ZERO);
+            Screen('Blendfunction', texmorphbuffer(2), GL_ONE, GL_ZERO);
+        else
+            % Create low precision buffer of matching size:
+            texmorphbuffer(1) = Screen('OpenOffscreenWindow', win, [0 0 0 0], refrect, 32);
+
+            % Setup proper blend mode for morphing via blending: alpha
+            % value will define blend weight:
+            Screen('Blendfunction', texmorphbuffer(1), GL_SRC_ALPHA, GL_ONE);
+        end
+    else
+        % Initialize our texmorphbuffer offscreen windows with empty textures:
+        if highprec
+            Screen('FillRect', texmorphbuffer(1), [0 0 0 0]);
+        else
+            % Prefill buffer with 1st morphed texture:
+            Screen('Blendfunction', texmorphbuffer(1), GL_SRC_ALPHA, GL_ZERO);
+            Screen('DrawTexture', texmorphbuffer(1), texkeyshapes(1), [], [], [], 0, weights(1));
+            Screen('Blendfunction', texmorphbuffer(1), GL_SRC_ALPHA, GL_ONE);
+        end
+    end
+
+    if gpubasedmorphing && isempty(texmorphOperator)
+        texmorphshader = LoadGLSLProgramFromFiles('LinearCombinationOfTwoImagesShader.frag.txt');
+        texmorphOperator = CreateGLOperator(win, kPsychNeed32BPCFloat, texmorphshader, 'Multiply-Accumulate operator for texture morphing');
+
+        % Need 'shadermorphweight' uniform location, so we can assign a
+        % different weight for morphing of each keyshape in morph-loop:
+        texshadermorphweight = glGetUniformLocation(texmorphshader, 'Image1Weight');
+
+        % Setup all other uniforms to their fixed values:
+        glUseProgram(texmorphshader);
+
+        % Don't need 2nd weight of this shader for our purpose: Set it
+        % to 1.0 so we get a nice multiply-accumulate behaviour:
+        glUniform1f(glGetUniformLocation(texmorphshader, 'Image2Weight'), 1.0);
+
+        % Assign texture units to samplers:
+        glUniform1i(glGetUniformLocation(texmorphshader, 'Image1'), 0);
+        glUniform1i(glGetUniformLocation(texmorphshader, 'Image2'), 1);
+        glUseProgram(0);
+    end
+
+    if highprec
+        % We iterate over all keytextures, and morph-in (aka
+        % multiply-accumulate) one keytexture per iteration:
+
+        % Initial src- dst- assignement for buffer-pingpong:
+        currentsrcbuffer = 1;
+        currentdstbuffer = 2;
+
+        % Morph-Loop for multiply-accumulate morph operation:
+        for i=1:length(weights)
+            % Only process keytextures with non-zero activation weight:
+            if abs(weights(i)) > 0
+                % Store morph weight for i'th texture in uniform for shader:
+                glUseProgram(texmorphshader);
+                glUniform1f(texshadermorphweight, weights(i));
+                glUseProgram(0);
+
+                % xform pass: Blit sum of new keytexture and currentsrcbuffer
+                % into currentdstbuffer, applying proper morph weight:
+                texmorphbuffer(currentdstbuffer) = Screen('TransformTexture', texkeyshapes(i), texmorphOperator, texmorphbuffer(currentsrcbuffer), texmorphbuffer(currentdstbuffer));
+
+                % Switch source and destination buffers for next morph-pass:
+                j = currentsrcbuffer;
+                currentsrcbuffer = currentdstbuffer;
+                currentdstbuffer = j;
+            end
+            % Next morph-iteration...
+        end
+    else
+        % Fast path: Less accurate, but works on old gpu's.
+        currentsrcbuffer = 1;
+
+        if any(weights < 0)
+            fprintf('moglmorpher: morphTexture: WARNING! Running in shaderless low-precision mode and some\n');
+            fprintf('moglmorpher: morphTexture: morph weights are < 0. I can''t handle this correctly, results\n');
+            fprintf('moglmorpher: morphTexture: will be wrong! Enable gpu based morphing for me to cope with this.\n');
+        end
+
+        for i=2:length(weights)
+            % Only process keytextures with non-zero activation weight:
+            if weights(i) > 0
+                % Draw i'th texkeyshape (weighted by weight(i)) on top of
+                % texmorphbuffer(1), thereby multiply-adding it due to the
+                % selected blending mode:
+                Screen('DrawTexture', texmorphbuffer(1), texkeyshapes(i), [], [], [], 0, weights(i));
+            end
+            % Next morph-iteration...
+        end
+    end
+
+    % outtex is handle to final texture:
+    outtex = texmorphbuffer(currentsrcbuffer);
+
+    % Return ptb handle as 1st argument:
+    rc = outtex;
+
+    % Return opengl handle and gltexture target as 2nd and 3rd argument:
+    [varargout{1}, varargout{2}] = Screen('GetOpenGLTexture', win, outtex);
+
+    return;
 end;
 
 error('Invalid subcommand specified!');
