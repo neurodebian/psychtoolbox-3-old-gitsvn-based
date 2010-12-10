@@ -1,0 +1,12 @@
+--- a/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
++++ b/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
+@@ -13,6 +13,9 @@ if nargin < 1
+     mode = 0;
+ end;
+ 
++% In-source-tree building
++PsychtoolboxRoot = '../../Psychtoolbox/'
++
+ fprintf('Building plugin type %i ...\n\n', mode);
+ 
+ if mode==0
