@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# get Octave paths
+include /usr/share/octave/debian/defs.make
+# get Matlab paths
+include /usr/share/matlab/debian/defs.make
+
+%:
+	dh $@
+
+
+override_dh_strip:
+	dh_strip --dbg-package=octave-psychtoolbox-3-dbg

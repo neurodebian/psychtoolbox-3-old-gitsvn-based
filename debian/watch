@@ -1,0 +1,3 @@
+version=3
+# at least lets monitor possible SVN tags
+http://svn.berlios.de/svnroot/repos/osxptb Psychtoolbox-([^-]*)-*.*
