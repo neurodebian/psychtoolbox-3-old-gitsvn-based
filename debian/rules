@@ -6,9 +6,31 @@ include /usr/share/octave/debian/defs.make
 # get Matlab paths
 include /usr/share/matlab/debian/defs.make
 
+export LDFLAGS="-Wl,--as-needed"
+
+# Upstream advises to build without optimization at the moment
+export CXXFLAGS=-Wall -g -O0
+export CFLAGS=-Wall -g -O0
+
 %:
 	dh $@
 
+override_dh_auto_build:
+	mkdir -p PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles
+	cd PsychSourceGL/Source/; \
+	: # Build all extensions, but:
+	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
+	for mode in {0..3} 5 6 7; do \
+	  octave -q --eval "linuxmakeitoctave3_ubuntugutsy($mode)"; done
+
+	: # Manually build OpenGL text renderer extension
+	cd PsychSourceGL/Cohorts/FTGLTextRenderer; \
+	$(CXX) $(CXXFLAGS) -I. -I/usr/include/ -I/usr/include/freetype2/ \
+		-L/usr/lib -l GL -l GLU -l fontconfig -l freetype -pie -shared -fPIC \
+		-o libptbdrawtext_ftgl.so.1 \
+		libptbdrawtext_ftgl.cpp qstringqcharemulation.cpp OGLFT.cpp; \
+	install --mode=0644 PsychSourceGL/Cohorts/FTGLTextRenderer/libptbdrawtext_ftgl.so.1 \
+	   Psychtoolbox/PsychBasic/PsychPlugins
 
 override_dh_strip:
 	dh_strip --dbg-package=octave-psychtoolbox-3-dbg

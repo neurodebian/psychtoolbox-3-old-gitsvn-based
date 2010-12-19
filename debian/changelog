@@ -1,5 +1,5 @@
-psychtoolbox-3 (3.0.8+svn1866-1~pre1) UNRELEASED; urgency=low
+psychtoolbox-3 (3.0.8+svn1866.dfsg1-1~pre1) UNRELEASED; urgency=low
 
-  * Initial release (Closes: #)
+  * Initial release (Closes: #606557)
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Fri, 17 Dec 2010 00:01:44 -0500
