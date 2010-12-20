@@ -62,9 +62,17 @@ override_dh_makeshlibs:
 
 override_dh_strip:
 	dh_strip --dbg-package=psychtoolbox-3-dbg
+
+override_dh_shlibdeps:
+	dh_shlibdeps
 	@: # Manually remove executable bit for .mex .m .so.*
-	@: # needs to be done post dh_strip so that those are found by dh_strip
-	find debian/ -regextype posix-egrep -regex '.*\.(m|txt|mex|so(|\..*))' -perm /+x -print0 \
+	@: # needs to be done post dh_strip,dh_shlibdeps so that .mex are found by dh_strip, dh_shlibdeps
+#	find debian/ -regextype posix-egrep \
+#	-regex '.*\.(c|jpg|vert|frag|xml|html|hiro|kanji|mat|m|txt|mex|so(|\..*))' \
+#	-perm /+x -print0 \
+	@: # strip from all files since we do not have any real executable there
+	find debian/*psychtoolbox*/usr ! -type d -perm /+x -print0 \
+	| grep -v -e '/bin/' -e ATIRadeonperf_Linux \
 	| xargs -0 --no-run-if-empty chmod a-x
 
 
