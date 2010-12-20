@@ -71,8 +71,7 @@ override_dh_shlibdeps:
 #	-regex '.*\.(c|jpg|vert|frag|xml|html|hiro|kanji|mat|m|txt|mex|so(|\..*))' \
 #	-perm /+x -print0 \
 	@: # strip from all files since we do not have any real executable there
-	find debian/*psychtoolbox*/usr ! -type d -perm /+x -print0 \
-	| grep -v -e '/bin/' -e ATIRadeonperf_Linux \
+	find debian/ -ipath '*psych*/usr/*' -perm /+x -type f ! -iname ATIRadeonperf_Linux -print0 \
 	| xargs -0 --no-run-if-empty chmod a-x
 
 
