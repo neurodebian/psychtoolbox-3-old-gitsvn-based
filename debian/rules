@@ -41,8 +41,9 @@ override_dh_auto_install:
 	dh_auto_install
 	rsync -a --exclude=*.o ./Psychtoolbox/ $(OCT_SHAREDDIR)
 	: # Move binaries under octave supervision, symlinks back by dh_link
+	mkdir -p debian/octave-psychtoolbox-3$(OCTDIR)
 	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles \
-		debian/octave-psychtoolbox-3/usr/lib/octave/site/psychtoolbox-3/PsychBasic
+		debian/octave-psychtoolbox-3$(OCTDIR)/psychtoolbox-3
 	: # Move the rest of binaries into -lib
 	find $(OCT_SHAREDDIR) -iname ATIRadeonperf_Linux -o -iname *.so.* \
 	| while read so; do \
@@ -64,8 +65,11 @@ override_dh_strip:
 	dh_strip --dbg-package=psychtoolbox-3-dbg
 
 override_dh_shlibdeps:
-	dh_shlibdeps
-	@: # Manually remove executable bit for .mex .m .so.*
+	@: # octave will take care of proper deps for extensions -- no need to scan
+	@: # them and warn all the time
+	dh_shlibdeps -l$(shell octave-config --print OCTLIBDIR)
+
+	: # Manually remove executable bit for everything not to be executed (e.g. .mex .m .so.*)
 	@: # needs to be done post dh_strip,dh_shlibdeps so that .mex are found by dh_strip, dh_shlibdeps
 #	find debian/ -regextype posix-egrep \
 #	-regex '.*\.(c|jpg|vert|frag|xml|html|hiro|kanji|mat|m|txt|mex|so(|\..*))' \
