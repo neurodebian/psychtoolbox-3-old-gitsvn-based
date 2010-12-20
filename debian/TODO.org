@@ -1,0 +1,186 @@
+* Version
+** TODO take care about reported version
+
+octave:8> PsychtoolboxVersion 
+svn: '/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox' is not a working copy
+svn: '/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox' is not a working copy
+ans = 3.0.8 - Flavor:  - Corresponds to SVN Revision 
+For more info visit:
+http://svn.berlios.de/wsvn/osxptb/?rev=
+
+
+
+
+PTB-WARNING: DrawText: Failed to load external drawtext plugin [/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox//PsychBasic/PsychPlugins/libptbdrawtext_ftgl.so.1: cannot open shared object file: No such file or directory]. Retrying under generic name [libptbdrawtext_ftgl.so.1].
+PTB-WARNING: DrawText: Failed to load external drawtext plugin [libptbdrawtext_ftgl.so.1: cannot open shared object file: No such file or directory]. Reverting to standard text renderer.
+PTB-WARNING: DrawText: Functionality of Screen('DrawText') and Screen('TextBounds') may be limited and text quality may be impaired.
+PTB-WARNING: DrawText: Type 'help DrawTextPlugin' at the command prompt to receive instructions for troubleshooting.
+
+** current BETA (rev 1865) said to be updated to rev 1864, maintains some differences:
+
+$> git diff master..branches/beta --stat
+ .../Source/Common/PsychPortAudio/pa_mac_core.h     |    6 ++-
+ PsychSourceGL/Source/OSX/Fonts/FONTSFonts.c        |   49 ++++++++----------
+ Psychtoolbox/PsychFiles/WriteStructsToText.m       |   52 +-------------------
+ Psychtoolbox/PsychProbability/RandLim.m            |    2 +-
+ 4 files changed, 29 insertions(+), 80 deletions(-)
+
+but it seems to be ok to work from trunk (i.e. master)
+
+* DFSG/License/Copyright											  :legal:
+** TODO Canonical reference?
+** TODO Cleanup
+[[file:cleanup.sh][* cleanup script]]
+*** Psychtoolbox/PsychContributed/ATIRadeonperf_Linux
+  -- is used by PsychOneliners/PsychGPUControl.m to set GPU
+     and that one is not used/tested in any of demos/tests
+** TODO Collect copyright/license
+*** Psychtoolbox/PsychContributed/ple.m
+% Copyright: This implementation of 'ple' is a slightly modified derivate of
+% the original public domain implementation of ple.m by Malcolm Wood (the MathWorks).
+
+*** ./Psychtoolbox/PsychContributed/read_rle_rgbe.m
+% Written by Lawrence A. Taplin (taplin@cis.rit.edu)
+%
+% Based loosely on the c-code RGBE implementation written by Bruce Walters
+% http://www.graphics.cornell.edu/~bjw/rgbe.html
+
+* Installation
+** under Matlab sets permissions for writable for all users... what is :matlab:
+   the reason?
+
+** ~/.octaverc  gets really polutted with paths. Is it ok to use genpath? :octave:
+
+* Dependencies
+** DONE Kinect: [[file:~/deb/gits/libfreenect][git:libfreenect]]
+   CLOSED: [2010-12-18 Sat 12:06]
+
+according to Psychtoolbox/PsychDocumentation/InstallKinect.m "
+
++% 1. If you have Ubuntu Linux 10.04 LTS or 10.10 installed, open a terminal
++% window and type this sequence of commands, providing your administrator
++% password as requested.
++%
++%    a) sudo apt-add-repository ppa:arne-alamut/freenect
++%    b) sudo apt-get update
++%    c) sudo apt-get install libfreenect
++%    d) sudo adduser YOURNAME video (YOURNAME) is your user name!
++%    e) Log out and Log in again.
+
+ * 2010-12-11 was uploaded to NEW
+ * Python CMakeList.txt accepted upstream
+
+* Building
+** DONE Build command
+CLOSED: [2010-12-20 Mon 14:57]
+
+ mkdir -p PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles
+ cd PsychSourceGL/Source/
+ for mode in {0..3} 5 6 7; do PATH=/usr/lib/ccache:$PATH LDFLAGS="-Wl,--as-needed" CXXFLAGS=-O0 CFLAGS=-O0 octave -q --eval "linuxmakeitoctave3_ubuntugutsy($mode)"; done
+
+** TODO Consider building for excluded to be built externals:
+   	4  libeyelink -- non-distributable binary blob with open-sourced API
+                   -- can't be redistributed, thus can't be enabled out
+                   of the box
+				   TODO: make easy to build eyelink support if library
+                   is available (during install time, similar to Matlab stuff)
+** TODO Consider building PsychCV extension
+** TODO Master build file: PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
+*** contains custom paths to move things around after build :patch:submitted-upstream:
+*** DONE builds statically against :patch:submitted-upstream:
+CLOSED: [2010-12-20 Mon 15:00]
+   /usr/lib/libXxf86vm.a /usr/lib/libGLU.a /usr/lib/libdc1394.a /usr/lib/libraw1394.a /usr/lib/libusb-1.0.a
+
+  which fails due to
+   /usr/bin/ld: /usr/lib/libXxf86vm.a(XF86VMode.o): relocation R_X86_64_32 against `.data' can not be used when making a shared object; recompile with -fPIC
+   /usr/lib/libXxf86vm.a: could not read symbols: Bad value
+
+**** upstream Ok-ed dynamic linking
+
+ grep '^[ \t]*mex ' linuxmakeitoctave3_ubuntugutsy.m | sed -e 's/[^ ]*\/lib\([^ ]*\)\.a/-l\1/g' -e 's,\Wmex\W,mkoctfile --mex ,g' | grep -v freenect >| linuxmakeitoctave3_ubuntugutsy-extract.sh
+ to generate a list of lines, excluding build of freenect, to generate
+ .mex. MOGL though needs to be built in Psychtoolbox
+** TODO Reliable failing
+
+since build officially would not fail with that .m wrapper -- find a
+way to figure out either everything was built ok there
+** TODO Move ATIRadeonperf_Linux under /usr/bin
+** TODO Build-Depends:
+     libxml2-dev, libglib2.0-dev,
+     libxxf86vm-dev, libglu1-mesa-dev,
+     libgstreamer-plugins-base0.10-dev, libraw1394-dev,
+     libdc1394-22-dev, libusb-1.0-0-dev,
+	 libfreenect-dev, # NEW
+	 libportaudio-dev # needs a look
+
+** TODO Testing
+*** TODO Tests under Psychtoolbox/PsychTests
+
+{ for f in *Test.m; do echo -n "TEST $f: "; octave -q $f 2>&1 && echo "OK" || echo "FAILED"; done; } | tee tests_output_`mdate`.log
+
+*** TODO Running demos:
+**** deprecation and failure:
+
+octave:3> IsomerizationsInDishDemo
+warning: function name `FIllInPhotoreceptors' does not agree with function file name `/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychColorimetricData/FillInPhotoreceptors.m'
+warning: isstr is obsolete and will be removed from a future version of Octave, please use ischar instead
+warning: load: file found in load path
+error: `radiometer' undefined near line 39 column 40
+error: evaluating argument list element number 1
+error: evaluating argument list element number 1
+error: called from:
+error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychColorimetric/WattsToRetIrradiance.m at line 39, column 1
+error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychDemos/IsomerizationsInDishDemo.m at line 42, column 32
+
+**** Times font
+Computed RGB: [0.597239 0.481301 0.501372]
+PTB-INFO: Using GLEW version 1.5.3 for automatic detection of OpenGL extensions...
+PTB-WARNING: Your graphics driver doesn't allow me to control syncing wrt. vertical retrace!
+PTB-WARNING: Please update your display graphics driver as soon as possible to fix this.
+PTB-WARNING: Until then, you can manually enable syncing to VBL somehow in a manner that is
+PTB-WARNING: dependent on the type of gfx-card and driver. Google is your friend...
+Failed to load X11 font with name Times.
+
+Available X11 fonts are:
+
+**** VignettingCorrectionDemo
+
+
+PTB-INFO: This is Psychtoolbox-3 for GNU/Linux X11, under GNU/Octave-3 (Version 3.0.8 - Build date: Dec 10 2010).
+PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.
+PTB-INFO: Most parts of the Psychtoolbox distribution are licensed to you under terms of the GNU General Public License (GPL).
+PTB-INFO: See file 'License.txt' in the Psychtoolbox root folder for the exact licensing conditions.
+
+PTB-INFO: Using GLEW version 1.5.3 for automatic detection of OpenGL extensions...
+PTB-WARNING: Your graphics driver doesn't allow me to control syncing wrt. vertical retrace!
+PTB-WARNING: Please update your display graphics driver as soon as possible to fix this.
+PTB-WARNING: Until then, you can manually enable syncing to VBL somehow in a manner that is
+PTB-WARNING: dependent on the type of gfx-card and driver. Google is your friend...
+
+
+OpenGL-Extensions are: GL_EXT_compiled_vertex_array GL_EXT_texture_env_add GL_ARB_copy_buffer GL_ARB_depth_texture GL_ARB_depth_clamp GL_ARB_draw_buffers GL_ARB_draw_elements_base_vertex GL_ARB_fragment_program GL_ARB_fragment_program_shadow GL_ARB_fragment_shader GL_ARB_framebuffer_object GL_ARB_half_float_pixel GL_ARB_map_buffer_range GL_ARB_multisample GL_ARB_multitexture GL_ARB_occlusion_query GL_ARB_pixel_buffer_object GL_ARB_point_parameters GL_ARB_point_sprite GL_ARB_provoking_vertex GL_ARB_seamless_cube_map GL_ARB_shader_objects GL_ARB_shading_language_100 GL_ARB_shading_language_120 GL_ARB_shadow GL_ARB_sync GL_ARB_texture_border_clamp GL_ARB_texture_compression GL_ARB_texture_cube_map GL_ARB_texture_env_add GL_ARB_texture_env_combine GL_ARB_texture_env_crossbar GL_ARB_texture_env_dot3 GL_ARB_texture_mirrored_repeat GL_ARB_texture_non_power_of_two GL_ARB_texture_rectangle GL_ARB_transpose_matrix GL_ARB_vertex_array_bgra GL_ARB_vertex_array_object GL_ARB_vertex_buffer_object GL_ARB_vertex_program GL_ARB_vertex_shader GL_ARB_window_pos GL_EXT_abgr GL_EXT_bgra GL_EXT_blend_color GL_EXT_blend_equation_separate GL_EXT_blend_func_separate GL_EXT_blend_logic_op GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_cull_vertex GL_EXT_copy_texture GL_EXT_draw_range_elements GL_EXT_framebuffer_blit GL_EXT_framebuffer_object GL_EXT_fog_coord GL_EXT_gpu_program_parameters GL_EXT_multi_draw_arrays GL_EXT_packed_depth_stencil GL_EXT_packed_pixels GL_EXT_pixel_buffer_object GL_EXT_point_parameters GL_EXT_polygon_offset GL_EXT_provoking_vertex GL_EXT_rescale_normal GL_EXT_secondary_color GL_EXT_separate_specular_color GL_EXT_shadow_funcs GL_EXT_stencil_two_side GL_EXT_stencil_wrap GL_EXT_subtexture GL_EXT_texture GL_EXT_texture3D GL_EXT_texture_cube_map GL_EXT_texture_edge_clamp GL_EXT_texture_env_combine GL_EXT_texture_env_dot3 GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_EXT_texture_object GL_EXT_texture_rectangle GL_EXT_texture_sRGB GL_EXT_texture_swizzle GL_EXT_vertex_array GL_EXT_vertex_array_bgra GL_3DFX_texture_compression_FXT1 GL_APPLE_client_storage GL_APPLE_packed_pixels GL_APPLE_vertex_array_object GL_ATI_blend_equation_separate GL_ATI_envmap_bumpmap GL_ATI_texture_env_combine3 GL_ATI_separate_stencil GL_IBM_multimode_draw_arrays GL_IBM_rasterpos_clip GL_IBM_texture_mirrored_repeat GL_INGR_blend_func_separate GL_MESA_pack_invert GL_MESA_texture_signed_rgba GL_MESA_ycbcr_texture GL_MESA_window_pos GL_NV_blend_square GL_NV_depth_clamp GL_NV_light_max_exponent GL_NV_packed_depth_stencil GL_NV_texture_env_combine4 GL_NV_texture_rectangle GL_NV_texgen_reflection GL_NV_vertex_program GL_NV_vertex_program1_1 GL_OES_read_format GL_SGIS_generate_mipmap GL_SGIS_texture_border_clamp GL_SGIS_texture_edge_clamp GL_SGIS_texture_lod GL_SUN_multi_draw_arrays
+
+
+
+PTB-INFO: OpenGL-Renderer is Tungsten Graphics, Inc :: Mesa DRI Mobile Intel® GM45 Express Chipset GEM 20091221 2009Q4  :: 2.1 Mesa 7.7.1
+PTB-INFO: VBL startline = 1200 , VBL Endline = -1
+PTB-INFO: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.
+PTB-INFO: Measured monitor refresh interval from VBLsync = 16.680698 ms [59.949528 Hz]. (50 valid samples taken, stddev=0.014361 ms.)
+PTB-INFO: Reported monitor refresh interval from operating system = 16.680845 ms [59.949001 Hz].
+PTB-INFO: Small deviations between reported values are normal and no reason to worry.
+PTB-INFO: Psychtoolbox imaging pipeline starting up for window with requested imagingmode 5 ...
+PTB-INFO: Will use 8 bits per color component framebuffer for stimulus drawing.
+PTB-INFO: Will use 8 bits per color component framebuffer for stimulus post-processing (if any).
+Building a fragment shader:Reading shader from file /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychOpenGL/PsychGLSLShaders/ICM2DGainCorrectionShader.frag.txt ...
+MOGL-ERROR: Linking of the GLSL shader program 3 via glLinkProgram(3) failed!
+The program info log for program 3 tells us the following:
+Unresolved symbols 
+
+error: moglcore: GLSL link operation failed!
+error: called from:
+error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychOpenGL/MOGL/wrap/glLinkProgram.m at line 15, column 1
+error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychGLImageProcessing/PsychImaging.m at line 2276, column 1
+error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychGLImageProcessing/PsychImaging.m at line 1176, column 1
+error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychDemos/VignettingCorrectionDemo.m at line 61, column 5
+octave:3> IsomerizationsInDishDemo:6>  
+
