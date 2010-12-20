@@ -35,3 +35,8 @@ override_dh_auto_build:
 
 override_dh_strip:
 	dh_strip --dbg-package=octave-psychtoolbox-3-dbg
+
+override_dh_fixperms:
+	dh_fixperms
+	: # Manually remove executable bit for .mex .m .so.*
+	find -regextype posix-egrep -regex '.*\.(m|mex|so(|\..*))' -perm /+x -print0 | xargs -0 chmod a-x
