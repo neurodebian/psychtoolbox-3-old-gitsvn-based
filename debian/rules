@@ -6,6 +6,10 @@ include /usr/share/octave/debian/defs.make
 # get Matlab paths
 include /usr/share/matlab/debian/defs.make
 
+# Directories which are created/populated/cleanedup
+BDIRS=PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles Psychtoolbox/PsychBasic/PsychPlugins
+OCT_SHAREDDIR=debian/psychtoolbox-3-common/usr/share/psychtoolbox-3
+
 export LDFLAGS="-Wl,--as-needed"
 
 # Upstream advises to build without optimization at the moment
@@ -16,7 +20,7 @@ export CFLAGS=-Wall -g -O0
 	dh $@
 
 override_dh_auto_build:
-	mkdir -p PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles
+	mkdir -p $(BDIRS)
 	: # Build all extensions, but:
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
@@ -33,10 +37,39 @@ override_dh_auto_build:
 	install --mode=0644 PsychSourceGL/Cohorts/FTGLTextRenderer/libptbdrawtext_ftgl.so.1 \
 	   Psychtoolbox/PsychBasic/PsychPlugins
 
-override_dh_strip:
-	dh_strip --dbg-package=octave-psychtoolbox-3-dbg
+override_dh_auto_install:
+	dh_auto_install
+	rsync -a --exclude=*.o ./Psychtoolbox/ $(OCT_SHAREDDIR)
+	: # Move binaries under octave supervision, symlinks back by dh_link
+	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles \
+		debian/octave-psychtoolbox-3/usr/lib/octave/site/psychtoolbox-3/PsychBasic
+	: # Move the rest of binaries into -lib
+	find $(OCT_SHAREDDIR) -iname ATIRadeonperf_Linux -o -iname *.so.* \
+	| while read so; do \
+	    d_=$$(dirname $$so); \
+	    d=$$(echo $$d_ | sed -e 's,psychtoolbox-3-common/,psychtoolbox-3-lib/,g' -e 's,/share/,/lib/,g'); \
+		echo "I: Moving $$so under $$d"; \
+	    mkdir -p $$d; mv $$so $$d; \
+	  done
 
-override_dh_fixperms:
-	dh_fixperms
-	: # Manually remove executable bit for .mex .m .so.*
-	find -regextype posix-egrep -regex '.*\.(m|mex|so(|\..*))' -perm /+x -print0 | xargs -0 chmod a-x
+override_dh_makeshlibs:
+	dh_makeshlibs
+	: # Provide Octave:Depends
+	[ -e /usr/bin/octave-depends ] && octave-depends
+
+#override_dh_fixperms:
+#	dh_fixperms
+
+override_dh_strip:
+	dh_strip --dbg-package=psychtoolbox-3-dbg
+	@: # Manually remove executable bit for .mex .m .so.*
+	@: # needs to be done post dh_strip so that those are found by dh_strip
+	find debian/ -regextype posix-egrep -regex '.*\.(m|txt|mex|so(|\..*))' -perm /+x -print0 \
+	| xargs -0 --no-run-if-empty chmod a-x
+
+
+override_dh_clean:
+	dh_clean
+	: # Manually remove  additional trash
+	find Psych* -regextype posix-egrep -regex '.*\.(o|mex|so(|\..*))' -delete
+	-rmdir $(BDIRS)
