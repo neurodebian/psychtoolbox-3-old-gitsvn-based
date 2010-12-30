@@ -70,6 +70,36 @@ according to Psychtoolbox/PsychDocumentation/InstallKinect.m "
  * 2010-12-11 was uploaded to NEW
  * Python CMakeList.txt accepted upstream
 
+** TODO Portaudio
+
+ portaudio_unpatched_except4OSX.zip contained originals
+
+  pa_front.c:#define PA_VERSION_  1899
+  pa_front.c:#define PA_VERSION_TEXT_ "PortAudio V19-devel WITH-DIM"
+  $Id: pa_asio.cpp 1097 2006-08-26 08:27:53Z rossb $
+
+ Upon inspection:
+ pa_asio.cpp - patched, new function and tune-up
+ pa_unix_util.c -- patch , conditioning on MK_PSYCH_RTSCHED
+ pa_front.c, pa_process.c  - pristine
+
+ In Debian we have:
+ - libportaudio0 18.1-7.1  (that is from 2005 or so)
+ - libportaudio2 19+svn20071022-3+b1
+
+ upstream SVN is alive with 1-2 commits a month
+ https://www.portaudio.com/repos/portaudio/trunk/
+
+ the latest "stable" snapshot seems to be from 20071207 while there
+ exist additional snapshots after on
+ http://www.portaudio.com/archives
+
+ There was intent to upload a newer snapshot, but somehow it didn't
+ happen
+ http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=560111
+ I followed up... Ubuntu adopted the packaging patches from SVN and
+ progressed forward to freshier snapshot
+
 * Building
 ** DONE Build command
 CLOSED: [2010-12-20 Mon 14:57]
