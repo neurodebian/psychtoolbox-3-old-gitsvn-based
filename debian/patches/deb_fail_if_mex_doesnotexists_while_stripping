@@ -1,0 +1,14 @@
+diff --git a/PsychSourceGL/Source/striplibsfrommexfile.m b/PsychSourceGL/Source/striplibsfrommexfile.m
+index ba08d66..674522d 100644
+--- a/PsychSourceGL/Source/striplibsfrommexfile.m
++++ b/PsychSourceGL/Source/striplibsfrommexfile.m
+@@ -52,7 +52,8 @@ if exist(filename, 'file')
+ 
+     fprintf('MEX file %s stripped from superfluous libraries.\n', filename);
+ else
+-    fprintf('WARNING! MEX file %s does not exist! Can''t strip it!\n', filename);
++    fprintf('ERROR! MEX file %s does not exist! Can''t strip it!\n', filename);
++    exit(0);
+ end
+ 
+ return

@@ -104,10 +104,11 @@ CLOSED: [2010-12-20 Mon 15:00]
  grep '^[ \t]*mex ' linuxmakeitoctave3_ubuntugutsy.m | sed -e 's/[^ ]*\/lib\([^ ]*\)\.a/-l\1/g' -e 's,\Wmex\W,mkoctfile --mex ,g' | grep -v freenect >| linuxmakeitoctave3_ubuntugutsy-extract.sh
  to generate a list of lines, excluding build of freenect, to generate
  .mex. MOGL though needs to be built in Psychtoolbox
-** TODO Reliable failing
+** DONE Reliable failing
+   CLOSED: [2011-01-04 Tue 18:51]
 
-since build officially would not fail with that .m wrapper -- find a
-way to figure out either everything was built ok there
+  Patch: deb_fail_if_mex_doesnotexists_while_stripping
+
 ** TODO Move ? ATIRadeonperf_Linux under /usr/bin
 ** TODO Exhaustive build-Depends:
 	 libxml2-dev, libglib2.0-dev,
