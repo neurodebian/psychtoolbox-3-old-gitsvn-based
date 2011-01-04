@@ -25,7 +25,7 @@ override_dh_auto_build:
 	: # Build all extensions, but:
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
-		for mode in {0..3} 5 6 7; do \
+		for mode in 0 1 2 3   5 6 7; do \
 		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)"; done
 
 	: # Manually build OpenGL text renderer extension
@@ -47,7 +47,7 @@ override_dh_auto_install:
 	: # And create symlinks file to point back
 	cp debian/octave-psychtoolbox-3.links.in  debian/octave-psychtoolbox-3.links
 	for f in $(OCT_LIBDIR)/Octave3LinuxFiles/*mex; do \
-		echo "$${f//*usr//usr}	/usr/share/psychtoolbox-3/PsychBasic/$$(basename $$f)" >> debian/octave-psychtoolbox-3.links; done
+		echo "$${f#*usr}/usr	/usr/share/psychtoolbox-3/PsychBasic/$$(basename $$f)" >> debian/octave-psychtoolbox-3.links; done
 	: # Move the rest of binaries into -lib
 	find $(OCT_SHAREDDIR) -iname ATIRadeonperf_Linux -o -iname *.so.* \
 	| while read so; do \
