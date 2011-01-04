@@ -9,6 +9,7 @@ include /usr/share/matlab/debian/defs.make
 # Directories which are created/populated/cleanedup
 BDIRS=PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles Psychtoolbox/PsychBasic/PsychPlugins
 OCT_SHAREDDIR=debian/psychtoolbox-3-common/usr/share/psychtoolbox-3
+OCT_LIBDIR=debian/octave-psychtoolbox-3/usr/lib/psychtoolbox-3
 
 export LDFLAGS="-Wl,--as-needed"
 
@@ -41,9 +42,12 @@ override_dh_auto_install:
 	dh_auto_install
 	rsync -a --exclude=*.o ./Psychtoolbox/ $(OCT_SHAREDDIR)
 	: # Move binaries under octave supervision, symlinks back by dh_link
-	mkdir -p debian/octave-psychtoolbox-3$(OCTDIR)
-	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles \
-		debian/octave-psychtoolbox-3$(OCTDIR)/psychtoolbox-3
+	mkdir -p $(OCT_LIBDIR)
+	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles $(OCT_LIBDIR)/
+	: # And create symlinks file to point back
+	-rm debian/octave-psychtoolbox-3.links
+	for f in $(OCT_LIBDIR)/Octave3LinuxFiles/*mex; do \
+		echo "$${f//*usr//usr}	/usr/share/psychtoolbox-3/PsychBasic/$$(basename $$f)" >> debian/octave-psychtoolbox-3.links; done
 	: # Move the rest of binaries into -lib
 	find $(OCT_SHAREDDIR) -iname ATIRadeonperf_Linux -o -iname *.so.* \
 	| while read so; do \
