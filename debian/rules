@@ -1,0 +1,92 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# get Octave paths
+include /usr/share/octave/debian/defs.make
+# get Matlab paths
+include /usr/share/matlab/debian/defs.make
+
+# Directories which are created/populated/cleanedup
+BDIRS=PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles Psychtoolbox/PsychBasic/PsychPlugins
+OCT_SHAREDDIR=debian/psychtoolbox-3-common/usr/share/psychtoolbox-3
+OCT_LIBDIR=debian/octave-psychtoolbox-3/usr/lib/psychtoolbox-3
+
+export LDFLAGS="-Wl,--as-needed"
+
+# Upstream advises to build without optimization at the moment
+export CXXFLAGS=-Wall -g -O0
+export CFLAGS=-Wall -g -O0
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	mkdir -p $(BDIRS)
+	: # Build all extensions, but:
+	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
+	cd PsychSourceGL/Source/; \
+		for mode in {0..3} 5 6 7; do \
+		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)"; done
+
+	: # Manually build OpenGL text renderer extension
+	cd PsychSourceGL/Cohorts/FTGLTextRenderer; \
+	$(CXX) $(CXXFLAGS) -I. -I/usr/include/ -I/usr/include/freetype2/ \
+		-L/usr/lib -l GL -l GLU -l fontconfig -l freetype -pie -shared -fPIC \
+		-o libptbdrawtext_ftgl.so.1 \
+		libptbdrawtext_ftgl.cpp qstringqcharemulation.cpp OGLFT.cpp
+
+	install --mode=0644 PsychSourceGL/Cohorts/FTGLTextRenderer/libptbdrawtext_ftgl.so.1 \
+	   Psychtoolbox/PsychBasic/PsychPlugins
+
+override_dh_auto_install:
+	dh_auto_install
+	rsync -a --exclude=*.o ./Psychtoolbox/ $(OCT_SHAREDDIR)
+	: # Move binaries under octave supervision, symlinks back by dh_link
+	mkdir -p $(OCT_LIBDIR)
+	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles $(OCT_LIBDIR)/
+	: # And create symlinks file to point back
+	cp debian/octave-psychtoolbox-3.links.in  debian/octave-psychtoolbox-3.links
+	for f in $(OCT_LIBDIR)/Octave3LinuxFiles/*mex; do \
+		echo "$${f//*usr//usr}	/usr/share/psychtoolbox-3/PsychBasic/$$(basename $$f)" >> debian/octave-psychtoolbox-3.links; done
+	: # Move the rest of binaries into -lib
+	find $(OCT_SHAREDDIR) -iname ATIRadeonperf_Linux -o -iname *.so.* \
+	| while read so; do \
+	    d_=$$(dirname $$so); \
+	    d=$$(echo $$d_ | sed -e 's,psychtoolbox-3-common/,psychtoolbox-3-lib/,g' -e 's,/share/,/lib/,g'); \
+		echo "I: Moving $$so under $$d"; \
+	    mkdir -p $$d; mv $$so $$d; \
+	  done
+
+override_dh_makeshlibs:
+	dh_makeshlibs
+	: # Provide Octave:Depends
+	[ -e /usr/bin/octave-depends ] && octave-depends
+
+#override_dh_fixperms:
+#	dh_fixperms
+
+override_dh_strip:
+	dh_strip --dbg-package=psychtoolbox-3-dbg
+
+override_dh_shlibdeps:
+	@: # octave will take care of proper deps for extensions -- no need to scan
+	@: # them and warn all the time
+	dh_shlibdeps -l$(shell octave-config --print OCTLIBDIR)
+
+	: # Manually remove executable bit for everything not to be executed (e.g. .mex .m .so.*)
+	@: # needs to be done post dh_strip,dh_shlibdeps so that .mex are found by dh_strip, dh_shlibdeps
+#	find debian/ -regextype posix-egrep \
+#	-regex '.*\.(c|jpg|vert|frag|xml|html|hiro|kanji|mat|m|txt|mex|so(|\..*))' \
+#	-perm /+x -print0 \
+	@: # strip from all files since we do not have any real executable there
+	find debian/ -ipath '*psych*/usr/*' -perm /+x -type f ! -iname ATIRadeonperf_Linux -print0 \
+	| xargs -0 --no-run-if-empty chmod a-x
+
+
+override_dh_clean:
+	dh_clean
+	: # Manually remove  additional trash
+	find Psych* -regextype posix-egrep -regex '.*\.(o|mex|so(|\..*))' -delete
+	-rmdir $(BDIRS)
+	: # Prune some generated files
+	-rm debian/octave-psychtoolbox-3.links

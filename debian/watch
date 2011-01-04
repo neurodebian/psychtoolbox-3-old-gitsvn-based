@@ -1,0 +1,4 @@
+version=3
+# at least lets monitor possible SVN tags
+opts="versionmangle=s/-//,dversionmangle=s/.dfsg.*$//" \
+  http://svn.berlios.de/svnroot/repos/osxptb Psychtoolbox-([^-]*)-*.*

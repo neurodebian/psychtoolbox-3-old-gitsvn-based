@@ -1,0 +1,153 @@
+Source: psychtoolbox-3
+Section: science
+Priority: extra
+Maintainer: NeuroDebian Team <team@neuro.debian.net>
+Uploaders: Yaroslav Halchenko <debian@onerussian.com>, Michael Hanke <michael.hanke@gmail.com>
+Build-Depends: debhelper (>= 7.0.50~), rsync,
+			   matlab-dev,
+			   octave-pkg-dev (>= 0.5.7),
+     		   libxml2-dev, libglib2.0-dev,
+     		   libxxf86vm-dev, libglu1-mesa-dev,
+     		   libgstreamer-plugins-base0.10-dev, libraw1394-dev,
+     		   libdc1394-22-dev, libusb-1.0-0-dev,
+			   libfreenect-dev,
+			   libfontconfig1-dev, libfreetype6-dev
+Standards-Version: 3.9.1
+Homepage: http://psychtoolbox.org
+Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox.git
+Vcs-Git: git://git.debian.org/git/pkg-exppsy/psychtoolbox.git
+XS-DM-Upload-Allowed: yes
+
+Package: psychtoolbox-3-common
+Architecture: all
+Depends: ${misc:Depends}
+Description: toolbox for vision research -- arch/interpreter independent part
+ Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
+ GNU/Octave functions for vision research. It makes it easy to
+ synthesize and show accurately controlled visual and auditory stimuli
+ and interact with the observer.
+ .
+ The Psychophysics Toolbox interfaces between Matlab or Octave and the
+ computer hardware. The Psychtoolbox's core routines provide access to
+ the display frame buffer and color lookup table, allow
+ synchronization with the vertical retrace, support millisecond
+ timing, allow access to OpenGL commands, and facilitate the
+ collection of observer responses. Ancillary routines support common
+ needs like color space transformations and the QUEST threshold
+ seeking algorithm.
+ .
+ This package contains architecture independent files (such as .m scripts)
+
+Package: psychtoolbox-3-lib
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: toolbox for vision research -- arch-specific parts
+ Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
+ GNU/Octave functions for vision research. It makes it easy to
+ synthesize and show accurately controlled visual and auditory stimuli
+ and interact with the observer.
+ .
+ The Psychophysics Toolbox interfaces between Matlab or Octave and the
+ computer hardware. The Psychtoolbox's core routines provide access to
+ the display frame buffer and color lookup table, allow
+ synchronization with the vertical retrace, support millisecond
+ timing, allow access to OpenGL commands, and facilitate the
+ collection of observer responses. Ancillary routines support common
+ needs like color space transformations and the QUEST threshold
+ seeking algorithm.
+ .
+ This package contains additional binaries (tools/dynamic libraries) used
+ by both Octave and Matlab frontends.
+
+Package: octave-psychtoolbox-3
+Architecture: any
+Depends: ${octave:Depends}, ${shlibs:Depends}, ${misc:Depends},
+		 psychtoolbox-3-common (= ${source:Version}),
+		 psychtoolbox-3-lib (= ${binary:Version}),
+Provides: psychtoolbox, psychtoolbox-3
+Description: toolbox for vision research -- Octave bindings
+ Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
+ GNU/Octave functions for vision research. It makes it easy to
+ synthesize and show accurately controlled visual and auditory stimuli
+ and interact with the observer.
+ .
+ The Psychophysics Toolbox interfaces between Matlab or Octave and the
+ computer hardware. The Psychtoolbox's core routines provide access to
+ the display frame buffer and color lookup table, allow
+ synchronization with the vertical retrace, support millisecond
+ timing, allow access to OpenGL commands, and facilitate the
+ collection of observer responses. Ancillary routines support common
+ needs like color space transformations and the QUEST threshold
+ seeking algorithm.
+ .
+ This package contains bindings for Octave.
+
+Package: psychtoolbox-3-dbg
+Section: debug
+Architecture: any
+Depends: ${misc:Depends}, octave-psychtoolbox-3 (= ${binary:Version})
+Description: toolbox for vision research -- debug symbols for binaries
+ Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
+ GNU/Octave functions for vision research. It makes it easy to
+ synthesize and show accurately controlled visual and auditory stimuli
+ and interact with the observer.
+ .
+ The Psychophysics Toolbox interfaces between Matlab or Octave and the
+ computer hardware. The Psychtoolbox's core routines provide access to
+ the display frame buffer and color lookup table, allow
+ synchronization with the vertical retrace, support millisecond
+ timing, allow access to OpenGL commands, and facilitate the
+ collection of observer responses. Ancillary routines support common
+ needs like color space transformations and the QUEST threshold
+ seeking algorithm.
+ .
+ To ease debugging and troubleshooting this package contains debug
+ symbols for Octave bindings and other binaries.
+
+#Package: matlab-psychtoolbox-3
+#Section: contrib/science
+#Architecture: all
+#Provides: psychtoolbox, psychtoolbox-3
+#Depends: ${octave:Depends}, ${shlibs:Depends}, ${misc:Depends},
+# matlab,
+# psychtoolbox-3-common (= ${source:Version}),
+#Description: toolbox for vision research -- Matlab bindings
+# Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
+# GNU/Octave functions for vision research. It makes it easy to
+# synthesize and show accurately controlled visual and auditory stimuli
+# and interact with the observer.
+# .
+# The Psychophysics Toolbox interfaces between Matlab or Octave and the
+# computer hardware. The Psychtoolbox's core routines provide access to
+# the display frame buffer and color lookup table, allow
+# synchronization with the vertical retrace, support millisecond
+# timing, allow access to OpenGL commands, and facilitate the
+# collection of observer responses. Ancillary routines support common
+# needs like color space transformations and the QUEST threshold
+# seeking algorithm.
+# .
+# This package contains sources of low-level implementations which get
+# build for use with Matlab during installation.  Note that this
+# package depends on Matlab -- a commercial software that needs to be
+# obtain and installed separately.
+
+#Package: psychtoolbox-3-doc
+#Section: doc
+#Architecture: all
+#Depends: ${misc:Depends},
+#Description: toolbox for vision research -- documentation
+# Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
+# GNU/Octave functions for vision research. It makes it easy to
+# synthesize and show accurately controlled visual and auditory stimuli
+# and interact with the observer.
+# .
+# The Psychophysics Toolbox interfaces between Matlab or Octave and the
+# computer hardware. The Psychtoolbox's core routines provide access to
+# the display frame buffer and color lookup table, allow
+# synchronization with the vertical retrace, support millisecond
+# timing, allow access to OpenGL commands, and facilitate the
+# collection of observer responses. Ancillary routines support common
+# needs like color space transformations and the QUEST threshold
+# seeking algorithm.
+# .
+# This package contains documentation files.
