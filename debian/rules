@@ -45,7 +45,7 @@ override_dh_auto_install:
 	mkdir -p $(OCT_LIBDIR)
 	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles $(OCT_LIBDIR)/
 	: # And create symlinks file to point back
-	-rm debian/octave-psychtoolbox-3.links
+	cp debian/octave-psychtoolbox-3.links.in  debian/octave-psychtoolbox-3.links
 	for f in $(OCT_LIBDIR)/Octave3LinuxFiles/*mex; do \
 		echo "$${f//*usr//usr}	/usr/share/psychtoolbox-3/PsychBasic/$$(basename $$f)" >> debian/octave-psychtoolbox-3.links; done
 	: # Move the rest of binaries into -lib
@@ -88,3 +88,5 @@ override_dh_clean:
 	: # Manually remove  additional trash
 	find Psych* -regextype posix-egrep -regex '.*\.(o|mex|so(|\..*))' -delete
 	-rmdir $(BDIRS)
+	: # Prune some generated files
+	-rm debian/octave-psychtoolbox-3.links
