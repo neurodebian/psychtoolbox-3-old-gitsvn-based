@@ -18,14 +18,14 @@ function FlushCalFile(filespec,nKeep)
 % 8/21/00  dhb  Update for dual cal dir scheme.  Not tested hard.
 
 % Set nKeep
-if (nargin < 2 | isempty(nKeep))
+if (nargin < 2 || isempty(nKeep))
 	nKeep = 1;
 end
 
 % Set the filename
-if (nargin < 1 | isempty(filespec))
+if (nargin < 1 || isempty(filespec))
 	filename = [CalDataFolder 'default.mat'];
-elseif (isstr(filespec))
+elseif (ischar(filespec))
 	filename = [CalDataFolder filespec '.mat'];
 else
 	filename = [CalDataFolder sprintf('screen%d.mat',filespec)];
@@ -35,11 +35,11 @@ end
 file=fopen(filename);
 
 % If not, make sure to try secondary directory.
-if (file == -1 & (nargin < 3 | isempty(dir)))
+if (file == -1 & (nargin < 3 || isempty(dir)))
 	useDir = CalDataFolder(1);
-	if (nargin < 1 | isempty(filespec))
+	if (nargin < 1 || isempty(filespec))
 		filename = [useDir 'default.mat'];
-	elseif (isstr(filespec))
+	elseif (ischar(filespec))
 		filename = [useDir filespec '.mat'];
 	else
 		filename = [useDir sprintf('screen%d.mat',filespec)];
