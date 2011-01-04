@@ -30,15 +30,15 @@ function eyeLengthMM = EyeLength(species,source)
 % 
 
 % Fill in defaults
-if (nargin < 1 | isempty(species))
+if (nargin < 1 || isempty(species))
 	species = 'Human';
 end
-if (nargin < 2 | isempty(source))
+if (nargin < 2 || isempty(source))
 	source = 'LeGrand';
 end
 
 % Handle case where a number is passed.
-if (~isstr(source))
+if (~ischar(source))
 	eyeLengthMM = source;
 	return;
 end
