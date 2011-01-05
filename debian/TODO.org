@@ -85,6 +85,9 @@ CLOSED: [2010-12-20 Mon 14:57]
                    of the box
 				   TODO: make easy to build eyelink support if library
                    is available (during install time, similar to Matlab stuff)
+	IViewXToolbox -- needs pnet.mex being built ... 
+	               1.0 version of tcpip toolbox (subdir and .zip) is
+                   stripped since not used
 ** TODO Consider building PsychCV extension
 ** DONE Master build file: PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
    CLOSED: [2011-01-04 Tue 13:48]

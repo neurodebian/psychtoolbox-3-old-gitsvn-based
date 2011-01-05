@@ -67,14 +67,10 @@ $RM -f ./PsychSourceGL/Cohorts/PortAudio/libportaudio.a # anyway alien arch
 $RM -rf ./PsychSourceGL/Source/Common/PsychSound/StaticOpenALLib # libopenal-dev -- check
 
 
-# _TODO:
-# To package or drop:
-# artoolkit (RFP - #452233)
-# $RM -rf PsychSourceGL/Cohorts/ARToolkit
-# also go through the demo -- has .pdf's etc
-# $RM -rf /Psychtoolbox/PsychDemos/ARToolkitDemoData
-# For now not pruning .a under ./PsychSourceGL/Projects/Linux/ARToolkit
-$RM -rf PsychSourceGL/Cohorts/ARToolkit/*.zip # windows binaries with sources
+# artoolkit (RFP - #452233) -- needed only on OSX/Windows
+$RM -rf PsychSourceGL/Cohorts/ARToolkit
+$RM -rf PsychSourceGL/Projects/Linux/ARToolkit
+$RM -rf Psychtoolbox/PsychDemos/ARToolkitDemo*
 
 # _TODO:
 # Conside packaging MOGL: MOGL OpenGL for Matlab support
@@ -83,7 +79,8 @@ $RM -rf PsychSourceGL/Cohorts/ARToolkit/*.zip # windows binaries with sources
 # TODO:
 # IViewXToolbox: ./Psychtoolbox/PsychHardware/iViewXToolbox
 # uses tcp_udp_ip toolbox
-# $RM -rf ./Psychtoolbox/PsychHardware/iViewXToolbox/tcp_udp_ip/tcpip-1.2.4.zip
+# Strip copy of 1.0 version of the toolbox
+$RM -rf ./Psychtoolbox/PsychHardware/iViewXToolbox/tcp_udp_ip/tcpip*
 
 ## Additional Dependencies:
 ## OSX: Cocoa/Cocoa.h used in StoreBitLib_Prefix.pch
