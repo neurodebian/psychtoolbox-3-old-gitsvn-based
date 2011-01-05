@@ -23,9 +23,9 @@ $RM -f Psychtoolbox/PsychTests/StandaloneTimingProgram Psychtoolbox/.FBCIndex
 $RM -f ./PsychSourceGL/Cohorts/Kinect-* \
       ./Psychtoolbox/PsychContributed/Kinect-*-Windows*
 
-# TODO:
-# figure out either really needed or may be there is a free alternative
-# $RM -f Psychtoolbox/PsychContributed/ATIRadeonperf_Linux
+# Binary built against ATI/AMD SDK with questionable
+# redistributability
+$RM -f Psychtoolbox/PsychContributed/ATIRadeonperf_Linux
 
 # __TODO:
 # http://docs.psychtoolbox.org/DrawTextPlugin
