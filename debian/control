@@ -13,8 +13,8 @@ Build-Depends: debhelper (>= 7.0.50~), rsync,
 			   libfontconfig1-dev, libfreetype6-dev
 Standards-Version: 3.9.1
 Homepage: http://psychtoolbox.org
-Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox.git
-Vcs-Git: git://git.debian.org/git/pkg-exppsy/psychtoolbox.git
+Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox-3.git
+Vcs-Git: git://git.debian.org/git/pkg-exppsy/psychtoolbox-3.git
 XS-DM-Upload-Allowed: yes
 
 Package: psychtoolbox-3-common
