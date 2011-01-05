@@ -3,3 +3,4 @@ Suggests: octave-psychtoolbox-3
 Tasks: debian-science/psychophysics
 Author: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
 Language: Matlab/Octave, C
+Pkg-URL: http://neuro.debian.net/pkgs/%(Pkg-Name)s.html
