@@ -22,6 +22,10 @@ export CFLAGS=-Wall -g -O0
 
 override_dh_auto_build:
 	mkdir -p $(BDIRS)
+	: # Build patched version of portaudio
+	# dependent on patch deb_portaudio_Makefile
+	#TODO $(MAKE) -C PsychSourceGL/Cohorts/PortAudio
+
 	: # Build all extensions, but:
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
@@ -34,6 +38,10 @@ override_dh_auto_build:
 		-L/usr/lib -l GL -l GLU -l fontconfig -l freetype -pie -shared -fPIC \
 		-o libptbdrawtext_ftgl.so.1 \
 		libptbdrawtext_ftgl.cpp qstringqcharemulation.cpp OGLFT.cpp
+
+	: # Manually build tcp_udp_ip toolbox's extension
+	cd ./Psychtoolbox/PsychHardware/iViewXToolbox/tcp_udp_ip; \
+		octave -q --eval "mex pnet.c"; [ -f pnet.mex ]
 
 	install --mode=0644 PsychSourceGL/Cohorts/FTGLTextRenderer/libptbdrawtext_ftgl.so.1 \
 	   Psychtoolbox/PsychBasic/PsychPlugins
