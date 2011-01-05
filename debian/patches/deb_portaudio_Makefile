@@ -1,0 +1,21 @@
+--- /dev/null
++++ b/PsychSourceGL/Cohorts/PortAudio/Makefile
+@@ -0,0 +1,18 @@
++all: portaudio-stamp build
++
++build:
++	cd portaudio; mkdir -p lib; \
++	CFLAGS="$(CFLAGS)" ./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info --disable-shared --disable-jack; \
++	make clean; \
++	make
++
++portaudio-stamp:
++	unzip portaudio_unpatched_except4OSX.zip \
++		'portaudio/*' -x 'portaudio/bin/*' -x 'portaudio/lib/*' -x '*.o'
++	# Propagate patched files into the tree
++	cp -p pa_asio.cpp portaudio/src/hostapi/asio/pa_asio.cpp
++	cp -p pa_unix_util.c portaudio/src/os/unix/pa_unix_util.c
++	touch $@
++
++clean:
++	rm -rf portaudio portaudio-stamp
