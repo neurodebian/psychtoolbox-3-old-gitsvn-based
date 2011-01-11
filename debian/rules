@@ -58,10 +58,10 @@ override_dh_auto_install:
 	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles/* $(OCT_SHAREDDIR)/PsychBasic
 	rmdir $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles
 
-	: # Move binaries under /usr/lib and create symlinks file to point back
+	: # Move .mex binaries under /usr/lib and create symlinks file to point back
 	mkdir -p $(OCT_LIBDIR)
 	cp debian/octave-psychtoolbox-3.links.in  debian/octave-psychtoolbox-3.links
-	find $(OCT_SHAREDDIR)/ -iname \*.mex -o -iname \*.so* | while read f; do \
+	find $(OCT_SHAREDDIR)/ -iname \*.mex | while read f; do \
 		fn=$$(basename $$f); ds=$$(dirname $$f); \
 		dl=$$(echo $$ds | sed -e 's,psychtoolbox-3-common,octave-psychtoolbox-3,g' -e 's,/share/,/lib/,g'); \
 		echo "I: Moving $$f under $$dl"; \
@@ -69,6 +69,7 @@ override_dh_auto_install:
 		mv $$f $$dl; \
 		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/octave-psychtoolbox-3.links; \
 	done
+
 
 override_dh_makeshlibs:
 	dh_makeshlibs
