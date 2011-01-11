@@ -20,13 +20,15 @@ export CFLAGS=-Wall -g -O0
 %:
 	dh $@
 
-override_dh_auto_build:
+override_dh_auto_build: build-stamp
+build-stamp:
 	mkdir -p $(BDIRS)
 	: # Build patched version of portaudio
-	# dependent on patch deb_portaudio_Makefile
-	#TODO $(MAKE) -C PsychSourceGL/Cohorts/PortAudio
+	: # dependent on patch deb_portaudio_Makefile
+	$(MAKE) -C PsychSourceGL/Cohorts/PortAudio
 
 	: # Build all extensions, but:
+	: #  3  dependent on portaudio above
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
 		for mode in 0 1 2 3   5 6 7; do \
@@ -45,25 +47,27 @@ override_dh_auto_build:
 
 	install --mode=0644 PsychSourceGL/Cohorts/FTGLTextRenderer/libptbdrawtext_ftgl.so.1 \
 	   Psychtoolbox/PsychBasic/PsychPlugins
+	touch $@
 
 override_dh_auto_install:
 	dh_auto_install
 	rsync -a --exclude=*.o ./Psychtoolbox/ $(OCT_SHAREDDIR)
-	: # Move binaries under octave supervision, symlinks back by dh_link
+
+	: # Move .mex to reside alongside with .m to gain easy help in octave
+	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles/* $(OCT_SHAREDDIR)/PsychBasic
+	rmdir $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles
+
+	: # Move binaries under /usr/lib and create symlinks file to point back
 	mkdir -p $(OCT_LIBDIR)
-	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles $(OCT_LIBDIR)/
-	: # And create symlinks file to point back
 	cp debian/octave-psychtoolbox-3.links.in  debian/octave-psychtoolbox-3.links
-	for f in $(OCT_LIBDIR)/Octave3LinuxFiles/*mex; do \
-		echo "$${f#*usr}/usr	/usr/share/psychtoolbox-3/PsychBasic/$$(basename $$f)" >> debian/octave-psychtoolbox-3.links; done
-	: # Move the rest of binaries into -lib
-	find $(OCT_SHAREDDIR) -iname ATIRadeonperf_Linux -o -iname *.so.* \
-	| while read so; do \
-	    d_=$$(dirname $$so); \
-	    d=$$(echo $$d_ | sed -e 's,psychtoolbox-3-common/,psychtoolbox-3-lib/,g' -e 's,/share/,/lib/,g'); \
-		echo "I: Moving $$so under $$d"; \
-	    mkdir -p $$d; mv $$so $$d; \
-	  done
+	find $(OCT_SHAREDDIR)/ -iname \*.mex -o -iname \*.so* | while read f; do \
+		fn=$$(basename $$f); ds=$$(dirname $$f); \
+		dl=$$(echo $$ds | sed -e 's,psychtoolbox-3-common,octave-psychtoolbox-3,g' -e 's,/share/,/lib/,g'); \
+		echo "I: Moving $$f under $$dl"; \
+		mkdir -p $$dl; \
+		mv $$f $$dl; \
+		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/octave-psychtoolbox-3.links; \
+	done
 
 override_dh_makeshlibs:
 	dh_makeshlibs
@@ -93,8 +97,10 @@ override_dh_shlibdeps:
 
 override_dh_clean:
 	dh_clean
+	rm -f build-stamp
 	: # Manually remove  additional trash
 	find Psych* -regextype posix-egrep -regex '.*\.(o|mex|so(|\..*))' -delete
 	-rmdir $(BDIRS)
-	: # Prune some generated files
+	: # Prune some Debian generated files
 	-rm debian/octave-psychtoolbox-3.links
+	$(MAKE) -C PsychSourceGL/Cohorts/PortAudio clean
