@@ -35,10 +35,6 @@ http://svn.berlios.de/wsvn/osxptb/?rev=
 ** under Matlab sets permissions for writable for all users... what is :matlab:
    the reason?
 
-** DONE ~/.octaverc  gets really polutted with paths.
-   CLOSED: [2011-01-04 Tue 13:46]
-   no need for .octaverc any longer, .mex files get installed
-   alongside with .m to provide 'help' on octave >= 3.3
 ** TODO Octave package
 * Dependencies
 ** DONE Kinect: [[file:~/deb/gits/libfreenect][git:libfreenect]]
@@ -76,9 +72,6 @@ http://svn.berlios.de/wsvn/osxptb/?rev=
  progressed forward to freshier snapshot
 
 * Building
-** DONE Build command
-CLOSED: [2010-12-20 Mon 14:57]
-
 ** TODO Consider building for excluded to be built externals:
    	4  libeyelink -- non-distributable binary blob with open-sourced API
                    -- can't be redistributed, thus can't be enabled out
@@ -107,12 +100,6 @@ CLOSED: [2010-12-20 Mon 15:00]
  grep '^[ \t]*mex ' linuxmakeitoctave3_ubuntugutsy.m | sed -e 's/[^ ]*\/lib\([^ ]*\)\.a/-l\1/g' -e 's,\Wmex\W,mkoctfile --mex ,g' | grep -v freenect >| linuxmakeitoctave3_ubuntugutsy-extract.sh
  to generate a list of lines, excluding build of freenect, to generate
  .mex. MOGL though needs to be built in Psychtoolbox
-** DONE Reliable failing
-   CLOSED: [2011-01-04 Tue 18:51]
-
-  Patch: deb_fail_if_mex_doesnotexists_while_stripping
-
-** TODO Move ? ATIRadeonperf_Linux under /usr/bin
 ** TODO Exhaustive build-Depends:
 	 libxml2-dev, libglib2.0-dev,
 	 libxxf86vm-dev, libglu1-mesa-dev,
@@ -191,3 +178,4 @@ error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/Ps
 error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychDemos/VignettingCorrectionDemo.m at line 61, column 5
 octave:3> IsomerizationsInDishDemo:6>  
 
+** TODO -- ship PsychSourceGL/Cohorts/PortAudio/libportaudio.a in -lib to be used by Matlab builder
