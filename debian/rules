@@ -11,7 +11,7 @@ BDIRS=PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFi
 OCT_SHAREDDIR=debian/psychtoolbox-3-common/usr/share/psychtoolbox-3
 OCT_LIBDIR=debian/octave-psychtoolbox-3/usr/lib/psychtoolbox-3
 
-export LDFLAGS="-Wl,--as-needed"
+export LDFLAGS=-Wl,--as-needed
 
 # Upstream advises to build without optimization at the moment
 export CXXFLAGS=-Wall -g -O0
