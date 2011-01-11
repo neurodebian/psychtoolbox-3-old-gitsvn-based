@@ -1,0 +1,11 @@
+--- a/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
++++ b/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
+@@ -45,7 +45,7 @@ end;
+ 
+ if mode==3
+     % Build PsychPortAudio.mex:
+-    mex -v -g --output ../Projects/Linux/build/PsychPortAudio.mex -DPTBMODULE_PsychPortAudio -DPTBOCTAVE3MEX -ICommon/Base -ILinux/Base -ICommon/PsychPortAudio -ICommon/Screen Common/Base/*.cc Linux/Base/*.c Common/Base/*.c Common/PsychPortAudio/*.c /usr/local/lib/libportaudio.a -lc -lrt -lasound
++    mex -v -g --output ../Projects/Linux/build/PsychPortAudio.mex -DPTBMODULE_PsychPortAudio -DPTBOCTAVE3MEX -ICommon/Base -ILinux/Base -ICommon/PsychPortAudio -ICommon/Screen Common/Base/*.cc Linux/Base/*.c Common/Base/*.c Common/PsychPortAudio/*.c ../Cohorts/PortAudio/libportaudio.a -lc -lrt -lasound
+     unix(['mv ../Projects/Linux/build/PsychPortAudio.mex ' PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/']);
+     striplibsfrommexfile([PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/PsychPortAudio.mex']);
+ end
