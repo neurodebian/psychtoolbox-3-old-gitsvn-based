@@ -1,6 +1,9 @@
 --- /dev/null
 +++ b/PsychSourceGL/Cohorts/PortAudio/Makefile
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,27 @@
++# PIC should be enabled to allow mixin while building resultant .mex
++CFLAGS+=-fPIC
++
 +all: portaudio-stamp build
 +
 +configure-stamp:
