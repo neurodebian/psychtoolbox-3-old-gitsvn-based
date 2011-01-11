@@ -32,7 +32,8 @@ build-stamp:
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
 		for mode in 0 1 2 3   5 6 7; do \
-		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)"; done
+		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)" || exit 1; \
+	done
 
 	: # Manually build OpenGL text renderer extension
 	cd PsychSourceGL/Cohorts/FTGLTextRenderer; \
