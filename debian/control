@@ -4,6 +4,7 @@ Priority: extra
 Maintainer: NeuroDebian Team <team@neuro.debian.net>
 Uploaders: Yaroslav Halchenko <debian@onerussian.com>, Michael Hanke <michael.hanke@gmail.com>
 Build-Depends: debhelper (>= 7.0.50~), rsync,
+			   matlab-support-dev,
 			   octave-pkg-dev (>= 0.5.7),
      		   libxml2-dev, libglib2.0-dev,
      		   libxxf86vm-dev, libglu1-mesa-dev,
@@ -13,8 +14,8 @@ Build-Depends: debhelper (>= 7.0.50~), rsync,
 			   libfontconfig1-dev, libfreetype6-dev
 Standards-Version: 3.9.1
 Homepage: http://psychtoolbox.org
-Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox.git
-Vcs-Git: git://git.debian.org/git/pkg-exppsy/psychtoolbox.git
+Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox-3.git
+Vcs-Git: git://git.debian.org/git/pkg-exppsy/psychtoolbox-3.git
 XS-DM-Upload-Allowed: yes
 
 Package: psychtoolbox-3-common
@@ -108,7 +109,7 @@ Description: toolbox for vision research -- debug symbols for binaries
 #Architecture: all
 #Provides: psychtoolbox, psychtoolbox-3
 #Depends: ${octave:Depends}, ${shlibs:Depends}, ${misc:Depends},
-# matlab,
+# matlab-support,
 # psychtoolbox-3-common (= ${source:Version}),
 #Description: toolbox for vision research -- Matlab bindings
 # Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and

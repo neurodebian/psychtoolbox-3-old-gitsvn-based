@@ -34,6 +34,15 @@
 // Include specifications of the GPU registers:
 #include "PsychGraphicsCardRegisterSpecs.h"
 
+// Maps screenid's to Graphics hardware pipelines: Used to choose pipeline for beampos-queries and similar
+// GPU crtc specific stuff:
+static int	displayScreensToPipes[kPsychMaxPossibleDisplays];
+
+// Corrective values for beamposition queries to correct for any constant and systematic offsets in
+// the scanline positions returned by low-level code:
+static int	screenBeampositionBias[kPsychMaxPossibleDisplays];
+static int	screenBeampositionVTotal[kPsychMaxPossibleDisplays];
+
 /* PsychSynchronizeDisplayScreens() -- (Try to) synchronize display refresh cycles of multiple displays
  *
  * This tries whatever method is available/appropriate/or requested to synchronize the video refresh
@@ -126,9 +135,8 @@ psych_bool	PsychEnableNative10BitFramebuffer(PsychWindowRecordType* windowRecord
 #if PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX
 	// Loop over all target screens:
 	for (i=si; i<ei; i++) {
-		// Map screenid to headid: For now we only support 2 heads and assume
-		// screenId 0 == head 0, all others equal head 1:
-		headid = (i<=0) ? 0 : 1;
+		// Map screenid to headid: For now we only support 2 heads.
+		headid = PsychScreenToHead(i);
 		
 		// Select Radeon HW registers for corresponding heads:
 		lutreg = (headid == 0) ? RADEON_D1GRPH_LUT_SEL : RADEON_D2GRPH_LUT_SEL;
@@ -290,7 +298,7 @@ void PsychFixupNative10BitFramebufferEnableAfterEndOfSceneMarker(PsychWindowReco
 	// Map windows screen to gfx-headid aka register subset. TODO : We'll need something better,
 	// more generic, abstracted out for the future, but as a starter this will do:
 	screenId = windowRecord->screenNumber;
-	headid = (screenId<=0) ? 0 : 1;
+	headid = PsychScreenToHead(screenId);
 	ctlreg = (headid == 0) ? RADEON_D1GRPH_CONTROL : RADEON_D2GRPH_CONTROL;
 	
 	// One-liner read-modify-write op, which simply sets bit 8 of the register - the "Enable 2101010 mode" bit:
@@ -324,8 +332,8 @@ void PsychStoreGPUSurfaceAddresses(PsychWindowRecordType* windowRecord)
 	if (!PsychOSIsKernelDriverAvailable(screenId)) return;
 	
 	// Driver is online: Read the registers:
-	windowRecord->gpu_preflip_Surfaces[0] = PsychOSKDReadRegister(screenId, (screenId <=0 ) ? RADEON_D1GRPH_PRIMARY_SURFACE_ADDRESS : RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS, NULL);
-	windowRecord->gpu_preflip_Surfaces[1] = PsychOSKDReadRegister(screenId, (screenId <=0 ) ? RADEON_D1GRPH_SECONDARY_SURFACE_ADDRESS : RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS, NULL);
+	windowRecord->gpu_preflip_Surfaces[0] = PsychOSKDReadRegister(screenId, (PsychScreenToHead(screenId) <= 0) ? RADEON_D1GRPH_PRIMARY_SURFACE_ADDRESS : RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS, NULL);
+	windowRecord->gpu_preflip_Surfaces[1] = PsychOSKDReadRegister(screenId, (PsychScreenToHead(screenId) <= 0) ? RADEON_D1GRPH_SECONDARY_SURFACE_ADDRESS : RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS, NULL);
 
 #endif
 
@@ -370,11 +378,11 @@ psych_bool PsychWaitForBufferswapPendingOrFinished(PsychWindowRecordType* window
 	// Driver is online. Enter polling loop:
 	while (TRUE) {
 		// Read surface address registers:
-		primarySurface   = PsychOSKDReadRegister(screenId, (screenId <=0 ) ? RADEON_D1GRPH_PRIMARY_SURFACE_ADDRESS : RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS, NULL);
-		secondarySurface = PsychOSKDReadRegister(screenId, (screenId <=0 ) ? RADEON_D1GRPH_SECONDARY_SURFACE_ADDRESS : RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS, NULL);
+		primarySurface   = PsychOSKDReadRegister(screenId, (PsychScreenToHead(screenId) <= 0) ? RADEON_D1GRPH_PRIMARY_SURFACE_ADDRESS : RADEON_D2GRPH_PRIMARY_SURFACE_ADDRESS, NULL);
+		secondarySurface = PsychOSKDReadRegister(screenId, (PsychScreenToHead(screenId) <= 0) ? RADEON_D1GRPH_SECONDARY_SURFACE_ADDRESS : RADEON_D2GRPH_SECONDARY_SURFACE_ADDRESS, NULL);
 
 		// Read update status registers:
-		updateStatus     = PsychOSKDReadRegister(screenId, (screenId <=0 ) ? RADEON_D1GRPH_UPDATE : RADEON_D2GRPH_UPDATE, NULL);
+		updateStatus     = PsychOSKDReadRegister(screenId, (PsychScreenToHead(screenId) <= 0) ? RADEON_D1GRPH_UPDATE : RADEON_D2GRPH_UPDATE, NULL);
 
 		PsychGetAdjustedPrecisionTimerSeconds(timestamp);
 
@@ -384,7 +392,7 @@ psych_bool PsychWaitForBufferswapPendingOrFinished(PsychWindowRecordType* window
 		}
 		
 		if (PsychPrefStateGet_Verbosity() > 9) {
-			printf("PTB-DEBUG: Head %i: primarySurface=%p : secondarySurface=%p : updateStatus=%i\n", ((screenId <=0) ? 0:1), primarySurface, secondarySurface, updateStatus);
+			printf("PTB-DEBUG: Head %i: primarySurface=%p : secondarySurface=%p : updateStatus=%i\n", PsychScreenToHead(screenId), primarySurface, secondarySurface, updateStatus);
 		}
 
 		// Sleep slacky at least 200 microseconds, then retry:
@@ -420,11 +428,7 @@ unsigned int PsychGetNVidiaGPUType(PsychWindowRecordType* windowRecord)
 	psych_uint32 chipset, card_type;
 
 	// Get hardware id code from gpu register:
-	#if PSYCH_SYSTEM == PSYCH_OSX
-	psych_uint32 reg0 = EndianU32_LtoN(PsychOSKDReadRegister(0, NV03_PMC_BOOT_0, NULL));
-	#else
-	psych_uint32 reg0 = PsychOSKDReadRegister(0, NV03_PMC_BOOT_0, NULL);
-	#endif
+	psych_uint32 reg0 = PsychOSKDReadRegister((windowRecord) ? windowRecord->screenNumber : 0, NV03_PMC_BOOT_0, NULL);
 	
 	/* We're dealing with >=NV10 */
 	if ((reg0 & 0x0f000000) > 0) {
@@ -475,4 +479,120 @@ unsigned int PsychGetNVidiaGPUType(PsychWindowRecordType* windowRecord)
 #else
 	return(0);
 #endif
+}
+
+/* PsychScreenToHead() - Map PTB screenId to GPU headId (aka pipeId): */
+int	PsychScreenToHead(int screenId)
+{
+	return(displayScreensToPipes[screenId]);
+}
+
+/* PsychSetScreenToHead() - Change mapping of a PTB screenId to GPU headId: */
+void PsychSetScreenToHead(int screenId, int headId)
+{
+	displayScreensToPipes[screenId] = headId;
+}
+
+/* PsychInitScreenToHeadMappings() - Setup initial mapping for 'numDisplays' displays:
+ *
+ * Called from end of InitCGDisplayIDList() during os-specific display initialization.
+ *
+ * 1. Starts with an identity mapping screen 0 -> head 0, screen 1 -> head 1 ...
+ *
+ * 2. Allows override of mapping via environment variable "PSYCHTOOLBOX_PIPEMAPPINGS",
+ * Format is: One character (a number between "0" and "9") for each screenid,
+ * e.g., "021" would map screenid 0 to pipe 0, screenid 1 to pipe 2 and screenid 2 to pipe 1.
+ *
+ * 3. This mapping can be overriden via Screen('Preference', 'ScreenToHead') setting.
+ *
+ */
+void PsychInitScreenToHeadMappings(int numDisplays)
+{
+    int i;
+	char* ptbpipelines = NULL;
+    
+    // Setup default identity one-to-one mapping:
+    for(i = 0; i < kPsychMaxPossibleDisplays; i++){
+		displayScreensToPipes[i] = i;
+
+		// We also setup beamposition bias values to "neutral defaults":
+		screenBeampositionBias[i] = 0;
+		screenBeampositionVTotal[i] = 0;
+    }
+	
+	// Did user provide an override for the screenid --> pipeline mapping?
+	ptbpipelines = getenv("PSYCHTOOLBOX_PIPEMAPPINGS");
+	if (ptbpipelines) {
+		// The default is "012...", ie screen 0 = pipe 0, 1 = pipe 1, 2 =pipe 2, n = pipe n
+		for (i = 0; (i < strlen(ptbpipelines)) && (i < numDisplays); i++) {
+			displayScreensToPipes[i] = (((ptbpipelines[i] - 0x30) >=0) && ((ptbpipelines[i] - 0x30) < kPsychMaxPossibleDisplays)) ? (ptbpipelines[i] - 0x30) : 0;
+		}
+	}
+}
+
+/* PsychGetBeamposCorrection() -- Get corrective beamposition values.
+ * Some GPU's and drivers don't return the true vertical scanout position on
+ * query, but a value that is offset by a constant value (for a give display mode).
+ * This function returns corrective values to apply to the GPU returned values
+ * to get the "true scanoutposition" for timestamping etc.
+ *
+ * Proper values are setup via PsychSetBeamposCorrection() from high-level startup code
+ * if needed. Otherwise they are set to (0,0), so the correction is an effective no-op.
+ *
+ * truebeampos = measuredbeampos - *vblbias;
+ * if (truebeampos < 0) truebeampos = *vbltotal + truebeampos;
+ *
+ */
+void PsychGetBeamposCorrection(int screenId, int *vblbias, int *vbltotal)
+{
+	*vblbias  = screenBeampositionBias[screenId];
+	*vbltotal = screenBeampositionVTotal[screenId];
+}
+
+/* PsychSetBeamposCorrection() -- Set corrective beamposition values.
+ * Called from high-level setup/calibration code at onscreen window open time.
+ */
+void PsychSetBeamposCorrection(int screenId, int vblbias, int vbltotal)
+{
+	// Need head id for auto-detection:
+	int crtcid = PsychScreenToHead(screenId);
+	
+	// Auto-Detection of correct values requested? A valid OpenGL context must
+	// be bound for this to work or we will crash horribly:
+	if (((unsigned int) vblbias == 0xffffffff) && ((unsigned int) vbltotal == 0xffffffff)) {
+		// First set'em to neutral safe values in case we fail our auto-detect:
+		vblbias  = 0;
+		vbltotal = 0;
+		
+		// Can do this on NVidia GPU's >= NV-50 if low-level access (PTB kernel driver or equivalent) is enabled:
+		if ((strstr(glGetString(GL_VENDOR), "NVIDIA") || strstr(glGetString(GL_VENDOR), "nouveau") ||
+			strstr(glGetString(GL_RENDERER), "NVIDIA") || strstr(glGetString(GL_RENDERER), "nouveau")) &&
+			PsychOSIsKernelDriverAvailable(screenId) && (PsychGetNVidiaGPUType(NULL) >= 0x50)) {
+
+			// Auto-Detection. Read values directly from NV-50 class and later hardware:
+			//
+			// SYNC_START_TO_BLANK_END 16 bit high-word in CRTC_VAL block of NV50_PDISPLAY on NV-50 encodes
+			// length of interval from vsync start line to vblank end line. This is the corrective offset we
+			// need to subtract from read out scanline position to get true scanline position.
+			// Hardware registers "scanline position" measures positive distance from vsync start line (== "scanline 0").
+			// The low-word likely encodes hsyncstart to hblank end length in pixels, but we're not interested in that,
+			// so we shift and mask it out:
+			#if PSYCH_SYSTEM != PSYCH_WINDOWS
+			vblbias = (int) ((PsychOSKDReadRegister(crtcid, 0x610000 + 0xa00 + 0xe8 + ((crtcid > 0) ? 0x540 : 0), NULL) >> 16) & 0xFFFF);
+
+			// DISPLAY_TOTAL: Encodes VTOTAL in high-word, HTOTAL in low-word. Get the VTOTAL in high word:
+			vbltotal = (int) ((PsychOSKDReadRegister(crtcid, 0x610000 + 0xa00 + 0xf8 + ((crtcid > 0) ? 0x540 : 0), NULL) >> 16) & 0xFFFF);
+			#endif
+		}
+
+	}
+
+	// Feedback is good:
+	if ((vblbias != 0) && (vbltotal != 0) && (PsychPrefStateGet_Verbosity() > 3)) {
+		printf("PTB-INFO: Screen %i [head %i]: Applying beamposition corrective offsets: vblbias = %i, vbltotal = %i.\n", screenId, crtcid, vblbias, vbltotal);
+	}
+
+	// Assign:
+	screenBeampositionBias[screenId] = vblbias;
+	screenBeampositionVTotal[screenId] = vbltotal;
 }

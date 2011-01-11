@@ -1,0 +1,27 @@
+--- /dev/null
++++ b/PsychSourceGL/Cohorts/PortAudio/Makefile
+@@ -0,0 +1,24 @@
++all: portaudio-stamp build
++
++configure-stamp:
++	cd portaudio; mkdir -p lib; \
++	CFLAGS="$(CFLAGS)" ./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info --disable-shared --without-jack --without-asiodir; \
++	make clean
++	touch $@
++
++build: configure-stamp
++	make -C portaudio || :
++	: #  It is "ok" to fail for full build -- we just need a static library
++	: # So it is important that file is present -- if not -- fail
++	cp -p portaudio/lib/.libs/libportaudio.a .
++
++portaudio-stamp:
++	unzip portaudio_unpatched_except4OSX.zip \
++		'portaudio/*' -x 'portaudio/bin/*' -x 'portaudio/lib/*' -x '*.o'
++	# Propagate patched files into the tree
++	cp -p pa_unix_util.c portaudio/src/os/unix/pa_unix_util.c
++	cp -p pa_front.c 	 portaudio/include/pa_front.c
++	touch $@
++
++clean:
++	rm -rf portaudio *-stamp libportaudio.a

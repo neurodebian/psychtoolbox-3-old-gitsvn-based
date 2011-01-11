@@ -127,16 +127,50 @@ PsychError SCREENNull(void)
 			crtco = (crtcid > 0) ? 0x800 : 0;
 			
 			// Lower 16 bits are horizontal scanout position, upper 16 bits are always zero:
-			scanpixel = EndianU32_LtoN(PsychOSKDReadRegister(crtcid, 0x616344 + crtco, NULL)) & 0xFFFF;
+			scanpixel = (PsychOSKDReadRegister(crtcid, 0x616344 + crtco, NULL)) & 0xFFFF;
 
 			// Lower 16 bits are vertical scanout position (scanline), upper 16 bits are vblank counter:
-			vblcount = EndianU32_LtoN(PsychOSKDReadRegister(crtcid, 0x616340 + crtco, NULL));
+			vblcount = (PsychOSKDReadRegister(crtcid, 0x616340 + crtco, NULL));
 			scanline = vblcount & 0xFFFF;
 
 			vblcount = (vblcount >> 16) & 0xFFFF;
 
-			if (verbose > 1 || verbose < 0) printf("%i\n", EndianU32_LtoN(PsychOSKDReadRegister(crtcid, 0x616340 + crtco + 4 * verbose, NULL)));		
-                }
+			if (verbose > 1 || verbose < 0) {
+//				printf("%i\n", (PsychOSKDReadRegister(crtcid, 0x616340 + crtco + 4 * verbose, NULL)));
+				int i;
+				
+				// crtc stride for CRTC control block (CRTC_VAL at offset 0xa00, stride 0x540)
+				crtco = (crtcid > 0) ? 0x540 : 0;
+
+//				for (i=0; i<=0xfffffc; i+=4) {
+				for (i=0; i<0x540; i+=4) {
+//					unsigned int base = 0x610000; // Display on NV50
+//no					unsigned int base = 0x600000;
+//					unsigned int base = 0x00008000;
+					//crtco = 0x540;
+					unsigned int base = 0x610000 + 0xa00 + crtco;
+					vblcount = PsychOSKDReadRegister(crtcid, base + i, NULL);
+					unsigned int hi = vblcount >> 16;
+					unsigned int lo = vblcount & 0xffff;
+//					if ((vblcount > 0 && vblcount < 50) || (hi > 0 && hi < 50) || (hi> 750 && hi < 850) || (lo > 0 && lo < 50) || (lo> 750 && lo < 850)) {
+//					if (abs((int)(hi + lo) - 38) < 5) {
+if (1) {
+						printf("%p :: hi = %i , lo = %i , val = %i\n", (void*) (base + i), hi, lo, vblcount);
+					}
+				}
+//				printf("%i\n", (PsychOSKDReadRegister(crtcid, 0x0068080c + crtco, NULL)));
+			}
+			// SYNC_START_TO_BLANK_END high-word in CRTC_VAL block of NV50_PDISPLAY on NV-50 encodes
+			// length of interval from vsync start line to vblank end line, the corrective offset we
+			// need to subtract from scanline position. Scanline position measures positive distance from
+			// vsync start line (== scanline 0).
+			// To low-word likely encodes hsyncstart to hblank end length.
+			int vbloffset = (PsychOSKDReadRegister(crtcid, 0x610000 + 0xa00 + 0xe8 + ((crtcid > 0) ? 0x540 : 0), NULL) >> 16) & 0xFFFF;
+			// DISPLAY_TOTAL: Encodes VTOTAL in high-word, HTOTAL in low-word:
+			int vtotal = (PsychOSKDReadRegister(crtcid, 0x610000 + 0xa00 + 0xf8 + ((crtcid > 0) ? 0x540 : 0), NULL) >> 16) & 0xFFFF;
+			printf("head %i: vbloffset = %i : vtotal = %i\n", crtcid, vbloffset, vtotal);
+			
+		}
 		else {
 			// NV40 or earlier, aka GeForce-7000 or earlier: Same registers down to
 			// earliest NVidia cards NV04 aka RivaTNT-1:
@@ -146,7 +180,7 @@ PsychError SCREENNull(void)
 
 			// Lower 12 bits are vertical scanout position, bit 16 is known to
 			// indicate "in vblank" status. All other bits are always zero:
-			vblcount = EndianU32_LtoN(PsychOSKDReadRegister(crtcid, 0x600808 + crtco, NULL));
+			vblcount = (PsychOSKDReadRegister(crtcid, 0x600808 + crtco, NULL));
 			scanline = vblcount & 0xFFF;
 
 			// Bit 4 after right-shift should indicate "in vblank", other bits

@@ -8,7 +8,7 @@ index ba08d66..674522d 100644
  else
 -    fprintf('WARNING! MEX file %s does not exist! Can''t strip it!\n', filename);
 +    fprintf('ERROR! MEX file %s does not exist! Can''t strip it!\n', filename);
-+    exit(0);
++    exit(1);
  end
  
  return

@@ -212,6 +212,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
     GLint bpc;
 	double maxStddev, maxDeviation, maxDuration;	// Sync thresholds and settings...
 	int minSamples;
+	int vblbias, vbltotal;
 	
     // OS-9 emulation? If so, then we only work in double-buffer mode:
     if (PsychPrefStateGet_EmulateOldPTB()) numBuffers = 2;
@@ -358,16 +359,17 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	if ((*windowRecord)->depth == 30) {
 		// Support for kernel driver available?
 #if PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX
-		if ((PSYCH_SYSTEM == PSYCH_LINUX) && (strstr(glGetString(GL_VENDOR), "NVIDIA") || (strstr(glGetString(GL_VENDOR), "ATI") && strstr(glGetString(GL_RENDERER), "Fire")))) {
+		if ((PSYCH_SYSTEM == PSYCH_LINUX) && (strstr(glGetString(GL_VENDOR), "NVIDIA") || ((strstr(glGetString(GL_VENDOR), "ATI") || strstr(glGetString(GL_VENDOR), "AMD")) && strstr(glGetString(GL_RENDERER), "Fire")))) {
 			// NVidia GPU or ATI Fire-Series GPU: Only native support by driver, if at all...
 			printf("\nPTB-INFO: Your script requested a 30bpp, 10bpc framebuffer, but this is only supported on few special graphics cards and drivers on Linux.");
-			printf("\nPTB-INFO: This may or may not work for you - Double check your results! Theoretically, the 2008 series ATI FireGL/FirePro and NVidia Quadro cards may support this with some drivers,");
+			printf("\nPTB-INFO: This may or may not work for you - Double check your results! Theoretically, the 2008 series ATI/AMD FireGL/FirePro and NVidia Quadro cards may support this with some drivers,");
 			printf("\nPTB-INFO: but you must enable it manually in the Catalyst Control center (somewhere under ''Workstation settings'')\n");
 		}
 		else {
-			if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber)) {
+			// Only support our homegrown method with PTB kernel driver on ATI/AMD hardware:
+			if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber) || strstr(glGetString(GL_VENDOR), "NVIDIA")) {
 				printf("\nPTB-ERROR: Your script requested a 30bpp, 10bpc framebuffer, but the Psychtoolbox kernel driver is not loaded and ready.\n");
-				printf("PTB-ERROR: The driver currently only supports selected ATI Radeon GPU's (e.g., X1000/HD2000/HD3000/HD4000 series and later).\n");
+				printf("PTB-ERROR: The driver currently only supports selected ATI Radeon GPU's (X1000/HD2000/HD3000/HD4000 series and corresponding FireGL/FirePro models).\n");
 				printf("PTB-ERROR: On MacOS/X the driver must be loaded and functional for your graphics card for this to work.\n");
 				printf("PTB-ERROR: On Linux you must start Octave or Matlab as root, ie. system administrator or via sudo command for this to work.\n");
 				printf("PTB-ERROR: Read 'help PsychtoolboxKernelDriver' for more information.\n\n");
@@ -731,6 +733,10 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
     // Make sure that the gfx-pipeline has settled to a stable state...
     glFinish();
     
+	// Invalidate all corrective offsets for beamposition queries on the screen
+	// associated with this window:
+	PsychSetBeamposCorrection((*windowRecord)->screenNumber, 0, 0);
+	
     // Complete skip of sync tests and all calibrations requested?
     // This should be only done if Psychtoolbox is not used as psychophysics
     // toolbox, but simply as a windowing/drawing toolkit for OpenGL in Matlab/Octave.
@@ -834,27 +840,101 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	
 	// Is the VBL endline >= VBL startline - 1, aka screen height?
 	if ((VBL_Endline < (int) vbl_startline - 1) || (VBL_Endline > vbl_startline * 1.25)) {
-	  // Completely bogus VBL_Endline detected! Warn the user and mark VBL_Endline
-	  // as invalid so it doesn't get used anywhere:
-	  sync_trouble = true;
-	  ifi_beamestimate = 0;
-	  if(PsychPrefStateGet_Verbosity()>1) {
-	    printf("\nWARNING: Couldn't determine end-line of vertical blanking interval for your display! Trouble with beamposition queries?!?\n");
-	    printf("\nWARNING: Detected end-line is %i, which is either lower or more than 25%% higher than vbl startline %i --> Out of sane range!\n", VBL_Endline, vbl_startline);
-	  }
+		// Completely bogus VBL_Endline detected! Warn the user and mark VBL_Endline
+		// as invalid so it doesn't get used anywhere:
+		sync_trouble = true;
+		ifi_beamestimate = 0;
+		if(PsychPrefStateGet_Verbosity()>1) {
+			printf("\nWARNING: Couldn't determine end-line of vertical blanking interval for your display! Trouble with beamposition queries?!?\n");
+			printf("\nWARNING: Detected end-line is %i, which is either lower or more than 25%% higher than vbl startline %i --> Out of sane range!\n", VBL_Endline, vbl_startline);
+		}
 	}
 	else {
-	  // Compute ifi from beampos:
-	  ifi_beamestimate = tsum / tcount;
-	  
-	  if ((vbl_startline >= VBL_Endline) && (PsychPrefStateGet_Verbosity() > 2)) {
-		printf("PTB-INFO: The detected endline of the vertical blank interval is equal or lower than the startline. This indicates\n");
-		printf("PTB-INFO: that i couldn't detect the duration of the vertical blank interval and won't be able to correct timestamps\n");
-		printf("PTB-INFO: for it. This will introduce a very small and constant offset (typically << 1 msec). Read 'help BeampositionQueries'\n");
-		printf("PTB-INFO: for how to correct this, should you really require that last few microseconds of precision.\n");
+		// Compute ifi from beampos:
+		ifi_beamestimate = tsum / tcount;
+		
+		// Some GPU + driver combos need corrective offsets for beamposition reporting.
+		// Following cases exist:
+		// a) If the OS native beamposition query mechanism is used, we don't do correction.
+		//    Although quite a few native implementations would need correction due to driver
+		//    bugs, we don't (and can't) know the correct corrective values, so we can't do
+		//    anything. Also we don't know which GPU + OS combos need correction and which not,
+		//    so better play safe and don't correct.
+		//    On OS/X the low-level code doesn't use the corrections, so nothing to do to handle
+		//    case a) on OS/X. On Windows, the low-level code uses corrections if available,
+		//    so we need to explicitely refrain from setting correction if we're on Windows.
+		//    On Linux case a) doesn't exist.
+		//
+		// b) If our own mechanism is used (PsychtoolboxKernelDriver on OS/X and Linux), we
+		//    do need this high-level correction for NVidia GPU's, but not for ATI/AMD GPU's,
+		//    as the low-level driver code for ATI/AMD already applies proper corrections.
+		
+		// Only consider correction on non-Windows systems for now. We don't have any means to
+		// find proper corrective values on Windows and we don't know if they are needed or if
+		// drivers already do the right thing(tm) - Although testing suggests some are broken,
+		// but no way for us to find out:
+		if (PSYCH_SYSTEM != PSYCH_WINDOWS) {
+			// Only setup correction for NVidia GPU's. Low level code will pickup these
+			// corrections only if our own homegrown beampos query mechanism is used.
+			// Additionally the PTB kernel driver must be available.
+			// We don't setup for ATI/AMD as our low-level code already performs correct correction.
+			// We don't have any solution for Intel, but probably don't need one.
+			if ((strstr(glGetString(GL_VENDOR), "NVIDIA") || strstr(glGetString(GL_VENDOR), "nouveau") ||
+				 strstr(glGetString(GL_RENDERER), "NVIDIA") || strstr(glGetString(GL_RENDERER), "nouveau")) &&
+				PsychOSIsKernelDriverAvailable((*windowRecord)->screenNumber)) {
+				// Yep. Looks like we need to apply correction.
+				
+				// We ask the function to auto-detect proper values from GPU hardware and revert to safe (0,0) on failure:
+				PsychSetBeamposCorrection((*windowRecord)->screenNumber, (int) 0xffffffff, (int) 0xffffffff);
+			}
+		}
+
+		// Check if vbl startline equals measured vbl endline. That is an indication that
+		// the busywait in vbl beamposition workaround is needed to keep beampos queries working
+		// well. We don't do this on Windows, where it would be a tad bit too late here...
+		if ((PSYCH_SYSTEM != PSYCH_WINDOWS) && (vbl_startline >= VBL_Endline)) {
+			// Yup, problem. Enable the workaround:
+			PsychPrefStateSet_ConserveVRAM(PsychPrefStateGet_ConserveVRAM() | kPsychUseBeampositionQueryWorkaround);
+
+			// Tell user:
+			if (PsychPrefStateGet_Verbosity() > 2) {
+				printf("PTB-INFO: Implausible measured vblank endline %i indicates that the beamposition query workaround should be used for your GPU.\n", VBL_Endline);
+				printf("PTB-INFO: Enabling the beamposition workaround, as explained in 'help ConserveVRAM', section 'kPsychUseBeampositionQueryWorkaround'.\n");
+			}
+		}
+		
+		// Query beampos offset correction for its opinion on vtotal. If it has a valid and
+		// one, we set VBL_Endline to vtotal - 1, as this should be the case by definition.
+		// We skip this override if both, measured and gpu detected endlines are the same.
+		// This way we can also auto-fix issues where bugs in the properietary drivers cause
+		// our VBL_Endline detection to falsely detect/report (vbl_startline >= VBL_Endline).
+		// This way, at least on NVidia GPU's with the PTB kernel driver loaded, we can auto-correct
+		// this proprietary driver bug without need to warn the user or require user intervention:
+		PsychGetBeamposCorrection((*windowRecord)->screenNumber, &vblbias, &vbltotal);
+		if ((vblbias != 0) && (vbltotal - 1 > vbl_startline) && (vbltotal - 1 != VBL_Endline)) {
+			// Plausible value for vbltotal:
+			if (PsychPrefStateGet_Verbosity() > 2) {
+				printf("PTB-INFO: Overriding unreliable measured vblank endline %i by low-level value %i read directly from GPU.\n", VBL_Endline, vbltotal - 1);
+			}
+
+			// Override VBL_Endline:			
+			VBL_Endline = vbltotal - 1;
+		}
+
+		// Sensible result for VBL_Endline?
+		if (vbl_startline >= VBL_Endline) {
+			// No:
+			if (PsychPrefStateGet_Verbosity() > 2) {
+				printf("PTB-INFO: The detected endline of the vertical blank interval is equal or lower than the startline. This indicates\n");
+				printf("PTB-INFO: that i couldn't detect the duration of the vertical blank interval and won't be able to correct timestamps\n");
+				printf("PTB-INFO: for it. This will introduce a very small and constant offset (typically << 1 msec). Read 'help BeampositionQueries'\n");
+				printf("PTB-INFO: for how to correct this, should you really require that last few microseconds of precision.\n");
+				printf("PTB-INFO: Btw. this can also mean that your systems beamposition queries are slightly broken. It may help timing precision to\n");
+				printf("PTB-INFO: enable the beamposition workaround, as explained in 'help ConserveVRAM', section 'kPsychUseBeampositionQueryWorkaround'.\n");
+			}
+		}
+	}
 	  }
-	}
-	}
       else {
 		  // We don't have beamposition queries on this system:
 		  ifi_beamestimate = 0;
