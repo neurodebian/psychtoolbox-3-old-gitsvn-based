@@ -58,12 +58,14 @@ $RM -f ./Psychtoolbox/PsychDocumentation/{ECVP2010Poster,Psychtoolbox3-Slides}*.
 # prune some externals present in Debian:
 $RM -rf ./PsychSourceGL/Cohorts/libDC1394 # libdc1394-22-dev -- check content
 
+# prune copies of GLEW
+$RM -f ./Psychtoolbox/PsychOpenGL/MOGL/source/*gl*ew.*
+
 # TODO:
-# portaudio was said to be patched,
-# Do not prune ATM before we figure things out how to enable
-# the patched version (if needed)
-#$RM -rf ./PsychSourceGL/Cohorts/PortAudio # libportaudio-dev -- check ver
+# portaudio has to be patched - keep original pristine tarball and patched sources
+# remove the rest
 $RM -f ./PsychSourceGL/Cohorts/PortAudio/libportaudio.a # anyway alien arch
+$RM -f ./PsychSourceGL/Cohorts/PortAudio/portaudio_unpatched_except4OSX.zip # we will use pristine source tarball
 $RM -rf ./PsychSourceGL/Source/Common/PsychSound/StaticOpenALLib # libopenal-dev -- check
 
 

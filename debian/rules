@@ -32,7 +32,8 @@ build-stamp:
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
 		for mode in 0 1 2 3   5 6 7; do \
-		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)"; done
+		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)" || exit 1; \
+	done
 
 	: # Manually build OpenGL text renderer extension
 	cd PsychSourceGL/Cohorts/FTGLTextRenderer; \
@@ -57,10 +58,10 @@ override_dh_auto_install:
 	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles/* $(OCT_SHAREDDIR)/PsychBasic
 	rmdir $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles
 
-	: # Move binaries under /usr/lib and create symlinks file to point back
+	: # Move .mex binaries under /usr/lib and create symlinks file to point back
 	mkdir -p $(OCT_LIBDIR)
 	cp debian/octave-psychtoolbox-3.links.in  debian/octave-psychtoolbox-3.links
-	find $(OCT_SHAREDDIR)/ -iname \*.mex -o -iname \*.so* | while read f; do \
+	find $(OCT_SHAREDDIR)/ -iname \*.mex | while read f; do \
 		fn=$$(basename $$f); ds=$$(dirname $$f); \
 		dl=$$(echo $$ds | sed -e 's,psychtoolbox-3-common,octave-psychtoolbox-3,g' -e 's,/share/,/lib/,g'); \
 		echo "I: Moving $$f under $$dl"; \
@@ -68,6 +69,17 @@ override_dh_auto_install:
 		mv $$f $$dl; \
 		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/octave-psychtoolbox-3.links; \
 	done
+
+	cp debian/psychtoolbox-3-lib.links.in  debian/psychtoolbox-3-lib.links
+	find $(OCT_SHAREDDIR)/ -iname \*.so* -o -iname \*.a | while read f; do \
+		fn=$$(basename $$f); ds=$$(dirname $$f); \
+		dl=$$(echo $$ds | sed -e 's,psychtoolbox-3-common,psychtoolbox-3-lib,g' -e 's,/share/,/lib/,g'); \
+		echo "I: Moving $$f under $$dl"; \
+		mkdir -p $$dl; \
+		mv $$f $$dl; \
+		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/psychtoolbox-3-lib.links; \
+	done
+
 
 override_dh_makeshlibs:
 	dh_makeshlibs
@@ -102,5 +114,5 @@ override_dh_clean:
 	find Psych* -regextype posix-egrep -regex '.*\.(o|mex|so(|\..*))' -delete
 	-rmdir $(BDIRS)
 	: # Prune some Debian generated files
-	-rm debian/octave-psychtoolbox-3.links
+	-rm debian/octave-psychtoolbox-3.links debian/psychtoolbox-3-lib.links
 	$(MAKE) -C PsychSourceGL/Cohorts/PortAudio clean

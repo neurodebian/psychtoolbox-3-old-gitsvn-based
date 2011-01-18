@@ -1,12 +1,15 @@
 --- /dev/null
 +++ b/PsychSourceGL/Cohorts/PortAudio/Makefile
-@@ -0,0 +1,24 @@
-+all: portaudio-stamp build
+@@ -0,0 +1,32 @@
++# PIC should be enabled to allow mixin while building resultant .mex
++CFLAGS+=-fPIC
++
++all: patch-stamp build
 +
 +configure-stamp:
 +	cd portaudio; mkdir -p lib; \
-+	CFLAGS="$(CFLAGS)" ./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info --disable-shared --without-jack --without-asiodir; \
-+	make clean
++	CFLAGS="$(CFLAGS)" ./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info --disable-shared --without-jack --without-asiodir
++	$(MAKE) -C portaudio clean || :
 +	touch $@
 +
 +build: configure-stamp
@@ -15,12 +18,17 @@
 +	: # So it is important that file is present -- if not -- fail
 +	cp -p portaudio/lib/.libs/libportaudio.a .
 +
-+portaudio-stamp:
-+	unzip portaudio_unpatched_except4OSX.zip \
-+		'portaudio/*' -x 'portaudio/bin/*' -x 'portaudio/lib/*' -x '*.o'
++patch-stamp: portaudio-stamp
 +	# Propagate patched files into the tree
 +	cp -p pa_unix_util.c portaudio/src/os/unix/pa_unix_util.c
-+	cp -p pa_front.c 	 portaudio/include/pa_front.c
++	cp -p pa_process.c 	 portaudio/src/common/pa_process.c
++	# cp -p pa_front.c 	 portaudio/src/common/pa_front.c
++	touch $@
++
++portaudio-stamp:
++	#unzip portaudio_unpatched_except4OSX.zip \
++	#		'portaudio/*' -x 'portaudio/bin/*' -x 'portaudio/lib/*' -x '*.o'
++	tar -xzvf /home/yoh/deb/perspect/psychtoolbox/portaudio/pa_stable_v19_061121.tar.gz
 +	touch $@
 +
 +clean:
