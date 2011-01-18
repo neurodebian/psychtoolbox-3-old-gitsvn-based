@@ -109,10 +109,10 @@ static psych_bool isDCE4(int screenId)
 	// code up matching rules here. This should do for now...
 	
 	// Cedar, Redwood, Juniper, Cypress, Hemlock in 0x6xxx range:
-	if ((fPCIDeviceId & 0xF000) == 6000) isDCE4 = true;
+	if ((fPCIDeviceId & 0xF000) == 0x6000) isDCE4 = true;
 	
 	// Palm in 0x98xx range:
-	if ((fPCIDeviceId & 0xFF00) == 9800) isDCE4 = true;
+	if ((fPCIDeviceId & 0xFF00) == 0x9800) isDCE4 = true;
 
 	return(isDCE4);
 }
@@ -244,6 +244,7 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 		// Yes!
 		if (PsychPrefStateGet_Verbosity() > 2) {
 			printf("PTB-INFO: %s - %s GPU found. Trying to establish low-level access...\n", pci_device_get_vendor_name(gpu), pci_device_get_device_name(gpu));
+			fflush(NULL);
 		}
 		
 		// Pull in remaining info about gpu:
@@ -252,9 +253,14 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			if (PsychPrefStateGet_Verbosity() > 1) {
 				printf("PTB-WARNING: Could not probe properties of GPU for screenId %i [%s]\n", screenId, strerror(ret));
 				printf("PTB-WARNING: Beamposition timestamping and other special features disabled.\n");
+				fflush(NULL);
 			}
 
 			gpu = NULL;
+
+			// Cleanup:
+			pci_system_cleanup();
+			
 			return(FALSE);
 		}
 
@@ -282,30 +288,25 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 		if (PsychPrefStateGet_Verbosity() > 4) {
 			printf("PTB-DEBUG: Mapping GPU BAR address %p ...\n", region->base_addr);
 			printf("PTB-DEBUG: Mapping %p bytes...\n", region->size);
+			fflush(NULL);
 		}
 
-		ret = pci_device_map_range(gpu, region->base_addr, region->size, PCI_DEV_MAP_FLAG_WRITABLE, (void**) &gfx_cntl_mem);
-		if (ret) {
-			// Failed!
+		ret = pci_device_map_range(gpu, region->base_addr, region->size, PCI_DEV_MAP_FLAG_WRITABLE, (void**) &gfx_cntl_mem);		
+		if (ret || (NULL == gfx_cntl_mem)) {
 			if (PsychPrefStateGet_Verbosity() > 1) {
-				printf("PTB-WARNING: Failed to map GPU low-level control registers with read+write access for screenId %i [%s]. Retrying read-only...\n", screenId, strerror(ret));
-				printf("PTB-WARNING: If this works then beamposition timestamping will work, but other special functions won't.\n");
-			}
-			
-			// MMAP read-only, so at least beamposition timestamping would work:
-			ret = pci_device_map_range(gpu, region->base_addr, region->size, 0, (void**) &gfx_cntl_mem);
-		}
-		
-		if (ret) {
-			if (PsychPrefStateGet_Verbosity() > 1) {
-				printf("PTB-WARNING: Failed completely to map GPU low-level control registers for screenId %i [%s].\n", screenId, strerror(ret));
+				printf("PTB-WARNING: Failed to map GPU low-level control registers for screenId %i [%s].\n", screenId, strerror(ret));
 				printf("PTB-WARNING: Beamposition timestamping and other special functions disabled.\n");
 				printf("PTB-WARNING: You must run Matlab/Octave with root privileges for this to work.\n");
 				printf("PTB-WARNING: However, if you are using the free graphics drivers, there isn't any need for this.\n");
+				fflush(NULL);
 			}
 			
 			// Failed:
 			gpu = NULL;
+
+			// Cleanup:
+			pci_system_cleanup();
+
 			return(FALSE);
 		}
 		
@@ -316,6 +317,7 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			fCardType = PsychGetNVidiaGPUType(NULL);
 			if (PsychPrefStateGet_Verbosity() > 2) {
 				printf("PTB-INFO: Connected to NVidia %s GPU of NV-%02x family. Beamposition timestamping enabled.\n", pci_device_get_device_name(gpu), fCardType);
+				fflush(NULL);
 			}
 		}
 		
@@ -323,6 +325,7 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			fCardType = isDCE4(screenId);
 			if (PsychPrefStateGet_Verbosity() > 2) {
 				printf("PTB-INFO: Connected to %s %s GPU with %s display engine. Beamposition timestamping enabled.\n", pci_device_get_vendor_name(gpu), pci_device_get_device_name(gpu), (fCardType) ? "DCE-4" : "AVIVO");
+				fflush(NULL);
 			}
 		}
 		
@@ -330,6 +333,10 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 	} else {
 		// No candidate.
 		if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: No suitable low-level controllable GPU found for screenId %i. Beamposition timestamping and other special functions disabled.\n", screenId);
+		fflush(NULL);
+		
+		// Cleanup:
+		pci_system_cleanup();
 	}
 	
 	// Return final success or failure status:
@@ -337,11 +344,11 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 }
 
 // Maybe use NULLs in the settings arrays to mark entries invalid instead of using psych_bool flags in a different array.   
-static psych_bool			displayLockSettingsFlags[kPsychMaxPossibleDisplays];
+static psych_bool		displayLockSettingsFlags[kPsychMaxPossibleDisplays];
 static CFDictionaryRef	        displayOriginalCGSettings[kPsychMaxPossibleDisplays];        	//these track the original video state before the Psychtoolbox changed it.  
-static psych_bool			displayOriginalCGSettingsValid[kPsychMaxPossibleDisplays];
+static psych_bool		displayOriginalCGSettingsValid[kPsychMaxPossibleDisplays];
 static CFDictionaryRef	        displayOverlayedCGSettings[kPsychMaxPossibleDisplays];        	//these track settings overlayed with 'Resolutions'.  
-static psych_bool			displayOverlayedCGSettingsValid[kPsychMaxPossibleDisplays];
+static psych_bool		displayOverlayedCGSettingsValid[kPsychMaxPossibleDisplays];
 static CGDisplayCount 		numDisplays;
 
 // displayCGIDs stores the X11 Display* handles to the display connections of each PTB logical screen:
@@ -1565,7 +1572,12 @@ int PsychOSKDGetBeamposition(int screenId)
 				
 				// Lower 12 bits are vertical scanout position (scanline), bit 16 is "in vblank" indicator.
 				// Offset between crtc's is 0x2000, we're only interested in scanline, not "in vblank" status:
-				beampos = (int) (ReadRegister((headId == 0) ? 0x600808 : 0x600808 + 0x2000) & 0xFFF);
+				// beampos = (int) (ReadRegister((headId == 0) ? 0x600808 : 0x600808 + 0x2000) & 0xFFF);
+
+				// NV-47: Lower 16 bits are vertical scanout position (scanline), upper 16 bits are horizontal
+				// scanout position. Offset between crtc's is 0x2000. We only use the lower 16 bits and
+				// ignore horizontal scanout position for now:
+				beampos = (int) (ReadRegister((headId == 0) ? 0x600868 : 0x600868 + 0x2000) & 0xFFFF);
 			} else {
 				// NV-50 (GeForce-8) and later:
 				
