@@ -58,6 +58,9 @@ $RM -f ./Psychtoolbox/PsychDocumentation/{ECVP2010Poster,Psychtoolbox3-Slides}*.
 # prune some externals present in Debian:
 $RM -rf ./PsychSourceGL/Cohorts/libDC1394 # libdc1394-22-dev -- check content
 
+# prune copies of GLEW
+$RM -f ./Psychtoolbox/PsychOpenGL/MOGL/source/*gl*ew.*
+
 # TODO:
 # portaudio was said to be patched,
 # Do not prune ATM before we figure things out how to enable
