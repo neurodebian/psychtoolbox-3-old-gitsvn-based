@@ -70,6 +70,16 @@ override_dh_auto_install:
 		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/octave-psychtoolbox-3.links; \
 	done
 
+	cp debian/psychtoolbox-3-lib.links.in  debian/psychtoolbox-3-lib.links
+	find $(OCT_SHAREDDIR)/ -iname \*.so* -o -iname \*.a | while read f; do \
+		fn=$$(basename $$f); ds=$$(dirname $$f); \
+		dl=$$(echo $$ds | sed -e 's,psychtoolbox-3-common,psychtoolbox-3-lib,g' -e 's,/share/,/lib/,g'); \
+		echo "I: Moving $$f under $$dl"; \
+		mkdir -p $$dl; \
+		mv $$f $$dl; \
+		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/psychtoolbox-3-lib.links; \
+	done
+
 
 override_dh_makeshlibs:
 	dh_makeshlibs
@@ -104,5 +114,5 @@ override_dh_clean:
 	find Psych* -regextype posix-egrep -regex '.*\.(o|mex|so(|\..*))' -delete
 	-rmdir $(BDIRS)
 	: # Prune some Debian generated files
-	-rm debian/octave-psychtoolbox-3.links
+	-rm debian/octave-psychtoolbox-3.links debian/psychtoolbox-3-lib.links
 	$(MAKE) -C PsychSourceGL/Cohorts/PortAudio clean
