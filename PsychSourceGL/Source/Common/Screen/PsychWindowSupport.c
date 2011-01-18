@@ -2128,6 +2128,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     static unsigned char id=1;
     psych_bool sync_to_vbl;                    // Should we synchronize the CPU to vertical retrace? 
     double tremaining;                      // Remaining time to flipwhen - deadline
+	double tprescheduleswap;				// Time before os specific call to swap scheduling.
     CGDirectDisplayID displayID;            // Handle for our display - needed for beampos-query.
     double time_at_vbl=0;                   // Time (in seconds) when last Flip in sync with start of VBL happened.
     double currentflipestimate;             // Estimated video flip interval in seconds at current monitor frame rate.
@@ -2337,6 +2338,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	
 	// Get reference time:
 	PsychGetAdjustedPrecisionTimerSeconds(&tremaining);
+	tprescheduleswap = tremaining;
 	
     // Pausing until a specific deadline requested?
     if (flipwhen > 0) {
@@ -2928,6 +2930,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 			if (verbosity > 0) {
 				printf("\n\nPTB-ERROR: Screen('Flip'); beamposition timestamping computed an *impossible stimulus onset value* of %f secs, which would indicate that\n", time_at_vbl);
 				printf("PTB-ERROR: stimulus onset happened *before* it was actually requested! (Earliest theoretically possible %f secs).\n\n", time_at_swaprequest);
+				printf("PTB-ERROR: Some more diagnostic values (only for experts): rawTimestamp = %f, scanline = %i\n", time_at_swapcompletion, *beamPosAtFlip);
 				printf("PTB-ERROR: Some more diagnostic values (only for experts): line_pre_swaprequest = %i, line_post_swaprequest = %i, time_post_swaprequest = %f\n", line_pre_swaprequest, line_post_swaprequest, time_post_swaprequest);
 				printf("PTB-ERROR: Some more diagnostic values (only for experts): preflip_vblcount = %i, preflip_vbltimestamp = %f\n", (int) preflip_vblcount, preflip_vbltimestamp);
 				printf("PTB-ERROR: Some more diagnostic values (only for experts): postflip_vblcount = %i, postflip_vbltimestamp = %f, vbltimestampquery_retrycount = %i\n", (int) postflip_vblcount, postflip_vbltimestamp, (int) vbltimestampquery_retrycount);
@@ -3093,8 +3096,24 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 		// and is it supported and worked successfully?
 		if ((vbltimestampmode == 4) && (swap_msc >= 0)) {
 			// Yes. Override final timestamps with results from OS-Builtin timestamping:
-			time_at_vbl = tSwapComplete;
-			*time_at_onset = tSwapComplete;
+
+			// Consistency check: Swap can't complete before it was scheduled: Have a fudge
+			// value of 1 msec to account for roundoff errors:
+			if (osspecific_asyncflip_scheduled && (tSwapComplete < tprescheduleswap - 0.001)) {
+				if (verbosity > 0) {
+					printf("PTB-ERROR: OpenML timestamping reports that flip completed before it was scheduled [Scheduled no earlier than %f secs, completed at %f secs]!\n", tprescheduleswap, tSwapComplete);
+					printf("PTB-ERROR: This could mean that sync of bufferswaps to vertical retrace is broken or some other driver bug! Falling back to raw timestamping.\n");
+					printf("PTB-ERROR: Check your system setup!\n");
+				}
+
+				// Use override raw timestamp as temporary fallback:
+				time_at_vbl = time_at_swapcompletion;
+				*time_at_onset=time_at_vbl;
+			} else {
+				// Looks good. Assign / Override:
+				time_at_vbl = tSwapComplete;
+				*time_at_onset = tSwapComplete;
+			}
 		}
 
 		// Timestamping finished, final results available!
@@ -3325,8 +3344,9 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
     double reqstddev=*stddev;   // stddev contains the requested standard deviation.
     int fallthroughcount=0;
     double* samples = NULL;
-	int maxlogsamples = 0;
-	
+    int maxlogsamples = 0;
+    psych_bool useOpenML = ((PsychPrefStateGet_VBLTimestampingMode() == 4) && (windowRecord->gfxcaps & kPsychGfxCapSupportsOpenML));
+
     // Child protection: We only work on double-buffered onscreen-windows...
     if (windowRecord->windowType != kPsychDoubleBufferOnscreen) {
         PsychErrorExitMsg(PsychError_InvalidWindowRecord, "Tried to query/measure monitor refresh interval on a window that's not double-buffered and on-screen.");
@@ -3374,24 +3394,29 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
         // We measure until either:
         // - A maximum measurment time of maxsecs seconds has elapsed... (This is the emergency switch to prevent infinite loops).
         // - Or at least numSamples valid samples have been taken AND measured standard deviation is below the requested deviation stddev.
-        for (i=0; (fallthroughcount<10) && ((tnew - tstart) < *maxsecs) && (n < *numSamples || ((n >= *numSamples) && (tstddev > reqstddev))); i++) {
-            // Schedule a buffer-swap on next VBL:
-			PsychOSFlipWindowBuffers(windowRecord);
+	for (i=0; (fallthroughcount<10) && ((tnew - tstart) < *maxsecs) && (n < *numSamples || ((n >= *numSamples) && (tstddev > reqstddev))); i++) {
+		// Schedule a buffer-swap on next VBL:
+		PsychOSFlipWindowBuffers(windowRecord);
             
-            // Wait for it, aka VBL start: See PsychFlipWindowBuffers for explanation...
-            glBegin(GL_POINTS);
-            glColor4f(0,0,0,0);
-            glVertex2i(10,10);
-            glEnd();
-            
-            // This glFinish() will wait until point drawing is finished, ergo backbuffer was ready
-            // for drawing, ergo buffer swap in sync with start of VBL has happened.
-            glFinish();
-            
-            // At this point, start of VBL has happened and we can continue execution...
-            // We take our timestamp here:
-            PsychGetAdjustedPrecisionTimerSeconds(&tnew);
-            
+		if (!(useOpenML && (PsychOSGetSwapCompletionTimestamp(windowRecord, 0, &tnew) > 0))) {
+			// OpenML swap completion timestamping unsupported, disabled, or failed.
+			// Use our standard trick instead.
+			
+			// Wait for it, aka VBL start: See PsychFlipWindowBuffers for explanation...
+			glBegin(GL_POINTS);
+			glColor4f(0,0,0,0);
+			glVertex2i(10,10);
+			glEnd();
+			
+			// This glFinish() will wait until point drawing is finished, ergo backbuffer was ready
+			// for drawing, ergo buffer swap in sync with start of VBL has happened.
+			glFinish();
+			
+			// At this point, start of VBL has happened and we can continue execution...
+			// We take our timestamp here:
+			PsychGetAdjustedPrecisionTimerSeconds(&tnew);
+		}
+
             // We skip the first measurement, because we first need to establish an initial base-time 'told'
             if (told > 0) {
                 // Compute duration of this refresh interval in tnew:
@@ -5092,6 +5117,13 @@ void PsychExecuteBufferSwapPrefix(PsychWindowRecordType *windowRecord)
 			// Busy-Wait: The special handling of <=0 values makes sure we don't hang here
 			// if beamposition queries are broken as well:
 			lastline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);
+			if (lastline == 0) {
+				// Zero scanout position. Could be sign of a failure, or just that we happened zero
+				// by chance. Wait  250 usecs and retry. If it is still zero, we know this is a
+				// permanent failure condition.
+				PsychWaitIntervalSeconds(0.000250);
+				lastline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);
+			}
 			
 			if (lastline > 0) {
 				// Within video frame. Wait for beamposition wraparound or start of VBL:
