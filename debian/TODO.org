@@ -21,11 +21,17 @@ http://svn.berlios.de/wsvn/osxptb/?rev=
   ATI/AMD SDK is not redistributable -- resultant binaries are though
   -- non-free?
 ** TODO Collect copyright/license
-*** Psychtoolbox/PsychContributed/ple.m
-% Copyright: This implementation of 'ple' is a slightly modified derivate of
-% the original public domain implementation of ple.m by Malcolm Wood (the MathWorks).
+*** Files: Psychtoolbox/PsychOpenGL/MOGL/source/headers/glext_edit.h -- what about Apples?
+Copyright:  1999-2005 by Apple Computer, Inc
+			1991-2000 Silicon Graphics, Inc.
+License: SGI Free Software License B, Version 1.1
+Note: although 1.1 is not DFSG-free, later OpenGL was re-licensed by
+  SGI under License B v.2, which was DFSG-free.
+  http://www.sgi.com/company_info/newsroom/press_releases/2008/september/opengl.html
+  ???? The only question/problem here -- what Apple has to do with this, and either
+  its portion remains under 1.1... which would needed to be pruned then
 
-*** ./Psychtoolbox/PsychContributed/read_rle_rgbe.m
+*** ./Psychtoolbox/PsychContributed/read_rle_rgbe.m -- License?
 % Written by Lawrence A. Taplin (taplin@cis.rit.edu)
 %
 % Based loosely on the c-code RGBE implementation written by Bruce Walters

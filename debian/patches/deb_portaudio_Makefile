@@ -28,7 +28,7 @@
 +portaudio-stamp:
 +	#unzip portaudio_unpatched_except4OSX.zip \
 +	#		'portaudio/*' -x 'portaudio/bin/*' -x 'portaudio/lib/*' -x '*.o'
-+	tar -xzvf /home/yoh/deb/perspect/psychtoolbox/portaudio/pa_stable_v19_061121.tar.gz
++	tar -xzvf pa_stable_v19_061121.tar.gz
 +	touch $@
 +
 +clean:
