@@ -60,6 +60,7 @@ $RM -rf ./PsychSourceGL/Cohorts/libDC1394 # libdc1394-22-dev -- check content
 
 # prune copies of GLEW
 $RM -f ./Psychtoolbox/PsychOpenGL/MOGL/source/*gl*ew.*
+$RM -f ./PsychSourceGL/Source/Common/Screen/gl*ew*.*
 
 # TODO:
 # portaudio has to be patched - keep original pristine tarball and patched sources
