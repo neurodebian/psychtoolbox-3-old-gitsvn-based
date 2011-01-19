@@ -52,6 +52,8 @@ build-stamp:
 
 override_dh_auto_install:
 	dh_auto_install
+	: # to guarantee -common existance for arch-dep builds only:
+	mkdir -p $(OCT_SHAREDDIR)
 	rsync -a --exclude=*.o ./Psychtoolbox/ $(OCT_SHAREDDIR)
 
 	: # Move .mex to reside alongside with .m to gain easy help in octave
