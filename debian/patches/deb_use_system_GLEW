@@ -40,6 +40,15 @@
          #include <X11/keysym.h>
 --- a/Psychtoolbox/PsychOpenGL/MOGL/source/mogltypes.h
 +++ b/Psychtoolbox/PsychOpenGL/MOGL/source/mogltypes.h
+@@ -63,7 +63,7 @@ static bool jettisoned = false;
+ /* glew.h is part of GLEW library for automatic detection and binding of
+    OpenGL core functionality and extensions.
+  */
+-#include "glew.h"
++#include <GL/glew.h>
+ /* Hack to take care of missing function prototypes in current glew.h */
+ #define glPointParameteri glPointParameteriNV
+ #define glPointParameteriv glPointParameterivNV
 @@ -89,7 +89,7 @@ static bool jettisoned = false;
  #include <stdlib.h>
  #include <unistd.h>
@@ -49,3 +58,14 @@
  #include <GL/gl.h>
  #include <GL/glu.h>
  #include <GL/glut.h>
+--- a/Psychtoolbox/PsychOpenGL/MOGL/source/mogl_rebinder.c
++++ b/Psychtoolbox/PsychOpenGL/MOGL/source/mogl_rebinder.c
+@@ -4,7 +4,7 @@
+  *
+  */
+ 
+-#include "glew.h"
++#include <GL/glew.h>
+ 
+ // Dynamic extension rebinding: This is in an extra file mogl_rebinder.c and defined
+ // with explicit C linkage. Reason: For the Octave version, we need to compile all
