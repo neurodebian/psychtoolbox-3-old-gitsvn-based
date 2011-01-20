@@ -1,0 +1,124 @@
+--- /dev/null
++++ b/PsychSourceGL/Cohorts/PortAudio/patches/common_timeinfo_currenttime
+@@ -0,0 +1,15 @@
++From: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
++Subject: disable resetting of timeInfo->currentTime
++Origin: PTB-3
++
++--- a/portaudio/src/common/pa_process.c
+++++ b/portaudio/src/common/pa_process.c
++@@ -683,7 +683,7 @@ void PaUtil_BeginBufferProcessing( PaUti
++         
++     bp->timeInfo->inputBufferAdcTime -= bp->framesInTempInputBuffer * bp->samplePeriod;
++     
++-    bp->timeInfo->currentTime = 0; /** FIXME: @todo time info currentTime not implemented */
+++    // MARIO MK CHANGED PTB: bp->timeInfo->currentTime = 0; /** FIXME: @todo time info currentTime not implemented */
++ 
++     /* the first streamCallback will be called to generate samples which will be
++         outputted after the frames currently in the output buffer have been
+--- /dev/null
++++ b/PsychSourceGL/Cohorts/PortAudio/patches/common_unique_DebugPrint
+@@ -0,0 +1,36 @@
++From: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
++Subject: avoid PaUtil_DebugPrint defined in multiple locations -- reuse pa_debugprint.o
++Origin: PTB-3
++
++
++--- a/portaudio/Makefile.in
+++++ b/portaudio/Makefile.in
++@@ -49,6 +49,7 @@ COMMON_OBJS = \
++ 	src/common/pa_cpuload.o \
++ 	src/common/pa_dither.o \
++ 	src/common/pa_front.o \
+++	src/common/pa_debugprint.o \
++ 	src/common/pa_process.o \
++ 	src/common/pa_skeleton.o \
++ 	src/common/pa_stream.o \
++--- a/portaudio/src/common/pa_front.c
+++++ b/portaudio/src/common/pa_front.c
++@@ -158,7 +158,8 @@ void PaUtil_SetLastHostErrorInfo( PaHost
++     strncpy( lastHostErrorText_, errorText, PA_LAST_HOST_ERROR_TEXT_LENGTH_ );
++ }
++ 
++-
+++/*
+++MK CHANGED PTB - Already defined in pa_debugprint
++ void PaUtil_DebugPrint( const char *format, ... )
++ {
++     va_list ap;
++@@ -169,7 +170,7 @@ void PaUtil_DebugPrint( const char *form
++ 
++     fflush( stderr );
++ }
++-
+++*/
++ 
++ static PaUtilHostApiRepresentation **hostApis_ = 0;
++ static int hostApisCount_ = 0;
+--- /dev/null
++++ b/PsychSourceGL/Cohorts/PortAudio/patches/linux_sched_rt
+@@ -0,0 +1,58 @@
++From: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
++Subject: enforce (when possible) SCHED_RR on Linux systems
++Origin: PTB-3
++
++
++
++--- a/portaudio/src/os/unix/pa_unix_util.c
+++++ b/portaudio/src/os/unix/pa_unix_util.c
++@@ -224,9 +224,18 @@ PaError PaUnixThread_Initialize( PaUnixT
++ }
++ #endif
++ 
+++// MK: Enable Psychtoolbox specific Realtime scheduling setup code for RT scheduling the audio callback thread.
+++#define MK_PSYCH_RTSCHED 1
+++
++ PaError PaUnixThread_New( PaUnixThread* self, void* (*threadFunc)( void* ), void* threadArg, PaTime waitForChild )
++ {
++-    PaError result = paNoError;
+++#ifdef MK_PSYCH_RTSCHED
+++	// MK: New code, not in original. Unconditionally try to boost callback threads priority
+++	// to RT_FIFO realtime scheduling with given realtime priority. See below for rest.
+++    struct sched_param spm = { 0 };
+++	int policy;
+++#endif 
+++	PaError result = paNoError;
++     pthread_attr_t attr;
++     int started = 0;
++ 
++@@ -260,6 +269,29 @@ PaError PaUnixThread_New( PaUnixThread*
++     PA_UNLESS( !pthread_create( &self->thread, &attr, threadFunc, threadArg ), paInternalError );
++     started = 1;
++ 
+++#ifdef MK_PSYCH_RTSCHED
+++	// MK: New code, not in original. Unconditionally try to boost callback threads priority
+++	// to RT_FIFO realtime scheduling with given realtime priority.
+++	
+++	// Query parent threads policy and priority:
+++	pthread_getschedparam(pthread_self(), &policy, &spm);
+++	
+++	// If not RT policy, assign a base priority of minimum SCHED_FIFO. Otherwise use RT priority of parent as baseline:
+++	if ((policy != SCHED_FIFO ) && (policy != SCHED_RR)) spm.sched_priority = sched_get_priority_min( SCHED_FIFO );
+++	
+++	// Set audio callback threads RT priority to parents baseline + 4, so it gets quite a boost wrt. its parent.
+++	// Clamp to allowable maximum though:
+++    spm.sched_priority = PA_MIN( spm.sched_priority + 4 , sched_get_priority_max( SCHED_FIFO ) );
+++	
+++	// Try to switch callback thread to SCHED_FIFO Realtime scheduling with proper realtime priority,
+++	// but don't be pissed if it doesn't work. No all too big deal:
+++    if( pthread_setschedparam(self->thread, SCHED_FIFO, &spm) != 0 )
+++    {
+++        PA_DEBUG(( "WARNING: Failed bumping audio callback thread to realtime priority!\n" ));
+++    }
+++
+++#endif
+++
++ #if 0
++     if( th->rtSched )
++     {
+--- /dev/null
++++ b/PsychSourceGL/Cohorts/PortAudio/patches/series
+@@ -0,0 +1,3 @@
++common_unique_DebugPrint
++common_timeinfo_currenttime
++linux_sched_rt

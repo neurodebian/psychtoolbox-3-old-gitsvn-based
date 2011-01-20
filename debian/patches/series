@@ -1,4 +1,5 @@
 deb_fail_if_mex_doesnotexists_while_stripping
 deb_portaudio_Makefile
+up_portaudio_patches
 deb_portaudio_usebuilt_a
 deb_use_system_GLEW
