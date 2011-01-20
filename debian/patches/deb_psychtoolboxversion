@@ -1,0 +1,32 @@
+--- a/Psychtoolbox/PsychBasic/PsychtoolboxVersion.m
++++ b/Psychtoolbox/PsychBasic/PsychtoolboxVersion.m
+@@ -113,6 +113,21 @@ elseif IsOSX | IsLinux | IsWin
+         Psychtoolbox.version.minor=cvv(2);
+         Psychtoolbox.version.point=cvv(3);
+ 
++        if PsychtoolboxRoot == '/usr/share/octave/site/m/psychtoolbox-3/'
++            % It is a Debian version of the package
++            Psychtoolbox.version.flavor = 'Debian package';
++            [status, result] = system('zcat /usr/share/doc/psychtoolbox-3-common/changelog.Debian.gz| head -1 | sed -e "s/).*/)/g"');
++            if status == 0
++                Psychtoolbox.version.revstring = result(1:end-1);
++            else
++                Psychtoolbox.version.revstring = 'WARNING: failed to obtain Debian revision';
++            end
++
++            % Build final version string:
++            Psychtoolbox.version.string = sprintf('%d.%d.%d - Flavor: %s - %s\nFor more info visit:\n%s', Psychtoolbox.version.major, Psychtoolbox.version.minor, Psychtoolbox.version.point, ...
++                                                  Psychtoolbox.version.flavor, Psychtoolbox.version.revstring, Psychtoolbox.version.websvn);
++
++        else
+         % Additional parser code for SVN information. This is slooow!
+         svncmdpath = GetSubversionPath;
+         
+@@ -182,6 +197,7 @@ elseif IsOSX | IsLinux | IsWin
+             Psychtoolbox.date=ss(min(find(ss-' ')):end);
+         end    
+     end
++    end
+     versionString=Psychtoolbox.version.string;
+     versionStructure=Psychtoolbox.version;
+ else
