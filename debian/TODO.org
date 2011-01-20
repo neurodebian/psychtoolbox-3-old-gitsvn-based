@@ -1,10 +1,10 @@
 * Version
 ** TODO take care about reported version
 
-octave:8> PsychtoolboxVersion 
+octave:8> PsychtoolboxVersion
 svn: '/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox' is not a working copy
 svn: '/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox' is not a working copy
-ans = 3.0.8 - Flavor:  - Corresponds to SVN Revision 
+ans = 3.0.8 - Flavor:  - Corresponds to SVN Revision
 For more info visit:
 http://svn.berlios.de/wsvn/osxptb/?rev=
 
@@ -84,7 +84,7 @@ Note: although 1.1 is not DFSG-free, later OpenGL was re-licensed by
                    of the box
 				   TODO: make easy to build eyelink support if library
                    is available (during install time, similar to Matlab stuff)
-	IViewXToolbox -- needs pnet.mex being built ... 
+	IViewXToolbox -- needs pnet.mex being built ...
 	               1.0 version of tcpip toolbox (subdir and .zip) is
                    stripped since not used
 ** TODO Consider building PsychCV extension
@@ -174,7 +174,7 @@ PTB-INFO: Will use 8 bits per color component framebuffer for stimulus post-proc
 Building a fragment shader:Reading shader from file /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychOpenGL/PsychGLSLShaders/ICM2DGainCorrectionShader.frag.txt ...
 MOGL-ERROR: Linking of the GLSL shader program 3 via glLinkProgram(3) failed!
 The program info log for program 3 tells us the following:
-Unresolved symbols 
+Unresolved symbols
 
 error: moglcore: GLSL link operation failed!
 error: called from:
@@ -182,6 +182,23 @@ error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/Ps
 error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychGLImageProcessing/PsychImaging.m at line 2276, column 1
 error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychGLImageProcessing/PsychImaging.m at line 1176, column 1
 error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychDemos/VignettingCorrectionDemo.m at line 61, column 5
-octave:3> IsomerizationsInDishDemo:6>  
+octave:3> IsomerizationsInDishDemo:6>
 
 ** TODO -- ship PsychSourceGL/Cohorts/PortAudio/libportaudio.a in -lib to be used by Matlab builder
+* Running/Defects
+** Demos
+*** ImagingStereoDemo() -- if crashes screen remains 'Welcome ...'
+
+Tried with:
+PTB-INFO: OpenGL-Renderer is NVIDIA Corporation :: Quadro2 MXR/AGP/SSE2 :: 1.5.8 NVIDIA 96.43.18
+
+Error in function OpenWindow:   Usage error
+Imaging Pipeline setup: Sorry, your graphics card does not meet the minimum requirements for use of the imaging pipeline.
+error: Screen: Usage:
+
+[windowPtr,rect]=Screen('OpenWindow',windowPtrOrScreenNumber [,color] [,rect][,pixelSize][,numberOfBuffers][,stereomode][,multisample][,imagingmode][,specialFlags]);
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychGLImageProcessing/PsychImaging.m at line 1085, column 29
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychGLImageProcessing/ImagingStereoDemo.m at line 184, column 24
+
+*** ExpandingRingsDemo() -- OpenGL error: invalid operation

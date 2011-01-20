@@ -1,4 +1,7 @@
+up_portaudio_patches
 deb_fail_if_mex_doesnotexists_while_stripping
+deb_use_system_GLEW
 deb_portaudio_Makefile
 deb_portaudio_usebuilt_a
-deb_use_system_GLEW
+deb_see_README.Debian
+deb_psychtoolboxversion
