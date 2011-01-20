@@ -8,6 +8,7 @@ psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) unstable; urgency=low
     - hint on 'sca' function for restoring the display
   * New patch deb_psychtoolboxversion to enable reporting PTB version
     in the packaged version of PTB
+  * Added a big fat warning to descriptions of all the packages
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Thu, 20 Jan 2011 12:17:42 -0500
 
