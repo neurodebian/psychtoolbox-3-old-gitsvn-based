@@ -1,0 +1,40 @@
+--- a/PsychSourceGL/Source/Common/Screen/SCREENGetMouseHelper.c
++++ b/PsychSourceGL/Source/Common/Screen/SCREENGetMouseHelper.c
+@@ -718,7 +718,7 @@ PsychError SCREENGetMouseHelper(void)
+ 					if(!PsychPrefStateGet_SuppressAllWarnings()) {
+ 	    					printf("PTB-ERROR: Failed to enable realtime-scheduling with Priority(%i) [%s]!\n", schedulingparam.sched_priority, strerror(errno));
+ 						if (errno==EPERM) {
+-							printf("PTB-ERROR: You need to run Matlab/Octave with root-privileges for this to work.\n");
++							printf("PTB-ERROR: See /usr/share/doc/psychtoolbox-3-common/README.Debian to make this work.\n");
+ 						}
+ 					}
+ 					errno=0;
+@@ -744,7 +744,7 @@ PsychError SCREENGetMouseHelper(void)
+ 					if(!PsychPrefStateGet_SuppressAllWarnings()) {
+ 	    					printf("PTB-ERROR: Failed to disable realtime-scheduling with Priority(%i) [%s]!\n", schedulingparam.sched_priority, strerror(errno));
+ 						if (errno==EPERM) {
+-							printf("PTB-ERROR: You need to run Matlab/Octave with root-privileges for this to work.\n");
++							printf("PTB-ERROR: See /usr/share/doc/psychtoolbox-3-common/README.Debian to make this work.\n");
+ 						}
+ 					}
+ 					errno=0;
+--- a/PsychSourceGL/Source/Linux/Screen/PsychWindowGlue.c
++++ b/PsychSourceGL/Source/Linux/Screen/PsychWindowGlue.c
+@@ -104,7 +104,7 @@ psych_bool PsychRealtimePriority(psych_b
+ 	  if(!PsychPrefStateGet_SuppressAllWarnings()) {
+ 	    printf("PTB-INFO: Failed to enable realtime-scheduling [%s]!\n", strerror(errno));
+ 	    if (errno==EPERM) {
+-	      printf("PTB-INFO: You need to run Matlab or Octave with root-privileges for this to work.\n");
++	      printf("PTB-INFO: See /usr/share/doc/psychtoolbox-3-common/README.Debian to make this work.\n");
+ 	    }
+ 	  }
+ 	  errno=0;
+@@ -121,7 +121,7 @@ psych_bool PsychRealtimePriority(psych_b
+ 	if(!PsychPrefStateGet_SuppressAllWarnings()) {
+ 	  printf("PTB-INFO: Failed to disable realtime-scheduling [%s]!\n", strerror(errno));
+ 	  if (errno==EPERM) {
+-	    printf("PTB-INFO: You need to run Matlab or Octave with root-privileges for this to work.\n");
++	    printf("PTB-INFO: See /usr/share/doc/psychtoolbox-3-common/README.Debian to make this work.\n");
+ 	  }
+ 	}
+ 	errno=0;
