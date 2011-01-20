@@ -44,4 +44,18 @@ Root execution
 
 Least recommended -- run octave as root.
 
- -- Yaroslav Halchenko <debian@onerussian.com>, Thu, 20 Jan 2011 12:09:44 -0500
+
+Stale GL window
+===============
+
+In case of execution failure, opened window might remain occupying the
+screen while interactive session already switched back to
+Octave/Matlab.  To resolve -- either exit Octave/Matlab altogether by
+blindly entering a command
+
+ sca
+
+and hitting ENTER
+
+
+ -- Yaroslav Halchenko <debian@onerussian.com>, Thu, 20 Jan 2011 12:13:49 -0500
