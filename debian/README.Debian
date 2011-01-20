@@ -1,6 +1,47 @@
 psychtoolbox-3 for Debian
------------------------
+-------------------------
 
-<possible notes regarding this package - if none, delete this file>
+Real-time scheduling and memory locking priorities
+==================================================
 
- -- NeuroDebian Team <team@neuro.debian.net>  Thu, 16 Dec 2010 23:54:11 -0500
+For better control over timing, PTB tries to use real-time scheduling
+policy for the running process and perform memory locking of necessary
+memory resources.  To allow for such operations to be performed there
+are few alternative solutions
+
+
+limits.conf
+~~~~~~~~~~~
+
+System administrator must allow users running PTB to set RT scheduling
+and memory locking for their tasks but adding following entries to
+/etc/security/limits.conf ::
+
+  username 		 - 	 rtprio 	 95
+  username 		 - 	 memlock 	 1500000
+
+where username should be the login or a @somegroup, if created, where
+user belongs (e.g. addgroup ptb; adduser username ptb; and then use
+@ptb in the lines above)
+
+
+Linux capabilities
+~~~~~~~~~~~~~~~~~~
+
+as root:
+
+ setcap cap_sys_nice=eip `readlink -f /usr/bin/octave`
+
+to allow control over the scheduler for the octave, and
+
+ setcap cap_sys_nice= `readlink -f /usr/bin/octave`
+
+to disallow later on
+
+
+Root execution
+~~~~~~~~~~~~~~
+
+Least recommended -- run octave as root.
+
+ -- Yaroslav Halchenko <debian@onerussian.com>, Thu, 20 Jan 2011 12:09:44 -0500
