@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/PsychSourceGL/Cohorts/PortAudio/Makefile
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,34 @@
 +# PIC should be enabled to allow mixin while building resultant .mex
 +CFLAGS+=-fPIC
 +
@@ -20,9 +20,11 @@
 +
 +patch-stamp: portaudio-stamp
 +	# Propagate patched files into the tree
-+	cp -p pa_unix_util.c portaudio/src/os/unix/pa_unix_util.c
-+	cp -p pa_process.c 	 portaudio/src/common/pa_process.c
-+	# cp -p pa_front.c 	 portaudio/src/common/pa_front.c
++	# cp -p pa_unix_util.c portaudio/src/os/unix/pa_unix_util.c
++	# cp -p pa_process.c 	 portaudio/src/common/pa_process.c
++	# cp -p pa_front_linux.c 	 portaudio/src/common/pa_front.c
++	#: Use patches without relying on quilt patch-queue manager
++	cat patches/series | while read pname; do patch -p1 < patches/$$pname; done
 +	touch $@
 +
 +portaudio-stamp:
