@@ -1,3 +1,14 @@
+psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) unstable; urgency=low
+
+  * New patch up_portaudio_patches to consolidate upstream's
+    linux-relevant patches for portaudio -- fixes problem with missing
+    symbol PaUtil_SetDebugPrintFunction
+  * README.Debian:
+    - notes on setting up real-time scheduling and memory locking
+    - hint on 'sca' function for restoring the display
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Thu, 20 Jan 2011 12:17:42 -0500
+
 psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre1) UNRELEASED; urgency=low
 
   * Initial release (Closes: #606557)
