@@ -1,19 +1,7 @@
-* Version
-** TODO take care about reported version
-
-octave:8> PsychtoolboxVersion
-svn: '/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox' is not a working copy
-svn: '/home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox' is not a working copy
-ans = 3.0.8 - Flavor:  - Corresponds to SVN Revision
-For more info visit:
-http://svn.berlios.de/wsvn/osxptb/?rev=
-
-** DONE current BETA (rev 1865) said to be updated to rev 1864, maintains some differences:
-   CLOSED: [2011-01-04 Tue 13:43] -- Mario reported that it was resolved
 * DFSG/License/Copyright 											  :legal:
 ** TODO Canonical reference?
 ** TODO Cleanup
-[[file:cleanup.sh][* cleanup script]]
+   [[file:cleanup.sh][* cleanup script]]
 *** TODO Psychtoolbox/PsychContributed/ATIRadeonperf_Linux
   -- is used by PsychOneliners/PsychGPUControl.m to set GPU
      and that one is not used/tested in any of demos/tests
@@ -43,11 +31,7 @@ Note: although 1.1 is not DFSG-free, later OpenGL was re-licensed by
 
 ** TODO Octave package
 * Dependencies
-** DONE Kinect: [[file:~/deb/gits/libfreenect][git:libfreenect]]
-   CLOSED: [2010-12-18 Sat 12:06]
-   Packaged and uploaded to Debian NEW
-
-** TODO Portaudio
+* TODO Portaudio -- upstream yet to forward them pa-upstream
 
  portaudio_unpatched_except4OSX.zip contained originals
 
@@ -75,8 +59,7 @@ Note: although 1.1 is not DFSG-free, later OpenGL was re-licensed by
  happen
  http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=560111
  I followed up... Ubuntu adopted the packaging patches from SVN and
- progressed forward to freshier snapshot
-
+ progressed forward to freshier snapsh
 * Building
 ** TODO Consider building for excluded to be built externals:
    	4  libeyelink -- non-distributable binary blob with open-sourced API
@@ -88,31 +71,6 @@ Note: although 1.1 is not DFSG-free, later OpenGL was re-licensed by
 	               1.0 version of tcpip toolbox (subdir and .zip) is
                    stripped since not used
 ** TODO Consider building PsychCV extension
-** DONE Master build file: PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
-   CLOSED: [2011-01-04 Tue 13:48]
-   upstream accepted patches -- no more patching necessary (see
-   portaudio issue above though)
-*** contains custom paths to move things around after build :patch:submitted-upstream:
-*** DONE builds statically against :patch:submitted-upstream:
-CLOSED: [2010-12-20 Mon 15:00]
-   /usr/lib/libXxf86vm.a /usr/lib/libGLU.a /usr/lib/libdc1394.a /usr/lib/libraw1394.a /usr/lib/libusb-1.0.a
-
-  which fails due to
-   /usr/bin/ld: /usr/lib/libXxf86vm.a(XF86VMode.o): relocation R_X86_64_32 against `.data' can not be used when making a shared object; recompile with -fPIC
-   /usr/lib/libXxf86vm.a: could not read symbols: Bad value
-
-**** upstream Ok-ed dynamic linking
-
- grep '^[ \t]*mex ' linuxmakeitoctave3_ubuntugutsy.m | sed -e 's/[^ ]*\/lib\([^ ]*\)\.a/-l\1/g' -e 's,\Wmex\W,mkoctfile --mex ,g' | grep -v freenect >| linuxmakeitoctave3_ubuntugutsy-extract.sh
- to generate a list of lines, excluding build of freenect, to generate
- .mex. MOGL though needs to be built in Psychtoolbox
-** TODO Exhaustive build-Depends:
-	 libxml2-dev, libglib2.0-dev,
-	 libxxf86vm-dev, libglu1-mesa-dev,
-	 libgstreamer-plugins-base0.10-dev, libraw1394-dev,
-	 libdc1394-22-dev, libusb-1.0-0-dev,
-	 libfreenect-dev, # NEW
-
 ** TODO Testing
 *** TODO Tests under Psychtoolbox/PsychTests
 
@@ -143,49 +101,36 @@ Failed to load X11 font with name Times.
 
 Available X11 fonts are:
 
-**** VignettingCorrectionDemo
-
-
-PTB-INFO: This is Psychtoolbox-3 for GNU/Linux X11, under GNU/Octave-3 (Version 3.0.8 - Build date: Dec 10 2010).
-PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.
-PTB-INFO: Most parts of the Psychtoolbox distribution are licensed to you under terms of the GNU General Public License (GPL).
-PTB-INFO: See file 'License.txt' in the Psychtoolbox root folder for the exact licensing conditions.
-
-PTB-INFO: Using GLEW version 1.5.3 for automatic detection of OpenGL extensions...
-PTB-WARNING: Your graphics driver doesn't allow me to control syncing wrt. vertical retrace!
-PTB-WARNING: Please update your display graphics driver as soon as possible to fix this.
-PTB-WARNING: Until then, you can manually enable syncing to VBL somehow in a manner that is
-PTB-WARNING: dependent on the type of gfx-card and driver. Google is your friend...
-
-
-OpenGL-Extensions are: GL_EXT_compiled_vertex_array GL_EXT_texture_env_add GL_ARB_copy_buffer GL_ARB_depth_texture GL_ARB_depth_clamp GL_ARB_draw_buffers GL_ARB_draw_elements_base_vertex GL_ARB_fragment_program GL_ARB_fragment_program_shadow GL_ARB_fragment_shader GL_ARB_framebuffer_object GL_ARB_half_float_pixel GL_ARB_map_buffer_range GL_ARB_multisample GL_ARB_multitexture GL_ARB_occlusion_query GL_ARB_pixel_buffer_object GL_ARB_point_parameters GL_ARB_point_sprite GL_ARB_provoking_vertex GL_ARB_seamless_cube_map GL_ARB_shader_objects GL_ARB_shading_language_100 GL_ARB_shading_language_120 GL_ARB_shadow GL_ARB_sync GL_ARB_texture_border_clamp GL_ARB_texture_compression GL_ARB_texture_cube_map GL_ARB_texture_env_add GL_ARB_texture_env_combine GL_ARB_texture_env_crossbar GL_ARB_texture_env_dot3 GL_ARB_texture_mirrored_repeat GL_ARB_texture_non_power_of_two GL_ARB_texture_rectangle GL_ARB_transpose_matrix GL_ARB_vertex_array_bgra GL_ARB_vertex_array_object GL_ARB_vertex_buffer_object GL_ARB_vertex_program GL_ARB_vertex_shader GL_ARB_window_pos GL_EXT_abgr GL_EXT_bgra GL_EXT_blend_color GL_EXT_blend_equation_separate GL_EXT_blend_func_separate GL_EXT_blend_logic_op GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_cull_vertex GL_EXT_copy_texture GL_EXT_draw_range_elements GL_EXT_framebuffer_blit GL_EXT_framebuffer_object GL_EXT_fog_coord GL_EXT_gpu_program_parameters GL_EXT_multi_draw_arrays GL_EXT_packed_depth_stencil GL_EXT_packed_pixels GL_EXT_pixel_buffer_object GL_EXT_point_parameters GL_EXT_polygon_offset GL_EXT_provoking_vertex GL_EXT_rescale_normal GL_EXT_secondary_color GL_EXT_separate_specular_color GL_EXT_shadow_funcs GL_EXT_stencil_two_side GL_EXT_stencil_wrap GL_EXT_subtexture GL_EXT_texture GL_EXT_texture3D GL_EXT_texture_cube_map GL_EXT_texture_edge_clamp GL_EXT_texture_env_combine GL_EXT_texture_env_dot3 GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_EXT_texture_object GL_EXT_texture_rectangle GL_EXT_texture_sRGB GL_EXT_texture_swizzle GL_EXT_vertex_array GL_EXT_vertex_array_bgra GL_3DFX_texture_compression_FXT1 GL_APPLE_client_storage GL_APPLE_packed_pixels GL_APPLE_vertex_array_object GL_ATI_blend_equation_separate GL_ATI_envmap_bumpmap GL_ATI_texture_env_combine3 GL_ATI_separate_stencil GL_IBM_multimode_draw_arrays GL_IBM_rasterpos_clip GL_IBM_texture_mirrored_repeat GL_INGR_blend_func_separate GL_MESA_pack_invert GL_MESA_texture_signed_rgba GL_MESA_ycbcr_texture GL_MESA_window_pos GL_NV_blend_square GL_NV_depth_clamp GL_NV_light_max_exponent GL_NV_packed_depth_stencil GL_NV_texture_env_combine4 GL_NV_texture_rectangle GL_NV_texgen_reflection GL_NV_vertex_program GL_NV_vertex_program1_1 GL_OES_read_format GL_SGIS_generate_mipmap GL_SGIS_texture_border_clamp GL_SGIS_texture_edge_clamp GL_SGIS_texture_lod GL_SUN_multi_draw_arrays
-
-
-
-PTB-INFO: OpenGL-Renderer is Tungsten Graphics, Inc :: Mesa DRI Mobile Intel® GM45 Express Chipset GEM 20091221 2009Q4  :: 2.1 Mesa 7.7.1
-PTB-INFO: VBL startline = 1200 , VBL Endline = -1
-PTB-INFO: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.
-PTB-INFO: Measured monitor refresh interval from VBLsync = 16.680698 ms [59.949528 Hz]. (50 valid samples taken, stddev=0.014361 ms.)
-PTB-INFO: Reported monitor refresh interval from operating system = 16.680845 ms [59.949001 Hz].
-PTB-INFO: Small deviations between reported values are normal and no reason to worry.
-PTB-INFO: Psychtoolbox imaging pipeline starting up for window with requested imagingmode 5 ...
-PTB-INFO: Will use 8 bits per color component framebuffer for stimulus drawing.
-PTB-INFO: Will use 8 bits per color component framebuffer for stimulus post-processing (if any).
-Building a fragment shader:Reading shader from file /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychOpenGL/PsychGLSLShaders/ICM2DGainCorrectionShader.frag.txt ...
-MOGL-ERROR: Linking of the GLSL shader program 3 via glLinkProgram(3) failed!
-The program info log for program 3 tells us the following:
-Unresolved symbols
-
-error: moglcore: GLSL link operation failed!
-error: called from:
-error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychOpenGL/MOGL/wrap/glLinkProgram.m at line 15, column 1
-error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychGLImageProcessing/PsychImaging.m at line 2276, column 1
-error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychGLImageProcessing/PsychImaging.m at line 1176, column 1
-error:   /home/yoh/deb/perspect/psychtoolbox/psychtoolbox.gitsvn/Psychtoolbox/PsychDemos/VignettingCorrectionDemo.m at line 61, column 5
-octave:3> IsomerizationsInDishDemo:6>
-
 ** TODO -- ship PsychSourceGL/Cohorts/PortAudio/libportaudio.a in -lib to be used by Matlab builder
 * Running/Defects
+** Helper package
+
+Mario's words of wisdom:
+
+Ja, ideally installing the psychtoolox package - or some optional
+"psychtoolbox-tuning" package -  on debian or ubuntu should probably
+perform some tuning on the system. --> You install ptb, the system
+auto-tunes for optimal performance.
+
+E.g.,
+
+1. set the rtprio and memlock limits.
+2. Create a "ptb" user group.
+3. Maybe define special udev rules so the pci resources of gpu's get
+read/write memory mapping permissions for users in the "ptb" group.
+4. Make sure that permissions on the firewire devices /dev/dc1394
+(iirc) are so that "ptb" users can directly use them.
+5. Automatically (as a dependency?) install a linux realtime kernel.
+6. One could even pull in some dependencies on some diagnostic tools
+for troubleshooting, e.g., latencytop, powertop, intel gpu tools and
+such.
+7. Configure system powermanagement, screensavers and desktop
+compositor to get out of the way.
+...
+
+Some of this stuff would be useful for other (python'esque) toolkits
+as well.
+
 ** Demos
 *** ImagingStereoDemo() -- if crashes screen remains 'Welcome ...'
 
