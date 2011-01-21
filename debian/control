@@ -4,24 +4,24 @@ Priority: extra
 Maintainer: NeuroDebian Team <team@neuro.debian.net>
 Uploaders: Yaroslav Halchenko <debian@onerussian.com>, Michael Hanke <michael.hanke@gmail.com>
 Build-Depends: debhelper (>= 7.0.50~), rsync,
-			   matlab-support-dev,
-			   octave-pkg-dev (>= 0.5.7),
-			   libpciaccess-dev,
-     		   libxml2-dev,
-			   libglib2.0-dev,
-     		   libxxf86vm-dev,
-			   libglu1-mesa-dev,
-			   libxext-dev,
-			   libglew-dev | libglew1.5-dev,
-			   freeglut3-dev,
-     		   libgstreamer-plugins-base0.10-dev,
-			   libraw1394-dev,
-     		   libdc1394-22-dev,
-			   libusb-1.0-0-dev,
-			   libfreenect-dev,
-			   libfontconfig1-dev,
-			   libfreetype6-dev,
-			   libasound2-dev
+               matlab-support-dev,
+               octave-pkg-dev (>= 0.5.7),
+               libpciaccess-dev,
+               libxml2-dev,
+               libglib2.0-dev,
+               libxxf86vm-dev,
+               libglu1-mesa-dev,
+               libxext-dev,
+               libglew-dev | libglew1.5-dev,
+               freeglut3-dev,
+               libgstreamer-plugins-base0.10-dev,
+               libraw1394-dev,
+               libdc1394-22-dev,
+               libusb-1.0-0-dev,
+               libfreenect-dev,
+               libfontconfig1-dev,
+               libfreetype6-dev,
+               libasound2-dev
 Standards-Version: 3.9.1
 Homepage: http://psychtoolbox.org
 Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox-3.git
