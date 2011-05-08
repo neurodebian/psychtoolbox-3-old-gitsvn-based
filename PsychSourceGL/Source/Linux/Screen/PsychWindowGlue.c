@@ -538,7 +538,7 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
 	// that actually uses the setup call -- no special cases or extra code needed there :-)
 	// This special glXSwapIntervalSGI() call will simply accept an input value of zero for
 	// disabling vsync'ed bufferswaps as a valid input parameter:
-	glXSwapIntervalSGI = glXGetProcAddressARB("glXSwapIntervalMESA");
+	glXSwapIntervalSGI = (PFNGLXSWAPINTERVALSGIPROC) glXGetProcAddressARB("glXSwapIntervalMESA");
 	
 	// Additionally bind the Mesa query call:
 	glXGetSwapIntervalMESA = (PFNGLXGETSWAPINTERVALMESAPROC) glXGetProcAddressARB("glXGetSwapIntervalMESA");
@@ -554,7 +554,7 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   // bind the extension. If this special case is present, we do it here manually ourselves:
   if ( (glXSwapIntervalSGI == NULL) && (strstr(glGetString(GL_EXTENSIONS), "WGL_EXT_swap_control") != NULL) ) {
 	// Looks so: Bind manually...
-	glXSwapIntervalSGI = glXGetProcAddressARB("glXSwapIntervalSGI");
+	glXSwapIntervalSGI = (PFNGLXSWAPINTERVALSGIPROC) glXGetProcAddressARB("glXSwapIntervalSGI");
   }
 
   // Extension finally supported?
@@ -614,10 +614,46 @@ psych_bool PsychOSOpenOffscreenWindow(double *rect, int depth, PsychWindowRecord
   return(FALSE);
 }
 
+/*
+    PsychOSGetPostSwapSBC() -- Internal method for now, used in close window path.
+ */
+static psych_int64 PsychOSGetPostSwapSBC(PsychWindowRecordType *windowRecord)
+{
+	psych_int64 ust, msc, sbc;
+	sbc = 0;
+
+	#ifdef GLX_OML_sync_control
+	// Extension unsupported or known to be defective? Return "damage neutral" 0 in that case:
+	if ((NULL == glXWaitForSbcOML) || (windowRecord->specialflags & kPsychOpenMLDefective)) return(0);
+
+	// Extension supported: Perform query and error check.
+	if (!glXWaitForSbcOML(windowRecord->targetSpecific.deviceContext, windowRecord->targetSpecific.windowHandle, 0, &ust, &msc, &sbc)) {
+		// Failed! Return a "damage neutral" result:
+		return(0);
+	}
+	#endif
+	return(sbc);
+}
 
 void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
 {
   Display* dpy = windowRecord->targetSpecific.deviceContext;
+
+  // Check if we are trying to close the window after it had an "odd" (== non-even)
+  // number of bufferswaps. If so, we execute one last bufferswap to make the count
+  // even. This means that if this window was swapped via page-flipping, the system
+  // should end with the same backbuffer-frontbuffer assignment as the one prior
+  // to opening the window. This may help sidestep certain bugs in compositing desktop
+  // managers (e.g., Compiz).
+  if (PsychOSGetPostSwapSBC(windowRecord) % 2) {
+	// Uneven count. Submit a swapbuffers request and wait for it to truly finish:
+	PsychOSFlipWindowBuffers(windowRecord);
+	PsychOSGetPostSwapSBC(windowRecord);
+  }
+
+  if (PsychPrefStateGet_Verbosity() > 5) {
+	printf("PTB-DEBUG:PsychOSCloseWindow: Closing with a final swapbuffers count of %i.\n", (int) PsychOSGetPostSwapSBC(windowRecord));
+  }
 
   // Detach OpenGL rendering context again - just to be safe!
   glXMakeCurrent(windowRecord->targetSpecific.deviceContext, None, NULL);

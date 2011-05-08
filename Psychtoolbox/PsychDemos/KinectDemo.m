@@ -28,7 +28,7 @@ count = 0;
 ts = GetSecs;
 
 while 1
-    [rc, cts] = PsychKinect('GrabFrame', kinect, 0);
+    [rc, cts] = PsychKinect('GrabFrame', kinect, 1);
     if rc > 0
 	count = count + 1;
 	%fprintf('Kinect frame %i, cts = %f\n', count, cts);
@@ -70,7 +70,7 @@ while 1
 	GetClicks;
     end
 
-    if KbCheck
+    if KbCheck(-1)
         break;
     end
 end

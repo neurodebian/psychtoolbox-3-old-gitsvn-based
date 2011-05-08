@@ -5,18 +5,19 @@
  * mogltype.h -- common definitions for gl/glu and glm modules
  *
  * 09-Dec-2005 -- created (RFM)
+ * 24-Mar-2011 -- Make 64-bit clean (MK).
+ * 27-Mar-2011 -- Remove obsolete and totally bitrotten Octave-2 support (MK).
  *
-*/
+ */
 
 #define PSYCH_MATLAB 0
-#define PSYCH_OCTAVE 1
-
-#ifndef PTBOCTAVE
-// Include mex.h with MEX - API definition for Matlab:
 #define PSYCH_LANGUAGE PSYCH_MATLAB
+
+// Include mex.h with MEX - API definition for Matlab:
 #include "mex.h"
 
 #include <stdio.h>
+#include <limits.h>
 
 #define printf mexPrintf
 #ifndef true
@@ -25,39 +26,6 @@
 
 #ifndef false
 #define false 0
-#endif
-
-#else
-
-
-// Include oct.h and friends with OCT - API definitions for Octave:
-#define PSYCH_LANGUAGE PSYCH_OCTAVE
-#include <octave/oct.h>
-#include <setjmp.h>
-
-// MK: These three are probably not needed for moglcore:
-#include <octave/parse.h>
-#include <octave/ov-struct.h>
-#include <octave/ov-cell.h>
-
-#define const
-
-// octavemex.h defines pseudo MEX functions emulated by our code:
-#include "octavemex.h"
-
-char* mxArrayToString(mxArray* arrayPtr);
-
-#define printf mexPrintf
-
-// Define this to 1 if you want lots of debug-output for the Octave-Scripting glue.
-#define DEBUG_PTBOCTAVEGLUE 0
-
-#define MAX_OUTPUT_ARGS 100
-#define MAX_INPUT_ARGS 100
-static mxArray* plhs[MAX_OUTPUT_ARGS]; // An array of pointers to the octave return arguments.
-static mxArray* prhs[MAX_INPUT_ARGS];  // An array of pointers to the octave call arguments.
-static bool jettisoned = false;
-
 #endif
 
 /* glew.h is part of GLEW library for automatic detection and binding of
@@ -70,6 +38,7 @@ static bool jettisoned = false;
 
 /* Includes specific to MacOS-X version of mogl: */
 #ifdef MACOSX
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -81,6 +50,7 @@ static bool jettisoned = false;
 #include <AGL/agl.h>
 #endif
 #define CALLCONV
+
 #endif
 
 /* Includes specific to GNU/Linux version of mogl: */
@@ -93,20 +63,20 @@ static bool jettisoned = false;
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <GL/glut.h>
-
 #define CALLCONV
+
 #endif
 
 /* Includes specific to M$-Windows version of mogl: */
 #ifdef WINDOWS
+
 #include <stdlib.h>
 #include <string.h>
 #include "wglew.h"
 #include <GL/glut.h>
-
 #define CALLCONV __stdcall
 
-/* Hacks to get Windows version running - to be replaced soon. */
+/* Hacks to get Windows version running: */
 double gluCheckExtension(const GLubyte* a, const GLubyte* b);
 double gluBuild1DMipmapLevels(double a1, double a2, double a3, double a4, double a5, double a6, double a7, double a8, void* a9);
 double gluBuild2DMipmapLevels(double a1, double a2, double a3, double a4, double a5, double a6, double a7, double a8, double a9, void* a10);
@@ -114,12 +84,21 @@ double gluBuild3DMipmapLevels(double a1, double a2, double a3, double a4, double
 double gluBuild3DMipmaps(double a1, double a2, double a3, double a4, double a5, double a6, double a7, void* a8);
 
 #ifndef PTBOCTAVE3MEX
-// These two already defined on Octave, no need to "fake" them:
+
+// These two already defined on Octave-3, no need to "fake" them:
 double gluUnProject4(double a1, double a2, double a3, double a4, double* a5, double* a6, int* a7, double a8, double a9, double* a10, double* a11, double* a12, double* a13);
+#ifndef TARGET_OS_WIN32
 mxArray* mxCreateNumericMatrix(int m, int n, int class, int complex);
+typedef int mwSize;
 #endif
 
 #endif
+
+#endif
+
+// Mapping of scalar buffer offset value (in units of bytes) to an
+// equivalent memory void*.
+void* moglScalarToPtrOffset(const mxArray *m);
 
 // Function prototype for exit with printf(), like mogl_glunsupported...
 void mogl_printfexit(const char* str);
@@ -134,19 +113,20 @@ typedef struct cmdhandler {
 } cmdhandler;
 
 // Definitions for GLU-Tesselators:
-// TODO: After 64bit conversion: #define MOGLDEFMYTESS mogl_tess_struct* mytess = (mogl_tess_struct*) PsychDoubleToPtr(mxGetScalar(prhs[0]));
-#define MOGLDEFMYTESS mogl_tess_struct* mytess = (mogl_tess_struct*) (unsigned int) mxGetScalar(prhs[0]);
+#define MOGLDEFMYTESS mogl_tess_struct* mytess = (mogl_tess_struct*) PsychDoubleToPtr(mxGetScalar(prhs[0]));
+// Old style: 32-bit systems only: #define MOGLDEFMYTESS mogl_tess_struct* mytess = (mogl_tess_struct*) (unsigned int) mxGetScalar(prhs[0]);
+
 #define MAX_TESSCBNAME 32
 
 typedef struct mogl_tess_struct {
     GLUtesselator*  glutesselator;
     int             userData;
-    GLvoid*         polygondata;
+    double          polygondata;
     double*         destructBuffer;
-    int             destructSize;
-    int             maxdestructSize;
-    int             destructCount;
-    int             nrElements;
+    size_t          destructSize;
+    size_t          maxdestructSize;
+    size_t          destructCount;
+    size_t          nrElements;
     char            nGLU_TESS_BEGIN[MAX_TESSCBNAME];
     char            nGLU_TESS_BEGIN_DATA[MAX_TESSCBNAME];
     char            nGLU_TESS_EDGE_FLAG[MAX_TESSCBNAME];
@@ -177,7 +157,7 @@ typedef ULONGLONG psych_uint64;
 typedef double psych_RuntimePtrType;
 
 // Convert a double value (which encodes a memory address) into a ptr:
-void*  PsychDoubleToPtr(double dptr);
+void*  PsychDoubleToPtr(volatile double dptr);
 
 // Convert a memory address pointer into a double value:
 double PsychPtrToDouble(void* ptr);
@@ -185,13 +165,13 @@ double PsychPtrToDouble(void* ptr);
 // Return the size of the buffer pointed to by ptr in bytes.
 // CAUTION: Only works with buffers allocated via PsychMallocTemp()
 // or PsychCallocTemp(). Will segfault, crash & burn with other pointers!
-unsigned int PsychGetBufferSizeForPtr(void* ptr);
+size_t PsychGetBufferSizeForPtr(void* ptr);
 
 // Allocate and zero-out n elements of memory, each size bytes big.
-void *PsychCallocTemp(unsigned long n, unsigned long size, int mlist);
+void *PsychCallocTemp(size_t n, size_t size, int mlist);
 
 // Allocate n bytes of memory:
-void *PsychMallocTemp(unsigned long n, int mlist);
+void *PsychMallocTemp(size_t n, int mlist);
 
 // PsychFreeTemp frees memory allocated with PsychM(C)allocTemp().
 // This is not strictly needed as our memory manager will free

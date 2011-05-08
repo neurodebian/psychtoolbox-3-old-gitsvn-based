@@ -1,7 +1,7 @@
-function VideoCaptureDemo(fullscreen, fullsize, roi)
+function VideoCaptureDemo(fullscreen, fullsize, roi, deviceId)
 % Demonstrate simple use of built-in video capture engine.
 %
-% VideoCaptureDemo([fullscreen=0][, fullsize=0][, roi=[0 0 640 480]])
+% VideoCaptureDemo([fullscreen=0][, fullsize=0][, roi=[0 0 640 480]][,deviceId=0])
 %
 % VideoCaptureDemo initializes the first attached and supported camera on
 % your computer (e.g, the built-in iSight of Apple Macintosh computers),
@@ -30,6 +30,8 @@ function VideoCaptureDemo(fullscreen, fullsize, roi)
 % for some cameras, as some drivers have bugs and don't work well with all
 % settings.
 %
+% 'deviceId' Device index of video capture device. Defaults to system default.
+%
 
 % History:
 % Written sometimes 2006 by MK.
@@ -56,6 +58,10 @@ if nargin < 3
     roi = [];
 end
 
+if nargin < 4 || isempty(deviceId)
+    deviceId = [];
+end
+
 screenid=max(Screen('Screens'));
 
 try
@@ -71,7 +77,7 @@ try
     % Set text size for info text. 24 pixels is also good for Linux.
     Screen('TextSize', win, 24);
     
-    grabber = Screen('OpenVideoCapture', win, 0, roi);
+    grabber = Screen('OpenVideoCapture', win, deviceId, roi, [], [], [], []);
 %     brightness = Screen('SetVideoCaptureParameter', grabber, 'Brightness',383)
 %     exposure = Screen('SetVideoCaptureParameter', grabber, 'Exposure',130)
 %     gain = Screen('SetVideoCaptureParameter', grabber, 'Gain')
@@ -80,7 +86,10 @@ try
 %     Screen('SetVideoCaptureParameter', grabber, 'PrintParameters')
 %     vendor = Screen('SetVideoCaptureParameter', grabber, 'GetVendorname')
 %     model  = Screen('SetVideoCaptureParameter', grabber, 'GetModelname')
+%     fps  = Screen('SetVideoCaptureParameter', grabber, 'GetFramerate')
+%     roi  = Screen('SetVideoCaptureParameter', grabber, 'GetROI')
 
+for repcount=1:1
     Screen('StartVideoCapture', grabber, 30, 1);
 
     dstRect = [];
@@ -144,6 +153,8 @@ try
     end;
     telapsed = GetSecs - t %#ok<NOPRT>
     Screen('StopVideoCapture', grabber);
+end
+
     Screen('CloseVideoCapture', grabber);
     Screen('CloseAll');
     avgfps = count / telapsed %#ok<NOPRT,NASGU>

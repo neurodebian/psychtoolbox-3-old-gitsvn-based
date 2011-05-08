@@ -234,7 +234,7 @@ typedef struct _PsychWindowRecordType_{
 	int					screenNumber;   // kPsychUnaffiliated is -1 and means the offscreen window is unaffiliated.
 	PsychWindowIndexType                    windowIndex;
 	void					*surface; 
-	int					surfaceSizeBytes;	// Estimate of used system memory in bytes. Only used for accounting and debugging output.
+	size_t					surfaceSizeBytes;	// Estimate of used system memory in bytes. Only used for accounting and debugging output.
 	PsychRectType              rect;		// Effective rectangle of window -- Normalized to always have top-left corner in (0,0)!
 	PsychRectType			globalrect;		// Same as rect, but not normalized -- Contains real window location in global desktop reference frame.
 	psych_bool					isValid;		//between when we allocate the record and when we fill in values.
@@ -299,7 +299,7 @@ typedef struct _PsychWindowRecordType_{
 		double									postflip_vbltimestamp;	// Optional timestamp taken after flip completion via PsychGetVBLTimeAndCount();
 		double									osbuiltin_swaptime;		// Optional timestamp of swap completion computed via PsychOSGetSwapCompletionTimestamp();
 		double									gpuRenderTime;			// GPU time spent on rendering. Only returned if a query object is successfully generated.
-		GLint									gpuRenderTimeQuery;		// Handle to the GPU time query object. 0 if none assigned.
+		GLuint									gpuRenderTimeQuery;		// Handle to the GPU time query object. 0 if none assigned.
 		psych_int64								reference_ust;			// UST reference timestamp of vblank with count reference_msc from OpenML. (Optional)
 		psych_int64								reference_msc;			// MSC reference vblank count from OpenML. (Optional)
 		psych_int64								reference_sbc;			// SBC reference swapbuffers count from OpenML. (Optional)

@@ -9,6 +9,7 @@ function params = glGetFramebufferAttachmentParameterivEXT( target, attachment, 
 % 30-May-2006 -- created (generated automatically from header files)
 
 % ---allocate---
+% ---protected---
 
 if nargin~=3,
     error('invalid number of arguments');
@@ -19,3 +20,4 @@ params = int32(1);
 moglcore( 'glGetFramebufferAttachmentParameterivEXT', target, attachment, pname, params );
 
 return
+% ---skip---

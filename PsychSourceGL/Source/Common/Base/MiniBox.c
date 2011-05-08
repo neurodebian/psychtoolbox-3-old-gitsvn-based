@@ -26,21 +26,21 @@ HISTORY:
 						character comparision flag from the psych table.  That's a pretty useless
 						feature anyway, so I just commented that out to make GetChar compile.
 	1/20/04		awi		Cosmetic.
+	3/19/10		mk		Cosmetic and make 64-bit clean.
 
 TO DO:
   
 	  PrintfExit uses mexErrMsgTxt(s), the function call should be abstracted up for other scripting
 	  languages and moved ScriptingGlue.
-	 
 
 */
 
 #include "Psych.h"
+#include <ctype.h>
 
 #define MAX_PRINTFEXIT_LEN  2000 
 
 static psych_bool			isPsychMatchCaseSensitive=FALSE;
-
 
 /* PrintfExit used some fancy stuff to allocate the memory
    which holds the the error message string passed to 
@@ -61,8 +61,6 @@ int PrintfExit(const char *format,...)
 
 	return 0;
 }
-
-
 
 char *BreakLines(char *string,long lineLength)
 {
@@ -93,18 +91,15 @@ char *BreakLines(char *string,long lineLength)
 	}
 }
 
-
 psych_bool PsychIsPsychMatchCaseSensitive(void)
 {
 	return(isPsychMatchCaseSensitive);
 }
 
-
 void PsychSetPsychMatchCaseSenstive(psych_bool arg)
 {
 	isPsychMatchCaseSensitive=arg;
 }
-
 
 // Compare two strings for equality. Ignore case if Psychtoolbox preferences ignore case is set.
 psych_bool PsychMatch(char *s1,char *s2)
@@ -119,39 +114,36 @@ psych_bool PsychMatch(char *s1,char *s2)
 		return 1;
 	}else 
 		return strcmp(s1,s2)==0;
-
 }
 
-
-
-char *int2str(int num)
+char *int2str(psych_int64 num)
 {
 	static char numStr[256];
-	
-	sprintf(numStr, "%d", num);
+	#if PSYCH_SYSTEM != PSYCH_WINDOWS
+	sprintf(numStr, "%lld", num);
+	#else
+	// TODO FIXME AUDIT 64BIT : Figure out a way to handle psych_int64 printing on Windows:
+	sprintf(numStr, "%d", (int) num);
+	#endif
 	return(numStr);
 }
 
-
-int PsychIndexElementFrom2DArray(int mDim/*|Y|*/, int nDim/*|X|*/, int m/*y*/, int n/*x*/)
+size_t PsychIndexElementFrom2DArray(size_t mDim/*|Y|*/, size_t nDim/*|X|*/, size_t m/*y*/, size_t n/*x*/)
 {
-	
 	return(n*mDim + m);  
 }
 
-int PsychIndexElementFrom3DArray(int mDim/*|Y|*/, int nDim/*|X|*/, int pDim/*|Z|*/, int m/*y*/, int n/*x*/, int p/*z*/)
-{
-	
+size_t PsychIndexElementFrom3DArray(size_t mDim/*|Y|*/, size_t nDim/*|X|*/, size_t pDim/*|Z|*/, size_t m/*y*/, size_t n/*x*/, size_t p/*z*/)
+{	
 	return(p*mDim*nDim + n*mDim + m);  //planeindex * planesize + columnindex * columsize + rowindex    
 }
 
-
-int PsychIndexPlaneFrom3DArray(int mDim, int nDim, int pDim, int planeIndex)
+size_t PsychIndexPlaneFrom3DArray(size_t mDim, size_t nDim, size_t pDim, size_t planeIndex)
 {
         return(planeIndex*mDim*nDim);
 }
 
-int maxInt(int a, int b)
+psych_int64 maxInt(psych_int64 a, psych_int64 b)
 {
 	if(a>b)
 		return(a);
@@ -169,7 +161,11 @@ psych_bool PsychIsIntegerInDouble(double *value)
     return(*value >= INT_MIN && *value <= INT_MAX && floor(*value) == *value); 
 }
 
-
-
-
-	
+/* Check if it is a 64 bit integer (psych_int64) packed into a double:
+ * This check will already fail for any integer greater than about 2^52
+ * as double can't represent them accurately anymore.
+ */
+psych_bool PsychIsInteger64InDouble(double *value)
+{
+    return((*value >= -9.22337203685478e+18) && (*value <= 9.22337203685478e+18) && (floor(*value) == *value)); 
+}

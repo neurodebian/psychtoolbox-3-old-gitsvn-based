@@ -9,6 +9,7 @@ function params = glGetTexParameteriv( target, pname )
 % 24-Jan-2006 -- created (generated automatically from header files)
 
 % ---allocate---
+% ---protected---
 
 if nargin~=2,
     error('invalid number of arguments');
@@ -21,3 +22,4 @@ params = int32(zeros(size(f)));
 moglcore( 'glGetTexParameteriv', target, pname, params );
 
 return
+% ---skip---
