@@ -1,15 +1,15 @@
 --- a/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
 +++ b/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
-@@ -24,7 +24,7 @@ fprintf('Building plugin type %i ...\n\n
+@@ -24,7 +24,7 @@
  
  if mode==0
      % Build Screen.mex:
--    mex -v -g --output ../Projects/Linux/build/Screen.mex -DPTB_USE_GSTREAMER -DPTBVIDEOCAPTURE_LIBDC -DPTBOCTAVE3MEX -I/usr/X11R6/include -I/usr/include/gstreamer-0.10 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/libxml2 -ICommon/Base -ICommon/Screen -ILinux/Base -ILinux/Screen -L/usr/X11R6/lib  Common/Base/*.cc Linux/Base/*.c Linux/Screen/*.c Common/Screen/*.c Common/Base/*.c -lc -lrt -lGL -lGLU -lX11 -lXext -lgstreamer-0.10 -lgstbase-0.10 -lgstapp-0.10 -lgobject-2.0 -lgmodule-2.0 -lxml2 -lgthread-2.0 -lglib-2.0 -lXxf86vm -ldc1394 -lraw1394 -lusb-1.0 -lpciaccess
-+    mex -v -g --output ../Projects/Linux/build/Screen.mex -DPTB_USE_GSTREAMER -DPTBVIDEOCAPTURE_LIBDC -DPTBOCTAVE3MEX -I/usr/X11R6/include -I/usr/include/gstreamer-0.10 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/libxml2 -ICommon/Base -ICommon/Screen -ILinux/Base -ILinux/Screen -L/usr/X11R6/lib  Common/Base/*.cc Linux/Base/*.c Linux/Screen/*.c Common/Screen/*.c Common/Base/*.c -lc -lrt -lGL -lGLU -lX11 -lXext -lgstreamer-0.10 -lgstbase-0.10 -lgstapp-0.10 -lgobject-2.0 -lgmodule-2.0 -lxml2 -lgthread-2.0 -lglib-2.0 -lXxf86vm -ldc1394 -lraw1394 -lusb-1.0 -lpciaccess -lGLEW
+-    mex -v -g --output ../Projects/Linux/build/Screen.mex -DPTBMODULE_Screen -DPTB_USE_GSTREAMER -DPTBVIDEOCAPTURE_LIBDC -DPTBOCTAVE3MEX -I/usr/X11R6/include -I/usr/include/gstreamer-0.10 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/libxml2 -ICommon/Base -ICommon/Screen -ILinux/Base -ILinux/Screen -L/usr/X11R6/lib  Common/Base/*.cc Linux/Base/*.c Linux/Screen/*.c Common/Screen/*.c Common/Base/*.c -lc -lrt -lGL -lGLU -lX11 -lXext -lgstreamer-0.10 -lgstbase-0.10 -lgstapp-0.10 -lgstinterfaces-0.10 -lgobject-2.0 -lgmodule-2.0 -lxml2 -lgthread-2.0 -lglib-2.0 -lXxf86vm -ldc1394 -lraw1394 -lusb-1.0 -lpciaccess
++    mex -v -g --output ../Projects/Linux/build/Screen.mex -DPTBMODULE_Screen -DPTB_USE_GSTREAMER -DPTBVIDEOCAPTURE_LIBDC -DPTBOCTAVE3MEX -I/usr/X11R6/include -I/usr/include/gstreamer-0.10 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/libxml2 -ICommon/Base -ICommon/Screen -ILinux/Base -ILinux/Screen -L/usr/X11R6/lib  Common/Base/*.cc Linux/Base/*.c Linux/Screen/*.c Common/Screen/*.c Common/Base/*.c -lc -lrt -lGL -lGLU -lX11 -lXext -lgstreamer-0.10 -lgstbase-0.10 -lgstapp-0.10 -lgstinterfaces-0.10 -lgobject-2.0 -lgmodule-2.0 -lxml2 -lgthread-2.0 -lglib-2.0 -lXxf86vm -ldc1394 -lraw1394 -lusb-1.0 -lpciaccess -lGLEW
      unix(['mv ../Projects/Linux/build/Screen.mex ' PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/']);
      striplibsfrommexfile([PsychtoolboxRoot 'PsychBasic/Octave3LinuxFiles/Screen.mex']);
  end;
-@@ -69,7 +69,7 @@ if mode==6
+@@ -69,7 +69,7 @@
      curdir = pwd;
      cd('../../Psychtoolbox/PsychOpenGL/MOGL/source/')
      try
@@ -29,8 +29,8 @@
  
  //platform dependent includes stage 1
  #if PSYCH_SYSTEM == PSYCH_LINUX
-@@ -51,7 +51,7 @@
- 	//#include <GL/glext.h>
+@@ -52,7 +52,7 @@
+     #include <stdint.h>
  	
  	// This is the new glew include for GLX extension support:
 -	#include "../Screen/glxew.h"
@@ -40,7 +40,7 @@
          #include <X11/keysym.h>
 --- a/Psychtoolbox/PsychOpenGL/MOGL/source/mogltypes.h
 +++ b/Psychtoolbox/PsychOpenGL/MOGL/source/mogltypes.h
-@@ -63,7 +63,7 @@ static bool jettisoned = false;
+@@ -31,7 +31,7 @@
  /* glew.h is part of GLEW library for automatic detection and binding of
     OpenGL core functionality and extensions.
   */
@@ -49,7 +49,7 @@
  /* Hack to take care of missing function prototypes in current glew.h */
  #define glPointParameteri glPointParameteriNV
  #define glPointParameteriv glPointParameterivNV
-@@ -89,7 +89,7 @@ static bool jettisoned = false;
+@@ -59,7 +59,7 @@
  #include <stdlib.h>
  #include <unistd.h>
  #include <string.h>
