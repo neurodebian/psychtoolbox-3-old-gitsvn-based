@@ -66,7 +66,7 @@ static GLenum  texturetarget = 0;
 
 // A rough guess of how much memory is currently consumed by textures... Can be grossly wrong,
 // only used if texture creation failed and out-of-memory is a likely suspect.
-static unsigned int texmemguesstimate = 0;
+static size_t texmemguesstimate = 0;
 
 void PsychDetectTextureTarget(PsychWindowRecordType *win)
 {
@@ -75,13 +75,13 @@ void PsychDetectTextureTarget(PsychWindowRecordType *win)
         // Yes. Need to auto-detect texturetarget to use. This routine is called with
 		// the OpenGL context for the 'win' already attached, from PsychOpenOnscreenWindow().
 
-        if ((strstr(glGetString(GL_EXTENSIONS), "GL_EXT_texture_rectangle") || strstr(glGetString(GL_EXTENSIONS), "GL_ARB_texture_rectangle")) && GL_TEXTURE_RECTANGLE_EXT != GL_TEXTURE_2D) {
+        if ((strstr((char*) glGetString(GL_EXTENSIONS), "GL_EXT_texture_rectangle") || strstr((char*) glGetString(GL_EXTENSIONS), "GL_ARB_texture_rectangle")) && GL_TEXTURE_RECTANGLE_EXT != GL_TEXTURE_2D) {
 	    // Great! GL_TEXTURE_RECTANGLE_EXT is available! Use it.
 	    texturetarget = GL_TEXTURE_RECTANGLE_EXT;
 	    if(PsychPrefStateGet_Verbosity()>2)
 			printf("PTB-INFO: Using OpenGL GL_TEXTURE_RECTANGLE_EXT extension for efficient high-performance texture mapping...\n");
         }
-        else if (strstr(glGetString(GL_EXTENSIONS), "GL_NV_texture_rectangle") && GL_TEXTURE_RECTANGLE_NV != GL_TEXTURE_2D){
+        else if (strstr((char*) glGetString(GL_EXTENSIONS), "GL_NV_texture_rectangle") && GL_TEXTURE_RECTANGLE_NV != GL_TEXTURE_2D){
 	    // Try NVidia specific texture rectangle extension:
 	    texturetarget = GL_TEXTURE_RECTANGLE_NV;
 	    if(PsychPrefStateGet_Verbosity()>2)
@@ -225,7 +225,7 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 	GLenum                          texturetarget, oldtexturetarget;
 	GLenum							textureHint;
 	double							sourceWidth, sourceHeight;
-	GLint                           glinternalFormat, gl_realinternalformat = 0;
+	GLint                           glinternalFormat = 0, gl_realinternalformat = 0;
 	static GLint                    gl_lastrequestedinternalFormat = 0;
 	GLint							gl_rbits=0, gl_gbits=0, gl_bbits=0, gl_abits=0, gl_lbits=0;
 	long							screenWidth, screenHeight;
@@ -560,7 +560,7 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 		}  // End of dual-pass texture creation (check + create).
 		
 		// Accounting... ...this is only a rough guesstimate:
-		win->surfaceSizeBytes = ((glinternalFormat==GL_RGBA8) ? 4 : win->depth / 8) * twidth * theight;
+		win->surfaceSizeBytes = ((size_t) ((glinternalFormat==GL_RGBA8) ? 4 : win->depth / 8)) * (size_t) twidth * (size_t) theight;
 		texmemguesstimate+= win->surfaceSizeBytes;
 				
 	}  // End of new texture creation.
@@ -599,7 +599,7 @@ void PsychCreateTexture(PsychWindowRecordType *win)
 	}
 
 	// New internal format requested?
-	if ((!avoidCPUGPUSync || (verbosity > 10)) && (gl_lastrequestedinternalFormat != glinternalFormat && !recycle)) {
+	if ((!avoidCPUGPUSync || (verbosity > 10)) && (!recycle && (gl_lastrequestedinternalFormat != glinternalFormat))) {
 		// Seems so...
 		gl_lastrequestedinternalFormat = glinternalFormat;
 		

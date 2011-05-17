@@ -36,8 +36,15 @@ typedef unsigned char bool;
 #endif
 #endif
 
+#define __STDC_LIMIT_MACROS 1
+
 //bring in the standard c and system headers 
 #include "PsychIncludes.h"
+
+// Define SIZE_MAX if not defined. Mostly for ancient Windows + R11 builds.
+#ifndef SIZE_MAX
+#define SIZE_MAX (4294967295U)
+#endif
 
 #if PSYCH_LANGUAGE == PSYCH_OCTAVE
 
@@ -126,6 +133,7 @@ typedef unsigned char bool;
 // Do we need to define mwSize ourselves?
 #ifdef SELFMADE_MWSIZE
 	typedef int mwSize;
+	typedef int mwIndex;
 #endif
 
 // Define our own base psych_bool type psych_bool to be an unsigned char,
@@ -143,7 +151,7 @@ typedef unsigned char		psych_bool;
         #if PSYCH_LANGUAGE == PSYCH_OCTAVE
         typedef psych_bool                      mxLogical;
         #endif
-        typedef char                            Str255[255];
+        typedef char                            Str255[256];
 
         // We don't have Quicktime for Linux, so we provide a little hack to
         // make the compiler happy:
@@ -179,10 +187,12 @@ typedef unsigned char		psych_bool;
         // Matlab 5 doesn't know about mxLOGICAL_CLASS :(
         #define mxLOGICAL_CLASS mxUINT8_CLASS
         #define mxGetLogicals(p) ((PsychNativeBooleanType*)mxGetData((p)))
-        mxArray* mxCreateNativeBooleanMatrix3D(int m, int n, int p);
+        mxArray* mxCreateNativeBooleanMatrix3D(size_t m, size_t n, size_t p);
 
         #if PSYCH_LANGUAGE == PSYCH_MATLAB
+		#ifndef TARGET_OS_WIN32 
         #define mxCreateLogicalMatrix(m,n) mxCreateNativeBooleanMatrix3D((m), (n), 1)
+		#endif
         #endif
 
         // Hack to make compiler happy until QT7 Windows supports this:

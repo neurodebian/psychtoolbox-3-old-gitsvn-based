@@ -1,4 +1,10 @@
-psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) unstable; urgency=low
+psychtoolbox-3 (3.0.9+svn2078.dfsg1-1) UNRELEASED; urgency=low
+
+  * New upstream point release
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 17 May 2011 18:00:28 -0400
+
+psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) UNRELEASED; urgency=low
 
   * New patch up_portaudio_patches to consolidate upstream's
     linux-relevant patches for portaudio -- fixes problem with missing

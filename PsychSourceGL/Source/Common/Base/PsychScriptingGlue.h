@@ -57,25 +57,35 @@ psych_bool PsychRuntimeGetVariable(const char* workspace, const char* variable, 
 // Try to retrieve filesystem path to Psychtoolbox root folder (the result from PsychtoolboxRoot() in Matlab/Octave) from runtime:
 const char* PsychRuntimeGetPsychtoolboxRoot(void);
 
+//for memory pointers (void*):
+psych_bool PsychCopyInPointerArg(int position, PsychArgRequirementType isRequired, void **ptr);
+psych_bool PsychCopyOutPointerArg(int position, PsychArgRequirementType isRequired, void* ptr);
+
 //for integers
 psych_bool PsychCopyInIntegerArg(int position, PsychArgRequirementType isRequired, int *value);
+psych_bool PsychCopyInIntegerArg64(int position,  PsychArgRequirementType isRequired, psych_int64 *value);
 psych_bool PsychAllocInIntegerListArg(int position, PsychArgRequirementType isRequired, int *numElements, int **array);
+
+//for float's aka singles:
+psych_bool PsychAllocInFloatMatArg64(int position, PsychArgRequirementType isRequired, psych_int64 *m, psych_int64 *n, psych_int64 *p, float **array);
+psych_bool PsychAllocOutFloatMatArg(int position, PsychArgRequirementType isRequired, psych_int64 m, psych_int64 n, psych_int64 p, float **array);
 
 //for doubles
 psych_bool PsychCopyInDoubleArg(int position, PsychArgRequirementType isRequired, double *value);
 psych_bool PsychAllocInDoubleArg(int position, PsychArgRequirementType isRequired, double **value);
 psych_bool PsychAllocInDoubleMatArg(int position, PsychArgRequirementType isRequired, int *m, int *n, int *p, double **array);
+psych_bool PsychAllocInDoubleMatArg64(int position, PsychArgRequirementType isRequired, psych_int64 *m, psych_int64 *n, psych_int64 *p, double **array);
 psych_bool PsychCopyOutDoubleArg(int position, PsychArgRequirementType isRequired, double value);
 //psych_bool PsychAllocOutDoubleArg_2(int position, PsychArgRequirementType isRequired, double **value, ...);  //NEW 
 psych_bool PsychAllocOutDoubleArg(int position, PsychArgRequirementType isRequired, double **value);
-psych_bool PsychAllocOutDoubleMatArg(int position, PsychArgRequirementType isRequired, int m, int n, int p, double **array);
-psych_bool PsychCopyOutDoubleMatArg(int position, PsychArgRequirementType isRequired, int m, int n, int p, double *fromArray);
+psych_bool PsychAllocOutDoubleMatArg(int position, PsychArgRequirementType isRequired, psych_int64 m, psych_int64 n, psych_int64 p, double **array);
+psych_bool PsychCopyOutDoubleMatArg(int position, PsychArgRequirementType isRequired, psych_int64 m, psych_int64 n, psych_int64 p, double *fromArray);
     //PsychAllocateNativeDoubleMat is for use with cell arrays and structs.  The right way to do this is to use the normal function for returning 
     //doubles, detect if the position is -1, and if so accept the optional "nativeElement" value.   
-void 	PsychAllocateNativeDoubleMat(int m, int n, int p, double **cArray, PsychGenericScriptType **nativeElement);	
+void 	PsychAllocateNativeDoubleMat(psych_int64 m, psych_int64 n, psych_int64 p, double **cArray, PsychGenericScriptType **nativeElement);	
 
 //for psych_bool.  These should be consolidated with the flags below. 
-psych_bool PsychAllocOutBooleanMatArg(int position, PsychArgRequirementType isRequired, int m, int n, int p, PsychNativeBooleanType **array);
+psych_bool PsychAllocOutBooleanMatArg(int position, PsychArgRequirementType isRequired, psych_int64 m, psych_int64 n, psych_int64 p, PsychNativeBooleanType **array);
 psych_bool PsychCopyOutBooleanArg(int position, PsychArgRequirementType isRequired, PsychNativeBooleanType value);
 psych_bool PsychAllocOutBooleanArg(int position, PsychArgRequirementType isRequired, PsychNativeBooleanType **value);
 
@@ -92,7 +102,7 @@ void PsychClearFlagListElement(int index, PsychFlagListType flagList);
 
 //for bytes
 psych_bool PsychAllocInUnsignedByteMatArg(int position, PsychArgRequirementType isRequired, int *m, int *n, int *p, unsigned char **array);
-psych_bool PsychAllocOutUnsignedByteMatArg(int position, PsychArgRequirementType isRequired, int m, int n, int p, ubyte **array);
+psych_bool PsychAllocOutUnsignedByteMatArg(int position, PsychArgRequirementType isRequired, psych_int64 m, psych_int64 n, psych_int64 p, ubyte **array);
 
 //for strings
 psych_bool PsychAllocInCharArg(int position, PsychArgRequirementType isRequired, char **str);
@@ -110,9 +120,9 @@ int PsychGetNumNamedOutputArgs(void);
 psych_bool PsychIsArgPresent(PsychArgDirectionType direction, int position);
 psych_bool PsychIsArgReallyPresent(PsychArgDirectionType direction, int position);
 PsychArgFormatType PsychGetArgType(int position); //this is for inputs because outputs are unspecified
-int PsychGetArgM(int position);
-int PsychGetArgN(int position);
-int PsychGetArgP(int position);
+size_t PsychGetArgM(int position);
+size_t PsychGetArgN(int position);
+size_t PsychGetArgP(int position);
 void PsychErrMsgTxt(char *s);
 void PsychEnableSubfunctions(void);
 psych_bool PsychAreSubfunctionsEnabled(void);
@@ -121,17 +131,17 @@ psych_bool PsychCheckInputArgType(int position, PsychArgRequirementType isRequir
 
 //for the benefit of PsychStructGlue and PsychCellGlue.  Don't use these unless you are writing more glue libraries. 
 //They should probably be moved to a separate header file.
-PsychError PsychSetReceivedArgDescriptor(int argNum, PsychArgDirectionType direction);
+PsychError PsychSetReceivedArgDescriptor(int argNum, psych_bool allow64BitSizes, PsychArgDirectionType direction);
 PsychError PsychSetSpecifiedArgDescriptor(	int			position,
                                                         PsychArgDirectionType 	direction,
                                                         PsychArgFormatType 	type,
                                                         PsychArgRequirementType	isRequired,
-                                                        int			mDimMin,		// minimum minimum is 1   |   
-                                                        int			mDimMax, 		// minimum maximum is 1, maximum maximum is -1 meaning infinity
-                                                        int			nDimMin,		// minimum minimum is 1   |   
-                                                        int			nDimMax,		// minimum maximum is 1, maximum maximum is -1 meaning infinity
-                                                        int 		pDimMin,	    // minimum minimum is 0
-                                                        int			pDimMax);
+                                                        psych_int64	mDimMin,		// minimum minimum is 1   |   
+                                                        psych_int64	mDimMax, 		// minimum maximum is 1, maximum maximum is -1 meaning infinity
+                                                        psych_int64	nDimMin,		// minimum minimum is 1   |   
+                                                        psych_int64	nDimMax,		// minimum maximum is 1, maximum maximum is -1 meaning infinity
+                                                        psych_int64	pDimMin,	    // minimum minimum is 0
+                                                        psych_int64	pDimMax);		// minimum maximum is 0, maximum maximum is -1 meaning infinity
 psych_bool PsychAcceptInputArgumentDecider(PsychArgRequirementType isRequired, PsychError matchError);
 psych_bool PsychAcceptOutputArgumentDecider(PsychArgRequirementType isRequired, PsychError matchError);	
 PsychError PsychMatchDescriptors(void);
@@ -140,5 +150,3 @@ const mxArray *PsychGetInArgMxPtr(int position);
 
 //end include once
 #endif
-
-

@@ -9,6 +9,7 @@ function [ objX, objY, objZ, objW, r ] = gluUnProject4( winX, winY, winZ, clipW,
 % 24-Jan-2006 -- created (generated automatically from header files)
 
 % ---allocate---
+% ---protected---
 
 if nargin~=9,
     error('invalid number of arguments');
@@ -21,3 +22,4 @@ objW = double(0);
 r = moglcore( 'gluUnProject4', winX, winY, winZ, clipW, double(model), double(proj), int32(view), near, far, objX, objY, objZ, objW );
 
 return
+% ---skip---

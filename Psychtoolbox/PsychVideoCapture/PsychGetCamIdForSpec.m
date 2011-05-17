@@ -1,7 +1,7 @@
 function [devid, dev] = PsychGetCamIdForSpec(className, inputNameOrPort, instance, engineId)
 % Return deviceIndex of a specified camera, one that matches given criteria.
 % 
-% deviceIndex = PsychGetCamIdForSpec([className][, inputNameOrPort][, instance][, engineId]);
+% [deviceIndex, dev] = PsychGetCamIdForSpec([className][, inputNameOrPort][, instance][, engineId]);
 %
 % Searches for video sources which match given criteria. A handle to the
 % first source that satisfies the criteria is returned in argument
@@ -87,7 +87,12 @@ for i=1:length(cams)
                 continue;
             end
         else
-            if isempty(strfind(cams(i).InputName, inputNameOrPort))
+            if isfield(cams(i), 'InputName') && isempty(strfind(cams(i).InputName, inputNameOrPort))
+                % InputName doesn't match: Reject.
+                continue;
+            end
+
+            if isfield(cams(i), 'DeviceName') && isempty(strfind(cams(i).DeviceName, inputNameOrPort))
                 % InputName doesn't match: Reject.
                 continue;
             end

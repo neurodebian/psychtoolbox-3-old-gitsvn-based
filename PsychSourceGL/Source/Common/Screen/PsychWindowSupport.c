@@ -81,7 +81,7 @@ static PsychWindowRecordType* currentRendertarget = NULL;
 // The handle of the masterthread - The Matlab/Octave/PTB main interpreter thread: This
 // is initialized when opening the first onscreen window. Its used in PsychSetDrawingTarget()
 // to discriminate between the masterthread and the worker threads for async flip operations:
-static psych_threadid	masterthread = NULL;
+static psych_threadid	masterthread = (psych_threadid) NULL;
 
 // Count of currently async-flipping onscreen windows:
 static unsigned int	asyncFlipOpsActive = 0;
@@ -236,8 +236,8 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 		if(PsychPrefStateGet_Verbosity()>2) {
 			printf("\n\nPTB-INFO: This is Psychtoolbox-3 for %s, under %s (Version %i.%i.%i - Build date: %s).\n", PSYCHTOOLBOX_OS_NAME, PSYCHTOOLBOX_SCRIPTING_LANGUAGE_NAME, PsychGetMajorVersionNumber(), PsychGetMinorVersionNumber(), PsychGetPointVersionNumber(), PsychGetBuildDate());
 			printf("PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.\n"); 
-			printf("PTB-INFO: Most parts of the Psychtoolbox distribution are licensed to you under terms of the GNU General Public License (GPL).\n");
-			printf("PTB-INFO: See file 'License.txt' in the Psychtoolbox root folder for the exact licensing conditions.\n\n");
+			printf("PTB-INFO: Most parts of the Psychtoolbox distribution are licensed to you under terms of the MIT License, with\n");
+			printf("PTB-INFO: some restrictions. See file 'License.txt' in the Psychtoolbox root folder for the exact licensing conditions.\n\n");
 		}
 
 		if (PsychPrefStateGet_EmulateOldPTB() && PsychPrefStateGet_Verbosity()>1) {
@@ -327,7 +327,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 
 	#if PSYCH_SYSTEM == PSYCH_WINDOWS
     if(PsychPrefStateGet_Verbosity()>1) {
-		if (strstr(glGetString(GL_RENDERER), "GDI")) {
+		if (strstr((char*) glGetString(GL_RENDERER), "GDI")) {
 			printf("\n\n\n\nPTB-WARNING: Seems that Microsofts OpenGL software renderer is active! This will likely cause miserable\n");
 			printf("PTB-WARNING: performance, lack of functionality and severe timing and synchronization problems.\n");
 			printf("PTB-WARNING: Most likely you do not have native OpenGL vendor supplied drivers (ICD's) for your graphics hardware\n");
@@ -355,19 +355,19 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	}
 	#endif
 
-	// Set a flag that we should switch to native 10 bpc framebuffer later on if possible:
+	// Decide if 10 bpc framebuffer should be enabled by our own kernel driver trick:
 	if ((*windowRecord)->depth == 30) {
 		// Support for kernel driver available?
 #if PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX
-		if ((PSYCH_SYSTEM == PSYCH_LINUX) && (strstr(glGetString(GL_VENDOR), "NVIDIA") || ((strstr(glGetString(GL_VENDOR), "ATI") || strstr(glGetString(GL_VENDOR), "AMD")) && strstr(glGetString(GL_RENDERER), "Fire")))) {
+		if ((PSYCH_SYSTEM == PSYCH_LINUX) && (strstr((char*) glGetString(GL_VENDOR), "NVIDIA") || ((strstr((char*) glGetString(GL_VENDOR), "ATI") || strstr((char*) glGetString(GL_VENDOR), "AMD")) && strstr((char*) glGetString(GL_RENDERER), "Fire")))) {
 			// NVidia GPU or ATI Fire-Series GPU: Only native support by driver, if at all...
 			printf("\nPTB-INFO: Your script requested a 30bpp, 10bpc framebuffer, but this is only supported on few special graphics cards and drivers on Linux.");
 			printf("\nPTB-INFO: This may or may not work for you - Double check your results! Theoretically, the 2008 series ATI/AMD FireGL/FirePro and NVidia Quadro cards may support this with some drivers,");
-			printf("\nPTB-INFO: but you must enable it manually in the Catalyst Control center (somewhere under ''Workstation settings'')\n");
+			printf("\nPTB-INFO: but you must enable it manually in the Catalyst control center or Quadro control center(somewhere under ''Workstation settings'')\n");
 		}
 		else {
 			// Only support our homegrown method with PTB kernel driver on ATI/AMD hardware:
-			if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber) || strstr(glGetString(GL_VENDOR), "NVIDIA")) {
+			if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber) || strstr((char*) glGetString(GL_VENDOR), "NVIDIA") || strstr((char*) glGetString(GL_VENDOR), "Intel")) {
 				printf("\nPTB-ERROR: Your script requested a 30bpp, 10bpc framebuffer, but the Psychtoolbox kernel driver is not loaded and ready.\n");
 				printf("PTB-ERROR: The driver currently only supports selected ATI Radeon GPU's (X1000/HD2000/HD3000/HD4000 series and corresponding FireGL/FirePro models).\n");
 				printf("PTB-ERROR: On MacOS/X the driver must be loaded and functional for your graphics card for this to work.\n");
@@ -386,7 +386,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 		// series FireGL cards at least provide the option to enable this natively - although it didn't work properly in our tests.
 		printf("\nPTB-INFO: Your script requested a 30bpp, 10bpc framebuffer, but this is only supported on few special graphics cards and drivers on MS-Windows.");
 		printf("\nPTB-INFO: This may or may not work for you - Double check your results! Theoretically, the 2008 series ATI FireGL/FirePro and NVidia Quadro cards may support this with some drivers,");
-		printf("\nPTB-INFO: but you must enable it manually in the Catalyst Control center (somewhere under ''Workstation settings'')\n");
+		printf("\nPTB-INFO: but you must enable it manually in the Catalyst or Quadro Control center (somewhere under ''Workstation settings'')\n");
 #endif
 	}
 
@@ -438,23 +438,33 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 		isFloatBuffer = FALSE;
         glGetBooleanv(GL_COLOR_FLOAT_APPLE, &isFloatBuffer);
         if (isFloatBuffer) {
-            printf("PTB-INFO: Floating point precision framebuffer enabled.\n");
+            if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: Floating point precision framebuffer enabled.\n");
         }
         else {
-            printf("PTB-INFO: Fixed point precision integer framebuffer enabled.\n");
+            if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: Fixed point precision integer framebuffer enabled.\n");
         }
         
         // Query and show bpc for all channels:
         glGetIntegerv(GL_RED_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for red channel.\n", bpc);
+        if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: System Frame buffer provides %i bits for red channel.\n", bpc);
         glGetIntegerv(GL_GREEN_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for green channel.\n", bpc);
+        if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: System Frame buffer provides %i bits for green channel.\n", bpc);
         glGetIntegerv(GL_BLUE_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for blue channel.\n", bpc);
+        if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: System Frame buffer provides %i bits for blue channel.\n", bpc);
         glGetIntegerv(GL_ALPHA_BITS, &bpc);
-        printf("PTB-INFO: Frame buffer provides %i bits for alpha channel.\n", bpc);
+        if ((*windowRecord)->depth == 30) {
+			if (PsychPrefStateGet_Verbosity() > 4) {
+				printf("PTB-INFO: Hardware frame buffer provides %i bits for alpha channel. This is the effective alpha bit depths if the imaging pipeline is off.\n", bpc);
+				printf("PTB-INFO: If the imaging pipeline is enabled, then the effective alpha bit depth depends on imaging pipeline configuration and is likely >= 8 bits.\n");
+			}
+		}
+		else {
+			if (PsychPrefStateGet_Verbosity() > 3) {
+				printf("PTB-INFO: System frame buffer provides %i bits for alpha channel, but effective alpha bits depends on imaging pipeline setup, if any.\n", bpc);
+			}
+		}
     }
-
+	
 	// Query if this onscreen window has a backbuffer with alpha channel, i.e.
 	// it has more than zero alpha bits: 
 	glGetIntegerv(GL_ALPHA_BITS, &bpc);
@@ -554,14 +564,14 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
     (*windowRecord)->textureOrientation=2;
 
     // Perform a full safe reset of the framebuffer-object switching code:
-    PsychSetDrawingTarget(0x1);
+    PsychSetDrawingTarget((PsychWindowRecordType*) 0x1);
     
     // Enable this windowRecords OpenGL context and framebuffer as current drawingtarget. This will also setup
     // the projection and modelview matrices, viewports and such to proper values:
     PsychSetDrawingTarget(*windowRecord);
 
 	if(PsychPrefStateGet_Verbosity()>2) {		
-		  printf("\n\nOpenGL-Extensions are: %s\n\n", glGetString(GL_EXTENSIONS));
+		  printf("\n\nOpenGL-Extensions are: %s\n\n", (char*) glGetString(GL_EXTENSIONS));
 	}
 
 	// Perform generic inquiry for interesting renderer capabilities and limitations/quirks
@@ -596,7 +606,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	// More than one display online?
 	if (totaldisplaycount > 1) {
 		// Yes. Is this an ATI GPU?
-		if (strstr(glGetString(GL_VENDOR), "ATI")) {
+		if (strstr((char*) glGetString(GL_VENDOR), "ATI")) {
 			// Is this OS/X 10.5.7 or later?
 			long osMinor, osBugfix, osArch;
 			Gestalt(gestaltSystemVersionMinor, &osMinor);
@@ -839,7 +849,8 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	}
 	
 	// Is the VBL endline >= VBL startline - 1, aka screen height?
-	if ((VBL_Endline < (int) vbl_startline - 1) || (VBL_Endline > vbl_startline * 1.25)) {
+	// Or is it outside a reasonable interval around vbl_startline or 2 * vbl_startline?
+	if ((VBL_Endline < (int) vbl_startline - 1) || ((VBL_Endline > vbl_startline * 1.25) && ((VBL_Endline > vbl_startline * 2.25) || (VBL_Endline < vbl_startline * 2.0)))) {
 		// Completely bogus VBL_Endline detected! Warn the user and mark VBL_Endline
 		// as invalid so it doesn't get used anywhere:
 		sync_trouble = true;
@@ -850,6 +861,10 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 		}
 	}
 	else {
+		// Check if VBL_Endline is greater than 2 * vbl_startline. This would indicate the backend is running in
+		// a double-scan videomode and we need to adapt our vbl_startline to be twice the framebuffer height:
+		if ((VBL_Endline >= vbl_startline * 2) && (VBL_Endline < vbl_startline * 2.25)) vbl_startline = vbl_startline * 2;
+
 		// Compute ifi from beampos:
 		ifi_beamestimate = tsum / tcount;
 		
@@ -878,10 +893,13 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 			// corrections only if our own homegrown beampos query mechanism is used.
 			// Additionally the PTB kernel driver must be available.
 			// We don't setup for ATI/AMD as our low-level code already performs correct correction.
-			// We don't have any solution for Intel, but probably don't need one.
-			if ((strstr(glGetString(GL_VENDOR), "NVIDIA") || strstr(glGetString(GL_VENDOR), "nouveau") ||
-				 strstr(glGetString(GL_RENDERER), "NVIDIA") || strstr(glGetString(GL_RENDERER), "nouveau")) &&
+			// We also setup for Intel.
+			if ((strstr((char*) glGetString(GL_VENDOR), "NVIDIA") || strstr((char*) glGetString(GL_VENDOR), "nouveau") ||
+			     strstr((char*) glGetString(GL_RENDERER), "NVIDIA") || strstr((char*) glGetString(GL_RENDERER), "nouveau") ||
+			     strstr((char*) glGetString(GL_VENDOR), "INTEL") || strstr((char*) glGetString(GL_VENDOR), "Intel") ||
+			     strstr((char*) glGetString(GL_RENDERER), "INTEL") || strstr((char*) glGetString(GL_RENDERER), "Intel")) &&
 				PsychOSIsKernelDriverAvailable((*windowRecord)->screenNumber)) {
+
 				// Yep. Looks like we need to apply correction.
 				
 				// We ask the function to auto-detect proper values from GPU hardware and revert to safe (0,0) on failure:
@@ -911,7 +929,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 		// This way, at least on NVidia GPU's with the PTB kernel driver loaded, we can auto-correct
 		// this proprietary driver bug without need to warn the user or require user intervention:
 		PsychGetBeamposCorrection((*windowRecord)->screenNumber, &vblbias, &vbltotal);
-		if ((vblbias != 0) && (vbltotal - 1 > vbl_startline) && (vbltotal - 1 != VBL_Endline)) {
+		if ((vbltotal != 0) && (vbltotal - 1 > vbl_startline) && (vbltotal - 1 != VBL_Endline)) {
 			// Plausible value for vbltotal:
 			if (PsychPrefStateGet_Verbosity() > 2) {
 				printf("PTB-INFO: Overriding unreliable measured vblank endline %i by low-level value %i read directly from GPU.\n", VBL_Endline, vbltotal - 1);
@@ -1041,7 +1059,18 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	//	}
 	//	#endif
 
-	if(PsychPrefStateGet_Verbosity()>2) printf("\n\nPTB-INFO: OpenGL-Renderer is %s :: %s :: %s\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
+	if(PsychPrefStateGet_Verbosity()>2) printf("\n\nPTB-INFO: OpenGL-Renderer is %s :: %s :: %s\n", (char*) glGetString(GL_VENDOR), (char*) glGetString(GL_RENDERER), (char*) glGetString(GL_VERSION));
+
+	// Running on nouveau? Then issue some words of caution about lack of timing precision:
+	if ((PsychPrefStateGet_Verbosity() > 1) && (strstr((char*) glGetString(GL_VENDOR), "nouveau") || strstr((char*) glGetString(GL_RENDERER), "nouveau"))) {
+		printf("PTB-WARNING: \n\nYou are using the free nouveau graphics driver on your NVidia graphics card. As of %s,\n", PsychGetBuildDate());
+		printf("PTB-WARNING: this driver does *not allow* robust and precise visual stimulus onset timestamping by any method at all!\n");
+		printf("PTB-WARNING: If you need precise visual stimulus timing, either install the binary NVidia driver, or double-check\n");
+		printf("PTB-WARNING: that a more recent version of nouveau is installed and in fact does provide proper timing.\n");
+		printf("PTB-WARNING: You may find relevant info on the Psychtoolbox forum, Psychtoolbox Wiki, or by updating your Psychtoolbox.\n");
+		printf("PTB-WARNING: If this warning goes away by a Psychtoolbox update then your nouveau driver is probably safe to use.\n\n");
+	}
+
     if(PsychPrefStateGet_Verbosity()>2) {
       if (VRAMTotal>0) printf("PTB-INFO: Renderer has %li MB of VRAM and a maximum %li MB of texture memory.\n", VRAMTotal / 1024 / 1024, TexmemTotal / 1024 / 1024);
       printf("PTB-INFO: VBL startline = %i , VBL Endline = %i\n", (int) vbl_startline, VBL_Endline);
@@ -1069,7 +1098,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
           else {
               printf("PTB-INFO: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.\n");
           }
-      }
+      }	  
       printf("PTB-INFO: Measured monitor refresh interval from VBLsync = %f ms [%f Hz]. (%i valid samples taken, stddev=%f ms.)\n",
 	     ifi_estimate * 1000, 1/ifi_estimate, numSamples, stddev*1000);
       if (ifi_nominal > 0) printf("PTB-INFO: Reported monitor refresh interval from operating system = %f ms [%f Hz].\n", ifi_nominal * 1000, 1/ifi_nominal);
@@ -1085,7 +1114,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
       if ((*windowRecord)->stereomode==kPsychAnaglyphRBStereo) printf("PTB-INFO: Stereo display via Anaglyph Red-Blue stereo enabled.\n");
       if ((*windowRecord)->stereomode==kPsychAnaglyphBRStereo) printf("PTB-INFO: Stereo display via Anaglyph Blue-Red stereo enabled.\n");
       if ((*windowRecord)->stereomode==kPsychDualWindowStereo) printf("PTB-INFO: Stereo display via dual window output with imaging pipeline enabled.\n");
-      if ((PsychPrefStateGet_ConserveVRAM() & kPsychDontCacheTextures) && (strstr(glGetString(GL_EXTENSIONS), "GL_APPLE_client_storage")==NULL)) {
+      if ((PsychPrefStateGet_ConserveVRAM() & kPsychDontCacheTextures) && (strstr((char*) glGetString(GL_EXTENSIONS), "GL_APPLE_client_storage")==NULL)) {
 		// User wants us to use client storage, but client storage is unavailable :(
 		printf("PTB-WARNING: You asked me for reducing VRAM consumption but for this, your graphics hardware would need\n");
 		printf("PTB-WARNING: to support the GL_APPLE_client_storage extension, which it doesn't! Sorry... :(\n");
@@ -1319,7 +1348,17 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 	// e.g. as onscreen window or offscreen window, then we need to safe-reset
 	// our drawing engine - Unbind its FBO (if any) and reset current target to
 	// 'none'.
-	if (PsychGetDrawingTarget() == windowRecord) PsychSetDrawingTarget(0x1);
+	if (PsychGetDrawingTarget() == windowRecord) {
+		if (PsychIsOnscreenWindow(windowRecord)) {
+			// Onscreen window? Do a simple soft-reset:
+			PsychSetDrawingTarget((PsychWindowRecordType*) 0x1);
+		}
+		else {
+			// Offscreen window/texture: Protect against some corner case. Reset
+			// the drawing target to the associated top-level parent onscreen window:
+			PsychSetDrawingTarget(PsychGetParentWindow(windowRecord));
+		}
+	}
 	
     if(PsychIsOnscreenWindow(windowRecord)){
 				// Call cleanup routine for the flipInfo record (and possible associated threads):
@@ -1573,7 +1612,7 @@ void PsychReleaseFlipInfoStruct(PsychWindowRecordType *windowRecord)
 		PsychDeleteThread(&(flipRequest->flipperThread));
 		
 		// Ok, thread is dead. Mark it as such:
-		flipRequest->flipperThread = NULL;
+		flipRequest->flipperThread = (psych_thread) NULL;
 
 		// Destroy the mutex:
 		if ((rc=PsychDestroyMutex(&(flipRequest->performFlipLock)))) {
@@ -1643,7 +1682,7 @@ void* PsychFlipperThreadMain(void* windowRecordToCast)
 
 		// Commit suicide with state "error, lock not held":
 		flipRequest->flipperState = 5;
-		return;
+		return(NULL);
 	}
 	
 	// Got the lock: Set our state as "initialized, ready & waiting":
@@ -1662,7 +1701,7 @@ void* PsychFlipperThreadMain(void* windowRecordToCast)
 			
 			// Commit suicide with state "error, lock not held":
 			flipRequest->flipperState = 5;
-			return;
+			return(NULL);
 		}
 		
 		// Got woken up, work to do! We have the lock from auto-reaquire in cond_wait:
@@ -1720,13 +1759,13 @@ void* PsychFlipperThreadMain(void* windowRecordToCast)
 
 			// Commit suicide with state "error, lock not held":
 			flipRequest->flipperState = 5;
-			return;
+			return(NULL);
 		}
 	}
 
 	// Ok, we're not blocked on condition variable and we've unlocked the lock (or at least, did our best to do so),
 	// and set the termination state: Go and die peacefully...
-	return;
+	return(NULL);
 }
 
 /*	PsychFlipWindowBuffersIndirect()
@@ -1838,7 +1877,7 @@ psych_bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
 		glFlush();
 
 		// First time async request? Threads already set up?
-		if (flipRequest->flipperThread == NULL) {
+		if (flipRequest->flipperThread == (psych_thread) NULL) {
 			// First time init: Need to startup flipper thread:
 
 			// printf("IN THREADCREATE\n"); fflush(NULL);
@@ -4302,7 +4341,7 @@ PsychWindowRecordType* PsychGetDrawingTarget(void)
  * OpenGL context for that window and setting up viewport, scissor and projection/modelview
  * matrices etc.
  *
- * * PsychSetDrawingTarget(0x1) to safely reset the drawing target to "None". This will
+ * * PsychSetDrawingTarget((PsychWindowRecordType*) 0x1) to safely reset the drawing target to "None". This will
  * perform all relevant tear-down actions (switching off FBOs, performing backbuffer backups etc.)
  * for the previously active drawing target, then setting the current drawing target to NULL.
  * This command is to be used by PTB internal routines if they need to be able to do
@@ -4390,7 +4429,7 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
         return;
     }
     
-	if ((currentRendertarget == NULL) && (windowRecord == 0x1)) {
+	if ((currentRendertarget == NULL) && (windowRecord == (PsychWindowRecordType *) 0x1)) {
 		// Fast exit: No rendertarget set and savfe reset to "none" requested.
 		// Nothing special to do, just revert to NULL case:
 		windowRecord = NULL;
@@ -4410,10 +4449,10 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
         if (currentRendertarget != windowRecord) {
             // Need to do a switch between drawing target windows:
 			
-			if (windowRecord == 0x1) {
+			if (windowRecord == (PsychWindowRecordType *) 0x1) {
 				// Special case: No new rendertarget, just request to backup the old
 				// one and leave it in a tidy, consistent state, then reset to NULL
-				// binding. We achiive this by turning windowRecord into a NULL request and
+				// binding. We achieve this by turning windowRecord into a NULL request and
 				// unbinding any possibly bound FBO's:
 				windowRecord = NULL;
 
@@ -4851,11 +4890,11 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	// so use at most 7 letters!
 	memset(&(windowRecord->gpuCoreId[0]), 0, 8);
 	
-	if (strstr(glGetString(GL_VENDOR), "ATI") || strstr(glGetString(GL_VENDOR), "AMD") || strstr(glGetString(GL_RENDERER), "AMD")) { ati = TRUE; sprintf(windowRecord->gpuCoreId, "R100"); }
-	if (strstr(glGetString(GL_VENDOR), "NVIDIA")) { nvidia = TRUE; sprintf(windowRecord->gpuCoreId, "NV10"); }
+	if (strstr((char*) glGetString(GL_VENDOR), "ATI") || strstr((char*) glGetString(GL_VENDOR), "AMD") || strstr((char*) glGetString(GL_RENDERER), "AMD")) { ati = TRUE; sprintf(windowRecord->gpuCoreId, "R100"); }
+	if (strstr((char*) glGetString(GL_VENDOR), "NVIDIA") || strstr((char*) glGetString(GL_RENDERER), "nouveau")) { nvidia = TRUE; sprintf(windowRecord->gpuCoreId, "NV10"); }
 
 	// Detection code for Linux DRI driver stack with ATI GPU:
-	if (strstr(glGetString(GL_VENDOR), "Advanced Micro Devices")) { ati = TRUE; sprintf(windowRecord->gpuCoreId, "R100"); }
+	if (strstr((char*) glGetString(GL_VENDOR), "Advanced Micro Devices") || strstr((char*) glGetString(GL_RENDERER), "ATI")) { ati = TRUE; sprintf(windowRecord->gpuCoreId, "R100"); }
 	
 	while (glGetError());
 	glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE_EXT, &maxtexsize);
@@ -4873,7 +4912,7 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	if (verbose) {
 		printf("PTB-DEBUG: Interrogating Low-level renderer capabilities for onscreen window with handle %i:\n", windowRecord->windowIndex);
 		printf("Indicator variables: FBO's %i, ATI_texture_float %i, ARB_texture_float %i, Vendor %s, Renderer %s.\n",
-				glewIsSupported("GL_EXT_framebuffer_object"),glewIsSupported("GL_ATI_texture_float"), glewIsSupported("GL_ARB_texture_float"), glGetString(GL_VENDOR), glGetString(GL_RENDERER));
+				glewIsSupported("GL_EXT_framebuffer_object"),glewIsSupported("GL_ATI_texture_float"), glewIsSupported("GL_ARB_texture_float"), (char*) glGetString(GL_VENDOR), (char*) glGetString(GL_RENDERER));
 		printf("Indicator variables: maxcolorattachments = %i, maxrectangletexturesize = %i, maxnativealuinstructions = %i.\n", maxcolattachments, maxtexsize, maxaluinst);
 	}
 	
@@ -4924,7 +4963,7 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 	}
 
 	// ATI_texture_float is supported by R300 ATI cores and later, as well as NV30/40 NVidia cores and later.
-	if (glewIsSupported("GL_ATI_texture_float") || glewIsSupported("GL_ARB_texture_float") || strstr(glGetString(GL_EXTENSIONS), "GL_MESAX_texture_float")) {
+	if (glewIsSupported("GL_ATI_texture_float") || glewIsSupported("GL_ARB_texture_float") || strstr((char*) glGetString(GL_EXTENSIONS), "GL_MESAX_texture_float")) {
 		// Floating point textures are supported, both 16bpc and 32bpc:
 		if (verbose) printf("Hardware supports floating point textures of 16bpc and 32bpc float format.\n");
 		windowRecord->gfxcaps |= kPsychGfxCapFPTex16;
@@ -4955,7 +4994,7 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 				// R600 from earlier cores. The best we can do for now is name matching, which won't work
 				// for the FireGL series however, so we also check for maxaluinst > 2000, because presumably,
 				// the R600 has a limit of 2048 whereas previous cores only had 512.
-				if ((strstr(glGetString(GL_RENDERER), "R600")) || (strstr(glGetString(GL_RENDERER), "Radeon") && strstr(glGetString(GL_RENDERER), "HD"))) {
+				if ((strstr((char*) glGetString(GL_RENDERER), "R600")) || (strstr((char*) glGetString(GL_RENDERER), "Radeon") && strstr((char*) glGetString(GL_RENDERER), "HD"))) {
 					// Ok, a Radeon HD 2xxx/3xxx or later -> R600 or later:
 					if (verbose) printf("Assuming ATI R600 or later (Matching namestring): Hardware supports floating point blending and filtering on 16bpc and 32bpc float formats.\n");
 					sprintf(windowRecord->gpuCoreId, "R600");

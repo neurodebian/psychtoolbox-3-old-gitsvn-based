@@ -106,6 +106,12 @@ PsychError PsychModuleInit(void)
 	PsychErrorExit(PsychRegister("Verbosity", &EyelinkVerbosity));
 	PsychErrorExit(PsychRegister("TestSuite", &EyelinkTestSuite));
 	
+	//NJ
+	PsychErrorExit(PsychRegister("ImageTransfer",	&EyelinkImageTransfer));
+	PsychErrorExit(PsychRegister("TrackerMode",	&EyelinkTrackerMode));
+	PsychErrorExit(PsychRegister("CalMessage", &EyelinkCalMessage));
+	PsychErrorExit(PsychRegister("ReadFromTracker", &EyelinkReadFromTracker));
+	
 	//register synopsis and named subfunctions.
 	InitializeSynopsis();   //Scripting glue won't require this if the function takes no arguments.
 	PsychSetModuleAuthorByInitials("emp");

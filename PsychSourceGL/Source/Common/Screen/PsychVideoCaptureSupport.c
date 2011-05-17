@@ -86,15 +86,23 @@ void PsychEnumerateVideoSources(int engineId, int outPos)
 	#endif
 
 	#ifdef PTBVIDEOCAPTURE_LIBDC
+	if (engineId == 1) {
 		PsychErrorExitMsg(PsychError_user, "The DC1394 IIDC firewire videocapture engine does not support enumeration of video devices yet, sorry.");
+	}
 	#endif
 
 	#ifdef PTB_USE_GSTREAMER
-		PsychErrorExitMsg(PsychError_user, "The GStreamer videocapture engine does not support enumeration of video devices yet, sorry.");
+	if (engineId == 3) {
+		// GStreamer device enumeration:
+		PsychGSEnumerateVideoSources(outPos, -1);
+		dispatched = TRUE;
+	}
 	#endif
 
 	#ifdef PTBVIDEOCAPTURE_ARVIDEO
+	if (engineId == 2) {
 		PsychErrorExitMsg(PsychError_user, "The ARVideo videocapture engine does not support enumeration of video devices yet, sorry.");
+	}
 	#endif
 
 	// Unsupported engine requested?
@@ -136,10 +144,6 @@ psych_bool PsychOpenVideoCaptureDevice(int engineId, PsychWindowRecordType *win,
 	// Sanity checking:
 	if (!PsychIsOnscreenWindow(win)) {
 		PsychErrorExitMsg(PsychError_user, "Provided windowPtr is not an onscreen window.");
-	}
-
-	if (deviceIndex < 0) {
-		PsychErrorExitMsg(PsychError_user, "Invalid (negative) deviceIndex passed!");
 	}
 
 	if (numCaptureRecords >= PSYCH_MAX_CAPTUREDEVICES) {
@@ -321,7 +325,8 @@ int PsychGetTextureFromCapture(PsychWindowRecordType *win, int capturehandle, in
  *
  *  capturehandle = Grabber to start-/stop.
  *  playbackrate = zero == Stop capture, non-zero == Capture
- *  dropframes = Currently ignored.
+ *  dropframes = At 'start': Decide if low latency capture shall be used. At 'stop' If zero, don't
+ *               discard pending buffers in internal capture queue.
  *  startattime = Deadline (in system time) to wait for before real start of capture.
  *  Returns Number of dropped frames during capture.
  */

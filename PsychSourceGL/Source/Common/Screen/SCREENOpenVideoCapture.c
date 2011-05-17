@@ -20,10 +20,10 @@
   and return a handle to it to MATLAB space.
  
   On OS-X and Windows, video capture is implemented via Apples Sequence-Grabber API which is part of Quicktime.
-  On all operating systems, we support Firewire machine vision cameras that comply to the IIDC-1.x specification,
+  On Linux and OS/X we support Firewire machine vision cameras that comply to the IIDC-1.x specification,
   via use of the open-source free software library libdc1394 V2. The library itself is most powerful and well
   tested/tuned for GNU/Linux systems, but also well working on OS/X. It has experimental limited support for
-  MS-Windows as well, but its useability needs to be seen.
+  MS-Windows as well, but we don't implement it for Windows yet.
   
   TO DO:
   
@@ -37,6 +37,12 @@ static char synopsisString[] =
 "return a handle 'videoPtr' on success. If 'deviceIndex' is left out, it defaults to zero - use the "
 "first capture device attached to your machine. 'roirectangle' if specified, defines the requested size "
 "for captured images. The default is to return the maximum size image provided by the capture device. "
+"A 'roirectangle' setting of [0 0 width height] will not define a region of interest, but instead request a "
+"video capture resolution of width x height pixels, instead of the default maximum resolution. Settings "
+"of [left top right bottom] will leave video capture at maximum resolution, but crop the images to the "
+"rectangular subregion as defined by the given left, right, top and bottom borders. Such ROI's are "
+"only applied to returned video images, not to recorded video by default. See the 'recordingflags' "
+"settings below on how to adjust this behaviour to your needs.\n"
 "The real ROI (region of interest) may differ from the requested one, depending on the capabilities of "
 "your capture device. 'pixeldepth' if provided, asks for the number of layers that captured textures "
 "should have: 1=Luminance image, 2=Luminance+Alpha image, 3=RGB image, 4=RGB+Alpha image. Default is "
@@ -50,9 +56,9 @@ static char synopsisString[] =
 "capture if your specific hardware or operating system setup doesn't allow to use the high-performance "
 "mode. 'allowfallback' defaults to 1 = Allow fallback path.\n"
 "'targetmoviename' If you provide a filename for this argument, PTB will record the captured video to the "
-"specified Quicktime movie file on your filesystem. PTB will use a default video codec for encoding the "
-"video stream. If you want it to use a specific codec, you can extend the targetmoviename by a string of "
-"format :CodecType=xxx , where xxx is the numeric type id of the codec. You can get a list of codecs "
+"specified  movie file on your filesystem. PTB will use a default video codec for encoding the "
+"video stream. If you want to use a specific codec, you can extend the targetmoviename by a string of "
+"format :CodecType=xxx , where xxx is the numeric type id or name of the codec. You can get a list of codecs "
 "supported by your system by running PTB's recording engine at a verbosity level of 4 or higher.\n"
 "'recordingflags' specify the behaviour of harddisc- "
 "recording: 0 (default) = Only record video. 2 = Record audio track as well. The value 1 (or 1+2) asks "
@@ -64,10 +70,30 @@ static char synopsisString[] =
 "cause some problems with some video codecs when recording to disk. A setting of 16 will perform most "
 "of the heavy work on a separate parallel background thread, utilizing multi-core machines better.\n"
 "A setting of 32 will try to select the highest quality codec for texture creation from captured video, "
-"instead of the normal quality codec.\n"
+"instead of the normal quality codec. A setting of 64 will return capture timestamps in the time base of "
+"the video engine (e.g., elapsed time since start of capture, or recording time in movie), instead of "
+"the default time base, which is regular GetSecs() time.\n"
+"A setting of 128 will force use of a videorate converter in pure live capture mode. By default the "
+"videorate converter is only used if video recording is active. The converter makes sure that video is "
+"recorded (or delivered) at exactly the requested capture framerate, even if the system isn't really "
+"capable of maintaining that framerate: If the video source (camera) delivers frames at a too low "
+"framerate, the converter will insert duplicated frames to boost up effective framerate. If the source "
+"delivers more frames than the engine can handle (e.g., system overload or video encoding too slow) "
+"the converter will drop frames to reduce effective framerate. Slight fluctuations are compensated by "
+"adjusting the capture timestamps. This mechanism guarantees a constant framerate in recorded video "
+"as well as the best possible audio-video sync and smoothness of video, given system constraints. "
+"The downside may be that the recorded content and returned timestamps don't reflect the true timing "
+"of capture, but a beautified version. In pure live capture, rate conversion is off by default to avoid "
+"such potential confounds in the timestamps. Choose this options carefully.\n"
+"A setting of 256 in combined video live capture and video recording mode will restrict video framerate "
+"conversion to the recorded videostream, but provide mostly untampered true timing to the live capture. "
+"By default, framerate conversion applies to recording and live feedback if video recording is enabled.\n"
+"A setting of 512 requests that ROI's as defined by the 'roirectangle' parameter get also applied to recorded video. "
+"Without this setting, ROI's only apply to live video as returned by Screen('GetCapturedImage',...);\n"
+"A setting of 1024 disables application of ROI's to live video as returned by Screen('GetCapturedImage',...);\n"
 "\n"
 "'captureEngineType' This optional parameter allows selection of the video capture engine to use for this "
-"video source. Allowable values are currently 0, 1 and 2. Zero selects Apples Quicktime Sequence-Grabber API "
+"video source. Allowable values are currently 0, 1 and 3. Zero selects Apples Quicktime Sequence-Grabber API "
 "as capture engine, which is supported on MacOS/X and MS-Windows (for Windows you'll need to install a "
 "Quicktime Video digitizer component VDIG). The Quicktime engine allows movie recording and sound recording "
 "as well (see above). A value of 1 selects Firewire video capture via the free software library libdc1394-V2. "
@@ -76,22 +102,19 @@ static char synopsisString[] =
 "cams allows for much higher flexibility and performance than use of video capture via Quicktime, "
 "however, video recording to harddisk or sound recording isn't yet supported with firewire capture, ie., "
 "the 'targetmoviename' is simply ignored. The firewire capture engine is supported on Linux, MacOS/X and "
-"- maybe in the future, with quite a few limitations and bugs - on Windows. \n"
-"A value of 2 selects the ARVideo video capture engine from the ARToolkit. This engine doesn't allow for "
-"video recording or sound recording and has limited performance and flexibility, so it combines the "
-"disadvantages of the Quicktime- and Firewire engine. However it is the only engine that allows for "
-"video capture from checp non-IIDC cameras on Linux, and on Windows it should have a higher performance "
-"than the Quicktime engine. This engine is supported on all systems. On Linux it uses the GStreamer media "
-"framework, on Windows it uses the DirectShow framework, on OS/X it uses Quicktime.\n\n"
-"A value of 3 selects the GStreamer video capture engine. This engine is supported on all operating systems "
-"and allows video and sound recording of captured video and audio streams.\n\n"
+"- maybe in the future, with quite a few limitations and bugs - on Windows.\n\n"
+"A value of 3 selects the GStreamer video capture engine. This engine will be supported on all operating systems "
+"and will allow for video and sound recording of captured video and audio streams. Currently "
+"it is not yet implemented on Mac OS/X. Type 'help GStreamer' for installation and "
+"setup instructions for the required GStreamer runtime libraries.\n\n"
 "If you don't specify 'captureEngineType', the global "
 "setting from Screen('Preference', 'DefaultVideoCaptureEngine') will be used. If you don't specify that either "
-"then engine selection will default to Quicktime for MacOS/X, ARVideo on MS-Windows, and GStreamer on Linux.\n\n"
+"then engine selection will default to Quicktime for MacOS/X and GStreamer on Linux and MS-Windows.\n\n"
 "To summarize: \n"
 "Quicktime engine: Supports all cameras/video sources supported by your operating system, allows for video- and "
 "audio recording as well. On many setups, only one camera can be used at a time and the 'deviceIndex' parameter "
 "is ignored -- the default source is always chosen. Latency, max framerate and reliability is ok, but not stellar.\n"
+"GStreamer: Is the engine of choice for all operating systems and most applications.\n"
 "Firewire engine: Supports only Firewire machine vision cameras, but allows free selection among all connected "
 "cameras, simultaneous operation of many cameras, low latency, high framerates and reliability, precise timestamping "
 "and low level access to many special features of such cameras, e.g., gain-, shutter-, exposure-, trigger controls etc.\n";
@@ -136,8 +159,7 @@ PsychError SCREENOpenVideoCapture(void)
 	
 	// Get the optional roi rectangle:
 	roiassigned = PsychCopyInRectArg(3, FALSE, roirectangle);
-	if (IsPsychRectEmpty(roirectangle)) PsychErrorExitMsg(PsychError_user, "OpenVideoCapture called with invalid (empty) roirectangle argument.");
-	
+	if (roiassigned && IsPsychRectEmpty(roirectangle)) PsychErrorExitMsg(PsychError_user, "OpenVideoCapture called with invalid (empty) roirectangle argument.");
 	
 	// Query (optional) output texture pixel depth: By default, we take whatever we get from the capture device:
 	PsychCopyInIntegerArg(4, FALSE, &reqdepth);
@@ -157,6 +179,11 @@ PsychError SCREENOpenVideoCapture(void)
 	// 0 = Record video, stream to disk immediately (slower, but unlimited recording duration).
 	// 1 = Record video, stream to memory, then at end of recording to disk (limited duration by RAM size, but faster).
 	// 2 = Record audio as well.
+	// 4 = Do not return capture data via Screen('GetCapturedImage') during video recording to disc.
+	// 8 = Avoid some performance optimizations which may cause trouble with some codecs.
+	// 16= Use multi-threading for automatic background processing and cpu offloading.
+	// 32= Return high quality textures via 'GetCapturedImage' if recording in parallel --> Quality tradeoff live feed vs. recording.
+	// 64= Return timestamps in engine time instead of GetSecs() time.
 	recordingflags = 0;
 	PsychCopyInIntegerArg(8, FALSE, &recordingflags);
 	
@@ -165,6 +192,16 @@ PsychError SCREENOpenVideoCapture(void)
 	engineId = PsychPrefStateGet_VideoCaptureEngine();
 	PsychCopyInIntegerArg(9, FALSE, &engineId);
 	if (engineId < 0 || engineId > 3) PsychErrorExitMsg(PsychError_user, "OpenVideoCapture called with invalid 'captureEngineType'. Valid are 0,1,2,3.");
+
+	if (engineId == 2) {
+		printf("\n\n");
+		printf("PTB-INFO: Your script explicitely requests use of video capture engine type 2 - the ARVideo video capture engine.\n");
+		printf("PTB-INFO: This engine has been permanently disabled and removed from Psychtoolbox since beginning of the year 2011.\n");
+		printf("PTB-INFO: We recommend use of the GStreamer video capture engine (engine type 3) as a technically superior replacement\n");
+		printf("PTB-INFO: on GNU-Linux and MS-Windows. For Mac OS/X for now we recommend use of the Quicktime engine (engine type 0)\n");
+		printf("PTB-INFO: as an interims solution. The Quicktime engine will be eventually replaced on OS/X by the GStreamer engine as well.\n");
+		printf("PTB-INFO: In most cases, the selected replacement should work without need for any further changes to your code.\n\n");
+	}
 
 	// Try to open the capture device and create & initialize a corresponding capture object.
 	// A MATLAB handle to the video capture object is returned upon successfull operation.

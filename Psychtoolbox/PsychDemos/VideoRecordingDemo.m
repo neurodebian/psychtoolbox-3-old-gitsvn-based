@@ -73,11 +73,6 @@ function VideoRecordingDemo(moviename, codec, withsound, showit, windowed)
 % Test if we're running on PTB-3, abort otherwise:
 AssertOpenGL;
 
-% OS/X and Windows only...
-if ~IsOSX & ~IsWin
-    error('Sorry, this demo currently only works on OS/X and Windows.');
-end
-
 % Open window on secondary display, if any:
 screen=max(Screen('Screens'));
 
@@ -105,7 +100,7 @@ else
         case 1,
             codec = ':CodecType=1635148593'; % H.264 codec.
         case 2,
-            codec = ':CodecType=1886940276'; % Apple Pixlet Video codec.
+            codec = ':CodecType=1886940276'; % Apple Pixlet Video codec.
         case 3,
             codec = ':CodecType=1836070006'; % MPEG-4 Video codec.
         case 4,
@@ -157,8 +152,11 @@ else
     % Setting the 3rd bit of 'withsound' (= adding 4) disables some
     % internal processing which is not needed for pure disk recording. This
     % can safe significant amounts of processor load --> More reliable
-    % recording on low-end hardware.
-    withsound = withsound + 4;
+    % recording on low-end hardware. Setting the 5th bit (bit 4) aka adding
+    % +16 will offload the recording to a separate processing thread. Pure
+    % recording is then fully automatic and makes better use of multi-core
+    % processor machines.
+    withsound = withsound + 4 + 16;
 end
 
 if nargin < 5
@@ -168,6 +166,17 @@ end
 if isempty(windowed)
     windowed = 1;
 end
+
+% Always request timestamps in recording time:
+withsound = withsound + 64;
+
+codec = ':CodecType=theoraenc'% Theoravideo + Ogg vorbis audio: Gut @ 320 x 240
+codec = ':CodecType=vp8enc_matroska'   % VP-8/Matroska  + Ogg vorbis audio: Gut @ 320 x 240
+codec = ':CodecType=x264enc'  % H264 video + MPEG-4 audio: Gut @ 320 x 240
+codec = ':CodecType=xvidenc'  % MPEG-4 video + audio: Tut sehr gut @ 640 x 480
+codec = ':CodecType=huffyuv'  % Huffmann encoded YUV + MPEG-4 audio: FAIL!
+codec = ':CodecType=ffenc_mpeg4' % % MPEG-4 video + audio: Tut ok @ 640 x 480
+codec = ':CodecType=vp8enc_webm'   % VP-8/WebM  + Ogg vorbis audio: Gut @ 320 x 240
 
 try
     if windowed > 0
@@ -193,7 +202,8 @@ try
     Screen('TextSize', win, 24);
             
     % Capture video + audio to disk:
-    grabber = Screen('OpenVideoCapture', win, [], [],[] ,[], [] , [moviename codec], withsound);
+%    grabber = Screen('OpenVideoCapture', win, [], [0 0 320 240],[] ,[], [] , [moviename codec], withsound)
+    grabber = Screen('OpenVideoCapture', win, [], [],[] ,[], [] , [moviename codec], withsound)
 
     % Start capture, request 30 fps. Capture hardware will fall back to
     % fastest supported framerate if its not supported (i think).
@@ -203,7 +213,12 @@ try
     % framerate by itself, based on lighting conditions. With bright scenes
     % it can run at 30 fps, at lower light conditions it reduces the
     % framerate to 15 fps, then to 7.5 fps.
-    Screen('StartVideoCapture', grabber, 30, 1);
+for nreps = 1:1
+
+    mname = sprintf('SetNewMoviename=/home/kleinerm/Desktop/Testmovie_%i.ogv', nreps);
+%    Screen('SetVideoCaptureParameter', grabber, mname);
+
+    Screen('StartVideoCapture', grabber, 30, 1)
 
     oldtex = 0;
     tex = 0;
@@ -225,8 +240,8 @@ try
         else
             % Recording only: Just grant some processing time to the
             % engine, don't wait for new image, don't fetch any
-            % information.
-            Screen('GetCapturedImage', win, grabber, waitforimage);
+            % information. We have nothing to do here, as thread offloading
+            % is enabled above.
         end
         
         % Some output to the console:
@@ -264,7 +279,9 @@ try
     
     % Stop capture engine and recording:
     Screen('StopVideoCapture', grabber);
-    
+
+WaitSecs(3);
+end
     % Close engine and recorded movie file:
     Screen('CloseVideoCapture', grabber);
     

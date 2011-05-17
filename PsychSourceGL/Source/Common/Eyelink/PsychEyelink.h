@@ -160,5 +160,11 @@ PsychError EyelinkTimeOffset(void);
 PsychError EyelinkVerbosity(void);
 PsychError EyelinkTestSuite(void);
 
+//NJ
+PsychError EyelinkImageTransfer(void);
+PsychError EyelinkTrackerMode(void);
+PsychError EyelinkCalMessage(void);
+PsychError EyelinkReadFromTracker(void);
+
 // PSYCH_IS_INCLUDED_Eyelink
 #endif
