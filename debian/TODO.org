@@ -70,6 +70,10 @@ Note: although 1.1 is not DFSG-free, later OpenGL was re-licensed by
 	IViewXToolbox -- needs pnet.mex being built ...
 	               1.0 version of tcpip toolbox (subdir and .zip) is
                    stripped since not used
+** TODO: Package Datapixx TB/lib, and build Datapixx.mex -- Datapixx is FOSS now under LGPL (? check if not changed)
+   Native Datapixx bindings are different from Mario's
+
+   contact: Peter April <papril@vpixx.com>
 ** TODO Consider building PsychCV extension
 ** TODO Testing
 *** TODO Tests under Psychtoolbox/PsychTests

@@ -8,7 +8,7 @@ FINDREGEX="find -regextype posix-egrep -regex"
 
 { $FINDREGEX '.*\.(o|dll|exe|mex.*|dylib|class)' -print0; \
   $FINDREGEX '.*\.(old|bak).*' -print0; } | xargs -0 --no-run-if-empty $RM -rf
-$FINDREGEX '.*((|Mac)OSX|Octave3OSXFiles|Windows|.bundle)' -print0| xargs -0 --no-run-if-empty $RM -rf
+$FINDREGEX '.*((|Mac)OSX|Octave3OSXFiles|Windows|.bundle|.FBCLockFolder)' -print0| xargs -0 --no-run-if-empty $RM -rf
 # more of non-Linux OS specifics
 $RM -rf PsychSourceGL/Cohorts/{PsychtoolboxOSXKernelDriver,HID\ Utilities\ Source,IOWarrior}
 $RM -rf Psychtoolbox/PsychContributed/WinTab
@@ -95,11 +95,11 @@ $RM -rf ./Psychtoolbox/PsychHardware/iViewXToolbox/tcp_udp_ip/tcpip*
 
 # to find more of non-sources and report them:
 echo "I: Various non-sources/data"
-find -regextype posix-egrep -type f ! -regex '.*\.(m(|at)|dat|c(|c|pp)|h|sh|txt|in|rtf|py|php|wav|png|jpg|JPG|tiff|html|mov|xml)' -ls | grep -v -e '\.git' -e '\.pc'
+find -regextype posix-egrep -type f ! -regex '.*\.(m(|at)|dat|c(|c|pp)|h|java|sh|txt|in|rtf|py|php|wav|png|jpg|JPG|tiff|html|mov|xml)' -ls | grep -v -e '\.git' -e '\.pc'
 
 # Look among executables:
 echo "I: Suspecious executables left"
-find -perm /+x ! -type d -print0 | xargs -0 file | grep -v -e ASCII -e 'shell' -e text -e JPEG -e 'Rich Text'
+find -perm /+x ! -type d -print0 | xargs -0 file | grep -v -e ASCII -e '\.git' -e 'shell' -e text -e JPEG -e 'Rich Text'
 
 echo "I: Leftout archives"
 $FINDREGEX '.*\.(zip|rar)'
