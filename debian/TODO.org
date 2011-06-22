@@ -106,7 +106,7 @@ Failed to load X11 font with name Times.
 Available X11 fonts are:
 
 ** TODO -- ship PsychSourceGL/Cohorts/PortAudio/libportaudio.a in -lib to be used by Matlab builder
-* Running/Defects
+* Running
 ** Helper package
 
 Mario's words of wisdom:
@@ -135,8 +135,11 @@ compositor to get out of the way.
 Some of this stuff would be useful for other (python'esque) toolkits
 as well.
 
+* Defects
 ** Demos
-*** ImagingStereoDemo() -- if crashes screen remains 'Welcome ...'
+*** ImagingStereoDemo() -- blank black (or blue) screen
+
+**** Was: crashes screen remains 'Welcome ...'
 
 Tried with:
 PTB-INFO: OpenGL-Renderer is NVIDIA Corporation :: Quadro2 MXR/AGP/SSE2 :: 1.5.8 NVIDIA 96.43.18
@@ -150,4 +153,203 @@ error: called from:
 error:   /usr/share/octave/site/m/psychtoolbox-3/PsychGLImageProcessing/PsychImaging.m at line 1085, column 29
 error:   /usr/share/octave/site/m/psychtoolbox-3/PsychGLImageProcessing/ImagingStereoDemo.m at line 184, column 24
 
-*** ExpandingRingsDemo() -- OpenGL error: invalid operation
+*** AudioTunnel3DDemo{,2} -- `moalcore' undefined near line 146 column 1
+KbName: WARNING! Remapping of Linux/X11 keycodes to unified keynames not yet complete!!
+Remapping a subset...
+error: `moalcore' undefined near line 146 column 1
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychSound/MOAL/core/InitializeMatlabOpenAL.m at line 146, column 1
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychDemos/AudioTunnel3DDemo.m at line 27, column 1
+
+*** DelayedSoundFeedbackDemo -- hands (100%CPU) upon initial start
+upon Ctrl-C
+
+^C
+
+THIS IS EARLY ALPHA CODE! IT MAY OR MAY NOT WORK RELIABLY ON YOUR SETUP!
+TEST IT WITH MEASUREMENT EQUIPMENT IF YOU DEPEND ON ACCURATE FEEDBACK
+TIMING!!!
+
+KbName: WARNING! Remapping of Linux/X11 keycodes to unified keynames not yet complete!!
+Remapping a subset...
+PTB-INFO: Trying to suspend potentially running PulseAudio server.
+PTB-INFO: Using specially modified PortAudio engine, based on offical version: PortAudio V19-devel
+PTB-INFO: New audio device with handle 0 opened as PortAudio stream:
+PTB-INFO: For 2 channels Capture: Audio subsystem is ALSA, Audio device name is HDA Intel: CONEXANT Analog (hw:0,0)
+PTB-INFO: Real samplerate 48000.000000 Hz. Input latency 5.333333 msecs, Output latency 0.000000 msecs.
+PTB-INFO: New audio device with handle 1 opened as PortAudio stream:
+PTB-INFO: For 2 channels Playback: Audio subsystem is ALSA, Audio device name is HDA Intel: CONEXANT Analog (hw:0,0)
+PTB-INFO: Real samplerate 48000.000000 Hz. Input latency 0.000000 msecs, Output latency 5.333333 msecs.
+
+*** Ok now ExpandingRingsDemo() -- OpenGL error: invalid operation..
+*** IsomerizationsInDishDemo() -- `radiometer' undefined near line 39 column 40
+warning: load: file found in load path
+error: `radiometer' undefined near line 39 column 40
+error: evaluating argument list element number 1
+error: evaluating argument list element number 1
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychColorimetric/WattsToRetIrradiance.m at line 39, column 1
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychDemos/IsomerizationsInDishDemo.m at line 42, column 32
+
+*** BasicSoundOutputDemo -- crash: Invalid sample rate
+PTB-INFO: Using specially modified PortAudio engine, based on offical version: PortAudio V19-devel
+PTB-ERROR: Failed to open audio device 0. PortAudio reports this error: Invalid sample rate 
+INTERNAL PSYCHTOOLBOX ERROR
+	error:                PsychError_system
+	general description:  Error reported by a system call
+	specific description: Failed to open PortAudio audio device.
+	module name:          PsychPortAudio
+	subfunction call:     Open
+	file name:            Common/PsychPortAudio/PsychPortAudio.c
+	function name:        PSYCHPORTAUDIOOpen
+	line number:          2353
+error: PsychPortAudio: See error message printed above.
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychDemos/BasicSoundOutputDemo.m at line 86, column 10
+
+*** NomogramDemo -- turns on Octave warnings about possible compatibility problems
+*** ContrastModulatedNoiseTheElegantStyleDemo -- crashed INTERNAL PSYCHTOOLBOX ERROR
+
+PTB-INFO: OpenGL-Renderer is Tungsten Graphics, Inc :: Mesa DRI Mobile Intel® GM45 Express Chipset GEM 20100330 DEVELOPMENT  :: 2.1 Mesa 7.10
+PTB-INFO: VBL startline = 900 , VBL Endline = -1
+PTB-INFO: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.
+PTB-INFO: Measured monitor refresh interval from VBLsync = 16.738507 ms [59.742486 Hz]. (296 valid samples taken, stddev=0.287044 ms.)
+PTB-INFO: Reported monitor refresh interval from operating system = 16.668334 ms [59.993999 Hz].
+PTB-INFO: Small deviations between reported values are normal and no reason to worry.
+PTB-INFO: Using OpenGL GL_TEXTURE_RECTANGLE_EXT extension for efficient high-performance texture mapping...
+PTB-INFO: Psychtoolbox imaging pipeline starting up for window with requested imagingmode 4097 ...
+PTB-INFO: Will use 16 bits per color component floating point framebuffer for stimulus drawing. Alpha blending may not work on your system with this setup, but only for 8 bits per color component mode.
+PTB-ERROR: Failed to setup internal framebuffer objects color buffer attachment for imaging pipeline!
+PTB-ERROR: Most likely the requested size & depth of the window or texture is not supported by your graphics hardware.
+INTERNAL PSYCHTOOLBOX ERROR
+	error:                PsychError_internal
+	general description:  Unspecified error, probably a Psychtoolbox bug
+	specific description: Imaging Pipeline setup: Could not setup stage 1 of imaging pipeline.
+	module name:          Screen
+	subfunction call:     OpenWindow
+	file name:            Common/Screen/PsychImagingPipelineSupport.c
+	function name:        PsychInitializeImagingPipeline
+	line number:          496
+Screen: See error message printed above.
+error: called from `PsychImaging' in file /usr/share/octave/site/m/psychtoolbox-3/PsychGLImageProcessing/PsychImaging.m near line 1117, column 29
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychBasic/psychrethrow.m at line 15, column 1
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychDemos/ContrastModulatedNoiseTheElegantStyleDemo.m at line 229, column 5
+
+*** DKLDemo -- `SetColorSpace' undefined
+warning: load: file found in load path
+warning: load: file found in load path
+error: `SetColorSpace' undefined near line 40 column 10
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychDemos/DKLDemo.m at line 40, column 8
+
+*** GarboriumDemo -- crash INTERNAL PSYCHTOOLBOX ERROR
+
+PTB-INFO: OpenGL-Renderer is Tungsten Graphics, Inc :: Mesa DRI Mobile Intel® GM45 Express Chipset GEM 20100330 DEVELOPMENT  :: 2.1 Mesa 7.10
+PTB-INFO: VBL startline = 900 , VBL Endline = -1
+PTB-INFO: Beamposition queries unsupported or defective on this system. Using basic timestamping as fallback: Timestamps returned by Screen('Flip') will be less robust and accurate.
+PTB-INFO: Measured monitor refresh interval from VBLsync = 16.742304 ms [59.728934 Hz]. (296 valid samples taken, stddev=0.358761 ms.)
+PTB-INFO: Reported monitor refresh interval from operating system = 16.668334 ms [59.993999 Hz].
+PTB-INFO: Small deviations between reported values are normal and no reason to worry.
+PTB-INFO: Psychtoolbox imaging pipeline starting up for window with requested imagingmode 4097 ...
+PTB-INFO: Will use 16 bits per color component floating point framebuffer for stimulus drawing. Alpha blending may not work on your system with this setup, but only for 8 bits per color component mode.
+PTB-ERROR: Failed to setup internal framebuffer objects color buffer attachment for imaging pipeline!
+PTB-ERROR: Most likely the requested size & depth of the window or texture is not supported by your graphics hardware.
+INTERNAL PSYCHTOOLBOX ERROR
+	error:                PsychError_internal
+	general description:  Unspecified error, probably a Psychtoolbox bug
+	specific description: Imaging Pipeline setup: Could not setup stage 1 of imaging pipeline.
+	module name:          Screen
+	subfunction call:     OpenWindow
+	file name:            Common/Screen/PsychImagingPipelineSupport.c
+	function name:        PsychInitializeImagingPipeline
+	line number:          496
+error: Screen: See error message printed above.
+error: called from:
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychGLImageProcessing/PsychImaging.m at line 1117, column 29
+error:   /usr/share/octave/site/m/psychtoolbox-3/PsychDemos/GarboriumDemo.m at line 61, column 17
+*** Octave crashed upon exit
+**** glibc detected *** octave: double free or corruption (!prev): 0x0000000002157390 ***
+======= Backtrace: =========
+/lib/libc.so.6(+0x71ad6)[0x7f645635bad6]
+/lib/libc.so.6(cfree+0x6c)[0x7f645636084c]
+/usr/lib/octave-3.2.4/liboctinterp.so(_ZN16lexical_feedback4initEv+0x70)[0x7f645ce92110]
+/usr/lib/octave-3.2.4/liboctinterp.so(_Z12reset_parserv+0x28c)[0x7f645ce9282c]
+/usr/lib/octave-3.2.4/liboctinterp.so(_Z11eval_stringRKSsbRii+0x25c)[0x7f645cf887ac]
+/usr/lib/octave-3.2.4/liboctinterp.so(mexEvalString+0x140)[0x7f645cee8260]
+/usr/share/octave/site/m/psychtoolbox-3/PsychBasic/PsychPortAudio.mex(PsychRuntimeEvaluateString+0x18)[0x7f6449570742]
+/usr/share/octave/site/m/psychtoolbox-3/PsychBasic/PsychPortAudio.mex(PsychPortAudioExit+0xff)[0x7f644956029d]
+/usr/share/octave/site/m/psychtoolbox-3/PsychBasic/PsychPortAudio.mex(PsychExit+0x1e)[0x7f644955b029]
+/usr/share/octave/site/m/psychtoolbox-3/PsychBasic/PsychPortAudio.mex(+0x212a8)[0x7f644956d2a8]
+/usr/lib/octave-3.2.4/liboctinterp.so(_ZN19octave_mex_functionD1Ev+0x26)[0x7f645d10c2e6]
+/usr/lib/octave-3.2.4/liboctinterp.so(_ZN19octave_mex_functionD0Ev+0x9)[0x7f645d10c4b9]
+/usr/lib/octave-3.2.4/liboctinterp.so(_ZNSt8_Rb_treeISsSt4pairIKSsN12symbol_table8fcn_infoEESt10_Select1stIS4_ESt4lessISsESaIS4_EE8_M_eraseEPSt13_Rb_tree_nodeIS4_E+0x86)[0x7f645cfda366]
+/usr/lib/octave-3.2.4/liboctinterp.so(_ZNSt8_Rb_treeISsSt4pairIKSsN12symbol_table8fcn_infoEESt10_Select1stIS4_ESt4lessISsESaIS4_EE8_M_eraseEPSt13_Rb_tree_nodeIS4_E+0x2f)[0x7f645cfda30f]
+======= Memory map: ========
+00400000-00401000 r-xp 00000000 08:01 318032                             /usr/bin/octave-3.2.4
+00600000-00601000 rw-p 00000000 08:01 318032                             /usr/bin/octave-3.2.4
+0214c000-08937000 rw-p 00000000 00:00 0                                  [heap]
+7f6444000000-7f6444021000 rw-p 00000000 00:00 0 
+7f6444021000-7f6448000000 ---p 00000000 00:00 0 
+7f644813e000-7f6448222000 r-xp 00000000 08:01 276972                     /usr/lib/libasound.so.2.0.0
+7f6448222000-7f6448421000 ---p 000e4000 08:01 276972                     /usr/lib/libasound.so.2.0.0
+7f6448421000-7f6448429000 rw-p 000e3000 08:01 276972                     /usr/lib/libasound.so.2.0.0
+7f6448866000-7f644886f000 r-xp 00000000 08:01 278252                     /usr/lib/libXrender.so.1.3.0
+7f644886f000-7f6448a6f000 ---p 00009000 08:01 278252                     /usr/lib/libXrender.so.1.3.0
+7f6448a6f000-7f6448a70000 rw-p 00009000 08:01 278252                     /usr/lib/libXrender.so.1.3.0
+7f6448a70000-7f6448a79000 r-xp 00000000 08:01 278530                     /usr/lib/libXcursor.so.1.0.2
+7f6448a79000-7f6448c79000 ---p 00009000 08:01 278530                     /usr/lib/libXcursor.so.1.0.2
+7f6448c79000-7f6448c7a000 rw-p 00009000 08:01 278530                     /usr/lib/libXcursor.so.1.0.2
+7f6448e86000-7f6448ec5000 r-xp 00000000 08:01 325848                     /usr/lib/libglut.so.3.9.0
+7f6448ec5000-7f64490c4000 ---p 0003f000 08:01 325848                     /usr/lib/libglut.so.3.9.0
+7f64490c4000-7f64490cd000 rw-p 0003e000 08:01 325848                     /usr/lib/libglut.so.3.9.0
+7f644954c000-7f644959f000 r-xp 00000000 08:01 499211                     /usr/lib/psychtoolbox-3/PsychBasic/PsychPortAudio.mex
+7f644959f000-7f644979f000 ---p 00053000 08:01 499211                     /usr/lib/psychtoolbox-3/PsychBasic/PsychPortAudio.mex
+7f644979f000-7f64497af000 rw-p 00053000 08:01 499211                     /usr/lib/psychtoolbox-3/PsychBasic/PsychPortAudio.mex
+7f64497af000-7f6449831000 rw-p 00000000 00:00 0 
+7f644c1f2000-7f644c1fd000 r-xp 00000000 08:01 278007                     /usr/lib/libdrm_intel.so.1.0.0
+7f644c1fd000-7f644c3fc000 ---p 0000b000 08:01 278007                     /usr/lib/libdrm_intel.so.1.0.0
+7f644c3fc000-7f644c3fd000 rw-p 0000a000 08:01 278007                     /usr/lib/libdrm_intel.so.1.0.0
+7f644c3fd000-7f644c407000 r-xp 00000000 08:01 284292                     /usr/lib/libtalloc.so.2.0.5
+7f644c407000-7f644c606000 ---p 0000a000 08:01 284292                     /usr/lib/libtalloc.so.2.0.5
+7f644c606000-7f644c607000 rw-p 00009000 08:01 284292                     /usr/lib/libtalloc.so.2.0.5
+7f644c607000-7f644c62d000 r-xp 00000000 08:01 278355                     /usr/lib/libexpat.so.1.5.2
+7f644c62d000-7f644c82d000 ---p 00026000 08:01 278355                     /usr/lib/libexpat.so.1.5.2
+7f644c82d000-7f644c82f000 rw-p 00026000 08:01 278355                     /usr/lib/libexpat.so.1.5.2
+7f644c82f000-7f644cb85000 r-xp 00000000 08:01 465135                     /usr/lib/dri/i965_dri.so
+7f644cb85000-7f644cd84000 ---p 00356000 08:01 465135                     /usr/lib/dri/i965_dri.so
+7f644cd84000-7f644cd9d000 rw-p 00355000 08:01 465135                     /usr/lib/dri/i965_dri.so
+7f644cd9d000-7f644cdae000 rw-p 00000000 00:00 0 
+7f644cfe0000-7f644cfe4000 r-xp 00000000 08:01 1173458                    /lib/libuuid.so.1.3.0
+7f644cfe4000-7f644d1e3000 ---p 00004000 08:01 1173458                    /lib/libuuid.so.1.3.0
+7f644d1e3000-7f644d1e4000 rw-p 00003000 08:01 1173458                    /lib/libuuid.so.1.3.0
+7f644d1e4000-7f644d1fb000 r-xp 00000000 08:01 277965                     /usr/lib/libICE.so.6.3.0
+7f644d1fb000-7f644d3fa000 ---p 00017000 08:01 277965                     /usr/lib/libICE.so.6.3.0
+7f644d3fa000-7f644d3fb000 rw-p 00016000 08:01 277965                     /usr/lib/libICE.so.6.3.0
+7f644d3fb000-7f644d3ff000 rw-p 00000000 00:00 0 
+7f644d3ff000-7f644d406000 r-xp 00000000 08:01 278395                     /usr/lib/libSM.so.6.0.1
+7f644d406000-7f644d606000 ---p 00007000 08:01 278395                     /usr/lib/libSM.so.6.0.1
+7f644d606000-7f644d607000 rw-p 00007000 08:01 278395                     /usr/lib/libSM.so.6.0.1
+7f644d607000-7f644d665000 r-xp 00000000 08:01 278243                     /usr/lib/libXt.so.6.0.0
+7f644d665000-7f644d864000 ---p 0005e000 08:01 278243                     /usr/lib/libXt.so.6.0.0
+7f644d864000-7f644d86a000 rw-p 0005d000 08:01 278243                     /usr/lib/libXt.so.6.0.0
+7f644d86a000-7f644d86b000 rw-p 00000000 00:00 0 
+7f644d86b000-7f644d87a000 r-xp 00000000 08:01 277895                     /usr/lib/libXi.so.6.1.0
+7f644d87a000-7f644da79000 ---p 0000f000 08:01 277895                     /usr/lib/libXi.so.6.1.0
+7f644da79000-7f644da7a000 rw-p 0000e000 08:01 277895                     /usr/lib/libXi.so.6.1.0
+7f644da7a000-7f644da92000 r-xp 00000000 08:01 281830                     /usr/lib/libXmu.so.6.2.0
+7f644da92000-7f644dc92000 ---p 00018000 08:01 281830                     /usr/lib/libXmu.so.6.2.0
+7f644dc92000-7f644dc94000 rw-p 00018000 08:01 281830                     /usr/lib/libXmu.so.6.2.0
+7f644dc94000-7f644dcf4000 r-xp 00000000 08:01 282339                     /usr/lib/libGLEW.so.1.5.8
+7f644dcf4000-7f644def3000 ---p 00060000 08:01 282339                     /usr/lib/libGLEW.so.1.5.8
+7f644def3000-7f644def9000 rw-p 0005f000 08:01 282339                     /usr/lib/libGLEW.so.1.5.8
+7f644def9000-7f644defd000 rw-p 00000000 00:00 0 
+7f644f06c000-7f644f06d000 ---p 00000000 00:00 0 
+7f644f06d000-7f644f86d000 rw-p 00000000 00:00 0 
+7f6450310000-7f6450311000 ---p 00000000 00:00 0 
+7f6450311000-7f6450b11000 rw-p 00000000 00:00 0 
+7f6450b11000-7f6450b12000 ---p 00000000 00:00 0 
+7f6450b12000-7f6453313000 rw-p 00000000 00:00 0 
+7f6453538000-7f6453a91000 r--p 00000000 08:01 297041                     /usr/lib/locale/locale-archivepanic: Aborted -- stopping myself...
+attempting to save variables to `octave-cÐ'...
+
