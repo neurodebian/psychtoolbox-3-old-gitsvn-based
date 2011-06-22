@@ -1,6 +1,6 @@
 --- a/Psychtoolbox/PsychBasic/PsychtoolboxVersion.m
 +++ b/Psychtoolbox/PsychBasic/PsychtoolboxVersion.m
-@@ -113,6 +113,21 @@ elseif IsOSX | IsLinux | IsWin
+@@ -113,6 +113,21 @@
          Psychtoolbox.version.minor=cvv(2);
          Psychtoolbox.version.point=cvv(3);
  
@@ -16,13 +16,13 @@
 +
 +            % Build final version string:
 +            Psychtoolbox.version.string = sprintf('%d.%d.%d - Flavor: %s - %s\nFor more info visit:\n%s', Psychtoolbox.version.major, Psychtoolbox.version.minor, Psychtoolbox.version.point, ...
-+                                                  Psychtoolbox.version.flavor, Psychtoolbox.version.revstring, Psychtoolbox.version.websvn);
++                                                  Psychtoolbox.version.flavor, Psychtoolbox.version.revstring, 'http://neuro.debian.net/pkgs/octave-psychtoolbox-3.html');
 +
 +        else
          % Additional parser code for SVN information. This is slooow!
          svncmdpath = GetSubversionPath;
          
-@@ -182,6 +197,7 @@ elseif IsOSX | IsLinux | IsWin
+@@ -182,6 +197,7 @@
              Psychtoolbox.date=ss(min(find(ss-' ')):end);
          end    
      end
