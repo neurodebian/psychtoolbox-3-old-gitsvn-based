@@ -1302,8 +1302,12 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
         glDrawBuffer(GL_FRONT);
     }
 
-	// Check if 10 bpc native framebuffer support is requested:
-	if (((*windowRecord)->specialflags & kPsychNative10bpcFBActive) && PsychOSIsKernelDriverAvailable((*windowRecord)->screenNumber)) {
+	// Check if 10 bpc native framebuffer support is requested, or if 10 bit LUT bypass
+    // is requested. In both cases we execute PsychEnableNative10BitFramebuffer(), which
+    // will internally sort out if it needs to go through all the moves or only enable the
+    // 10 bit LUT bypass (possibly on FireGL and FirePro with broken drivers):
+	if ((((*windowRecord)->specialflags & kPsychNative10bpcFBActive) || (PsychPrefStateGet_ConserveVRAM() & kPsychBypassLUTFor10BitFramebuffer))
+        && PsychOSIsKernelDriverAvailable((*windowRecord)->screenNumber)) {
 		// Try to switch framebuffer to native 10 bpc mode:
 		PsychEnableNative10BitFramebuffer((*windowRecord), TRUE);
 	}
@@ -4301,15 +4305,6 @@ void PsychPostFlipOperations(PsychWindowRecordType *windowRecord, int clearmode)
 	
 	// Fixup possible low-level framebuffer layout changes caused by commands above this point. Needed from native 10bpc FB support to work reliably.
 	PsychFixupNative10BitFramebufferEnableAfterEndOfSceneMarker(windowRecord);
-
-	// EXPERIMENTAL: Execute hook chain for preparation of user space drawing ops: Not thread safe!!!
-	if (((windowRecord->flipInfo) && (windowRecord->flipInfo->asyncstate !=0)) && PsychIsHookChainOperational(windowRecord, kPsychUserspaceBufferDrawingPrepare)) {
-		// Hooohooo: Someone tries to use this hookchain from within an async flip! We don't support this:
-		return;
-	}
-	else {
-		PsychPipelineExecuteHook(windowRecord, kPsychUserspaceBufferDrawingPrepare, NULL, NULL, FALSE, FALSE, NULL, NULL, NULL, NULL);
-	}
 	
     // Done.
     return;
@@ -5110,8 +5105,13 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 
 	}
 	#else
+        // Make sure we don't compile without OML_sync_control support on Linux, as that would be a shame:
+        #if PSYCH_SYSTEM == PSYCH_LINUX
+		#error Build aborted. You *must* compile with the -std=gnu99  gcc compiler switch to enable the required OML_sync_control extension!
+        #endif
+        
 		// OpenML unsupported:
-		if (verbose) printf("No support for OpenML OML_sync_control extension. Using standard implementation.\n");
+		if (verbose) printf("No compiled in support for OpenML OML_sync_control extension. Using standard implementation.\n");
 
 		// OpenML timestamping in PsychOSGetSwapCompletionTimestamp() and PsychOSGetVBLTimeAndCount() disabled:
 		windowRecord->specialflags |= kPsychOpenMLDefective;

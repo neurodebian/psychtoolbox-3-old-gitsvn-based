@@ -78,12 +78,6 @@
 #include "PsychGraphicsCardRegisterSpecs.h"
 #include <endian.h>
 
-// Settings for member fDeviceType:
-#define kPsychUnknown  0
-#define kPsychGeForce  1
-#define kPsychRadeon   2
-#define kPsychIntelIGP 3
-
 // gfx_cntl_mem is mapped to the actual device's memory mapped control area.
 // Not the address but what it points to is volatile.
 struct pci_device *gpu = NULL;
@@ -93,12 +87,26 @@ unsigned long gfx_lowlimit = 0;
 unsigned int  fDeviceType = 0;
 unsigned int  fCardType = 0;
 unsigned int  fPCIDeviceId = 0;
+unsigned int  fNumDisplayHeads = 0;
 
 // Count of kernel drivers:
 static int    numKernelDrivers = 0;
 
 // Offset of crtc blocks of evergreen gpu's for each of the six possible crtc's:
-unsigned int crtcoff[6] = { 0x6df0, 0x79f0, 0x105f0, 0x111f0, 0x11df0, 0x129f0 };
+unsigned int crtcoff[(DCE4_MAXHEADID + 1)] = { EVERGREEN_CRTC0_REGISTER_OFFSET, EVERGREEN_CRTC1_REGISTER_OFFSET, EVERGREEN_CRTC2_REGISTER_OFFSET, EVERGREEN_CRTC3_REGISTER_OFFSET, EVERGREEN_CRTC4_REGISTER_OFFSET, EVERGREEN_CRTC5_REGISTER_OFFSET };
+// unsigned int crtcoff[(DCE4_MAXHEADID + 1)] = { 0x6df0, 0x79f0, 0x105f0, 0x111f0, 0x11df0, 0x129f0 };
+
+/* Is a given ATI/AMD GPU a DCE5 type ASIC, i.e., with the new display engine? */
+static psych_bool isDCE5(int screenId)
+{
+	psych_bool isDCE5 = false;
+
+	// Everything after BARTS is DCE5 -- This is the "Northern Islands" GPU family.
+	// Barts, Turks, Caicos, Cayman, Antilles in 0x67xx range:
+	if ((fPCIDeviceId & 0xFF00) == 0x6700) isDCE5 = true;
+
+	return(isDCE5);
+}
 
 /* Is a given ATI/AMD GPU a DCE4 type ASIC, i.e., with the new display engine? */
 static psych_bool isDCE4(int screenId)
@@ -259,8 +267,8 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 		ret = pci_device_probe(gpu);
 		if (ret) {
 			if (PsychPrefStateGet_Verbosity() > 1) {
-				printf("PTB-WARNING: Could not probe properties of GPU for screenId %i [%s]\n", screenId, strerror(ret));
-				printf("PTB-WARNING: Beamposition timestamping and other special features disabled.\n");
+				printf("PTB-INFO: Could not probe properties of GPU for screenId %i [%s]\n", screenId, strerror(ret));
+				printf("PTB-INFO: Beamposition timestamping and other special features disabled.\n");
 				fflush(NULL);
 			}
 
@@ -280,12 +288,14 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			// BAR 0 is MMIO:
 			region = &gpu->regions[0];
 			fDeviceType = kPsychGeForce;
+            fNumDisplayHeads = 2;
 		}
 
 		if (gpu->vendor_id == PCI_VENDOR_ID_ATI || gpu->vendor_id == PCI_VENDOR_ID_AMD) {
 			// BAR 2 is MMIO:
 			region = &gpu->regions[2];
 			fDeviceType = kPsychRadeon;
+            fNumDisplayHeads = 2;
 		}
 		
 		if (gpu->vendor_id == PCI_VENDOR_ID_INTEL) {
@@ -300,6 +310,7 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			}
 
 			fDeviceType = kPsychIntelIGP;
+            fNumDisplayHeads = 2;
 		}
 
 		// Try to MMAP MMIO registers with write access, assign their base address to gfx_cntl_mem on success:
@@ -312,10 +323,10 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 		ret = pci_device_map_range(gpu, region->base_addr, region->size, PCI_DEV_MAP_FLAG_WRITABLE, (void**) &gfx_cntl_mem);		
 		if (ret || (NULL == gfx_cntl_mem)) {
 			if (PsychPrefStateGet_Verbosity() > 1) {
-				printf("PTB-WARNING: Failed to map GPU low-level control registers for screenId %i [%s].\n", screenId, strerror(ret));
-				printf("PTB-WARNING: Beamposition timestamping and other special functions disabled.\n");
-				printf("PTB-WARNING: You must run Matlab/Octave with root privileges for this to work.\n");
-				printf("PTB-WARNING: However, if you are using the free graphics drivers, there isn't any need for this.\n");
+				printf("PTB-INFO: Failed to map GPU low-level control registers for screenId %i [%s].\n", screenId, strerror(ret));
+				printf("PTB-INFO: Beamposition timestamping and other special functions disabled.\n");
+				printf("PTB-INFO: You must run Matlab/Octave with root privileges for this to work.\n");
+				printf("PTB-INFO: However, if you are using the free graphics drivers, there isn't any need for this.\n");
 				fflush(NULL);
 			}
 			
@@ -343,14 +354,20 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 		}
 		
 		if (fDeviceType == kPsychRadeon) {
-			fCardType = isDCE4(screenId);
-			
+            // On Radeons we distinguish between Avivo (10) or DCE-4 style (40) or DCE-5 (50) for now.
+			fCardType = isDCE5(screenId) ? 50 : (isDCE4(screenId) ? 40 : 10);
+            
 			// On DCE-4 and later GPU's (Evergreen) we limit the minimum MMIO
 			// offset to the base address of the 1st CRTC register block for now:
-			if (fCardType) gfx_lowlimit = 0x6df0;
+			if (isDCE4(screenId) || isDCE5(screenId)) {
+                gfx_lowlimit = 0x6df0;
+                
+                // Also, DCE-4 supports up to six display heads:
+                fNumDisplayHeads = 6;
+            }
 			
 			if (PsychPrefStateGet_Verbosity() > 2) {
-				printf("PTB-INFO: Connected to %s %s GPU with %s display engine. Beamposition timestamping enabled.\n", pci_device_get_vendor_name(gpu), pci_device_get_device_name(gpu), (fCardType) ? "DCE-4" : "AVIVO");
+				printf("PTB-INFO: Connected to %s %s GPU with %s display engine. Beamposition timestamping enabled.\n", pci_device_get_vendor_name(gpu), pci_device_get_device_name(gpu), (fCardType >= 40) ? ((fCardType >= 50) ? "DCE-5" : "DCE-4") : "AVIVO");
 				fflush(NULL);
 			}
 		}
@@ -361,6 +378,9 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 				fflush(NULL);
 			}
 		}
+
+        // Perform auto-detection of screen to head mappings:
+        PsychAutoDetectScreenToHeadMappings(fNumDisplayHeads);
 
 		// Ready to rock!
 	} else {
@@ -1226,7 +1246,7 @@ void PsychReadNormalizedGammaTable(int screenNumber, int *numEntries, float **re
   return;
 }
 
-void PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redTable, float *greenTable, float *blueTable)
+unsigned int PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redTable, float *greenTable, float *blueTable)
 {
 #ifdef USE_VIDMODEEXTS
 
@@ -1252,7 +1272,8 @@ void PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redT
   XF86VidModeSetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
 #endif
 
-  return;
+  // Return "success":
+  return(1);
 }
 
 // PsychGetDisplayBeamPosition() contains the implementation of display beamposition queries.
@@ -1572,7 +1593,7 @@ PsychError PsychOSSynchronizeDisplayScreens(int *numScreens, int* screenIds, int
 	}
 
 	// DCE-4 display engine of Evergreen or later?
-	if (isDCE4(screenId)) {
+	if (isDCE4(screenId) || isDCE5(screenId)) {
 		// Yes. Use DCE-4 specific sync routine:
 		return(PsychOSSynchronizeDisplayScreensDCE4(numScreens, screenIds, residuals, syncMethod, syncTimeOut, allowedResidual));
 	}
@@ -1716,9 +1737,13 @@ int PsychOSKDGetBeamposition(int screenId)
 	if (gfx_cntl_mem) {
 		// Query code for ATI/AMD Radeon/FireGL/FirePro:
 		if (fDeviceType == kPsychRadeon) {
-			if (isDCE4(screenId)) {
+			if (isDCE4(screenId) || isDCE5(screenId)) {
 				// DCE-4 display engine (CEDAR and later afaik): Up to six crtc's.
-				
+                if (headId > DCE4_MAXHEADID) {
+                    printf("PTB-ERROR: PsychOSKDGetBeamposition: Invalid headId %i provided! Must be between 0-5!\n", headId);
+                    return(beampos);
+				}
+                
 				// Read raw beampostion from GPU:
 				beampos = (int) (ReadRegister(EVERGREEN_CRTC_STATUS_POSITION + crtcoff[headId]) & RADEON_VBEAMPOSITION_BITMASK);
 				
@@ -1775,4 +1800,315 @@ int PsychOSKDGetBeamposition(int screenId)
 	}
 
 	return(beampos);
+}
+
+// Try to change hardware dither mode on GPU:
+void PsychOSKDSetDitherMode(int screenId, unsigned int ditherOn)
+{
+    static unsigned int oldDither[(DCE4_MAXHEADID + 1)] = { 0, 0, 0, 0, 0, 0 };
+    unsigned int reg;
+	int headId  = (screenId >= 0) ? PsychScreenToHead(screenId) : -screenId;
+    
+    // MMIO registers mapped?
+	if (!gfx_cntl_mem) return;
+
+    // AMD/ATI Radeon, FireGL or FirePro GPU?
+	if (fDeviceType == kPsychRadeon) {
+        if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Trying to %s digital display dithering on display head %d.\n", (ditherOn) ? "enable" : "disable", headId);
+
+        // Map headId to proper hardware control register offset:
+		if (isDCE4(screenId) || isDCE5(screenId)) {
+			// DCE-4 display engine (CEDAR and later afaik): Up to six crtc's. Map to proper
+            // register offset for this headId:
+            if (headId > DCE4_MAXHEADID) {
+                // Invalid head - bail:
+                if (PsychPrefStateGet_Verbosity() > 0) printf("SetDitherMode: ERROR! Invalid headId %d provided. Must be between 0 and 5. Aborted.\n", headId);
+                return;
+            }
+
+            // Map to dither format control register for head 'headId':
+            reg = EVERGREEN_FMT_BIT_DEPTH_CONTROL + crtcoff[headId];
+		} else {
+			// AVIVO display engine (R300 - R600 afaik): At most two display heads for dual-head gpu's.
+            if (headId > 1) {
+                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: INFO! Special headId %d outside valid dualhead range 0-1 provided. Will control LVDS dithering.\n", headId);
+                headId = 0;
+            }
+            else {
+                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: INFO! headId %d in valid dualhead range 0-1 provided. Will control TMDS (DVI et al.) dithering.\n", headId);
+                headId = 1;
+            }
+            
+            // On AVIVO we can't control dithering per display head. Instead there's one global switch
+            // for LVDS connected displays (LVTMA) aka internal flat panels, e.g., of Laptops, and
+            // on global switch for "all things DVI-D", aka TMDSA:
+            reg = (headId == 0) ? RADEON_LVTMA_BIT_DEPTH_CONTROL : RADEON_TMDSA_BIT_DEPTH_CONTROL;
+		}
+
+        // Perform actual enable/disable/reconfigure sequence for target encoder/head:
+
+        // Enable dithering?
+        if (ditherOn) {
+            // Reenable dithering with old, previously stored settings, if it is disabled:
+            
+            // Dithering currently off (all zeros)?
+            if (ReadRegister(reg) == 0) {
+                // Dithering is currently off. Do we know the old setting from a previous
+                // disable?
+                if (oldDither[headId] > 0) {
+                    // Yes: Restore old "factory settings":
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering previously disabled by us. Reenabling with old control setting %x.\n", oldDither[headId]);
+                    WriteRegister(reg, oldDither[headId]);
+                }
+                else {
+                    // No: Dithering was disabled all the time, so we don't know the
+                    // OS defaults. Use the numeric value of 'ditherOn' itself:
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering off. Enabling with userspace provided setting %x. Cross your fingers!\n", ditherOn);
+                    WriteRegister(reg, ditherOn);
+                }
+            }
+            else {
+                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering already enabled with current control value %x. Skipped.\n", ReadRegister(reg));
+            }
+        }
+        else {
+            // Disable all dithering if it is enabled: Clearing the register to all zero bits does this.
+            if (ReadRegister(reg) > 0) {
+                oldDither[headId] = ReadRegister(reg);
+                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Current dither setting before our dither disable on head %d is %x. Disabling.\n", headId, oldDither[headId]);
+                WriteRegister(reg, 0x0);
+            }
+            else {
+                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering already disabled. Skipped.\n");
+            }
+        }
+        
+        // End of Radeon et al. support code.
+	}
+    else {
+        // Other unsupported GPU:
+        if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Tried to call me on a non ATI/AMD GPU. Unsupported.\n");
+    }
+    
+	return;
+}
+
+// Query if LUT for given headId is all-zero: 0 = Something else, 1 = Zero-LUT, 2 = It's an identity LUT,
+// 3 = Not-quite-identity mapping, 0xffffffff = don't know.
+unsigned int PsychOSKDGetLUTState(int screenId, unsigned int headId, unsigned int debug)
+{
+    unsigned int i, v, r, m, bo, wo, offset, reg;
+    unsigned int isZero = 1;
+    unsigned int isIdentity = 1;
+    
+    // AMD GPU's:
+	if (fDeviceType == kPsychRadeon) {
+        if (PsychPrefStateGet_Verbosity() > 3) printf("PsychOSKDGetLUTState(): Checking LUT and bias values on GPU for headId %d.\n", headId);
+
+        if (isDCE4(screenId) || isDCE5(screenId)) {
+            // DCE-4.0 and later: Up to (so far) six display heads:
+            if (headId > DCE4_MAXHEADID) {
+                // Invalid head - bail:
+                if (PsychPrefStateGet_Verbosity() > 2) printf("PsychOSKDGetLUTState: ERROR! Invalid headId %d provided. Must be between 0 and 5. Aborted.\n", headId);
+                return(0xffffffff);
+            }
+
+            offset = crtcoff[headId];
+            WriteRegister(EVERGREEN_DC_LUT_RW_MODE + offset, 0);
+            WriteRegister(EVERGREEN_DC_LUT_RW_INDEX + offset, 0);
+            reg = EVERGREEN_DC_LUT_30_COLOR + offset;
+            
+            // Find out if there are non-zero black offsets:
+            bo = 0x0;
+            bo|= ReadRegister(EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE + offset);
+            bo|= ReadRegister(EVERGREEN_DC_LUT_BLACK_OFFSET_GREEN + offset);
+            bo|= ReadRegister(EVERGREEN_DC_LUT_BLACK_OFFSET_RED + offset);
+            
+            // Find out if there are non-0xffff white offsets:
+            wo = 0x0;
+            wo|= 0xffff - ReadRegister(EVERGREEN_DC_LUT_WHITE_OFFSET_BLUE + offset);
+            wo|= 0xffff - ReadRegister(EVERGREEN_DC_LUT_WHITE_OFFSET_GREEN + offset);
+            wo|= 0xffff - ReadRegister(EVERGREEN_DC_LUT_WHITE_OFFSET_RED + offset);
+        }
+        else {
+            // AVIVO: Dualhead.
+            offset = (headId > 0) ? 0x800 : 0x0;
+            WriteRegister(AVIVO_DC_LUT_RW_SELECT, headId & 0x1);
+            WriteRegister(AVIVO_DC_LUT_RW_MODE, 0);
+            WriteRegister(AVIVO_DC_LUT_RW_INDEX, 0);
+            reg = AVIVO_DC_LUT_30_COLOR;
+
+            // Find out if there are non-zero black offsets:
+            bo = 0x0;
+            bo|= ReadRegister(AVIVO_DC_LUTA_BLACK_OFFSET_BLUE + offset);
+            bo|= ReadRegister(AVIVO_DC_LUTA_BLACK_OFFSET_GREEN + offset);
+            bo|= ReadRegister(AVIVO_DC_LUTA_BLACK_OFFSET_RED + offset);
+            
+            // Find out if there are non-0xffff white offsets:
+            wo = 0x0;
+            wo|= 0xffff - ReadRegister(AVIVO_DC_LUTA_WHITE_OFFSET_BLUE + offset);
+            wo|= 0xffff - ReadRegister(AVIVO_DC_LUTA_WHITE_OFFSET_GREEN + offset);
+            wo|= 0xffff - ReadRegister(AVIVO_DC_LUTA_WHITE_OFFSET_RED + offset);
+        }
+
+        if (debug) if (PsychPrefStateGet_Verbosity() > 3) printf("PsychOSKDOffsets: Black %d : White %d.\n", bo, wo);
+        
+        for (i = 0; i < 256; i++) {            
+            // Read 32 bit value of this slot, mask out upper 2 bits,
+            // so the least significant 30 bits are left, as these
+            // contain the 3 * 10 bits for the 10 bit R,G,B channels:
+            v = ReadRegister(reg) & (0xffffffff >> 2);
+            
+            // All zero as they should be for a all-zero LUT?
+            if (v > 0) isZero = 0;
+            
+            // Compare with expected value in slot i for a perfect 10 bit identity LUT
+            // intended for a 8 bit output encoder, i.e., 2 least significant bits
+            // zero to avoid dithering and similar stuff:
+            r = i << 2;
+            m = (r << 20) | (r << 10) | (r << 0); 
+            
+            // Mismatch? Not a perfect identity LUT:
+            if (v != m) isIdentity = 0;
+
+            if (PsychPrefStateGet_Verbosity() > 4) {
+                printf("%d:%d,%d,%d\n", i, (v >> 20) & 0x3ff, (v >> 10) & 0x3ff, (v >> 0) & 0x3ff);
+            }
+        }
+
+        if (isZero) return(1);  // All zero LUT.
+
+        if (isIdentity) {
+            // If wo or bo is non-zero then it is not quite an identity
+            // mapping, as the black and white offset are not neutral.
+            // Return 3 in this case:
+            if ((wo | bo) > 0) return(3);
+            
+            // Perfect identity LUT:
+            return(2);
+        }
+
+        // Regular LUT:
+        return(0);
+	}
+
+    // Unhandled:
+    if (PsychPrefStateGet_Verbosity() > 3) printf("PsychOSKDGetLUTState(): This function is not supported on this GPU. Returning 0xffffffff.\n");
+    return(0xffffffff);
+}
+
+// Load an identity LUT into display head 'headid': Return 1 on success, 0 on failure or if unsupported for this GPU:
+unsigned int PsychOSKDLoadIdentityLUT(int screenId, unsigned int headId)
+{
+    unsigned int i, r, m, offset, reg;
+    
+    // AMD GPU's:
+	if (fDeviceType == kPsychRadeon) {
+        if (PsychPrefStateGet_Verbosity() > 3) printf("PsychOSKDLoadIdentityLUT(): Uploading identity LUT and bias values into GPU for headId %d.\n", headId);
+
+        if (isDCE4(screenId) || isDCE5(screenId)) {
+            // DCE-4.0 and later: Up to (so far) six display heads:
+            if (headId > DCE4_MAXHEADID) {
+                // Invalid head - bail:
+                if (PsychPrefStateGet_Verbosity() > 3) printf("PsychOSKDLoadIdentityLUT: ERROR! Invalid headId %d provided. Must be between 0 and 5. Aborted.\n", headId);
+                return(0);
+            }
+
+            offset = crtcoff[headId];
+            reg = EVERGREEN_DC_LUT_30_COLOR + offset;
+            
+            WriteRegister(EVERGREEN_DC_LUT_CONTROL + offset, 0);
+
+            if (isDCE5(screenId)) {
+                WriteRegister(NI_INPUT_CSC_CONTROL + offset,
+                              (NI_INPUT_CSC_GRPH_MODE(NI_INPUT_CSC_BYPASS) |
+                               NI_INPUT_CSC_OVL_MODE(NI_INPUT_CSC_BYPASS)));
+                WriteRegister(NI_PRESCALE_GRPH_CONTROL + offset,
+                              NI_GRPH_PRESCALE_BYPASS);
+                WriteRegister(NI_PRESCALE_OVL_CONTROL + offset,
+                              NI_OVL_PRESCALE_BYPASS);
+                WriteRegister(NI_INPUT_GAMMA_CONTROL + offset,
+                              (NI_GRPH_INPUT_GAMMA_MODE(NI_INPUT_GAMMA_USE_LUT) |
+                               NI_OVL_INPUT_GAMMA_MODE(NI_INPUT_GAMMA_USE_LUT)));
+            }
+
+            // Set zero black offsets:
+            WriteRegister(EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE  + offset, 0x0);
+            WriteRegister(EVERGREEN_DC_LUT_BLACK_OFFSET_GREEN + offset, 0x0);
+            WriteRegister(EVERGREEN_DC_LUT_BLACK_OFFSET_RED   + offset, 0x0);
+            
+            // Set 0xffff white offsets:
+            WriteRegister(EVERGREEN_DC_LUT_WHITE_OFFSET_BLUE  + offset, 0xffff);
+            WriteRegister(EVERGREEN_DC_LUT_WHITE_OFFSET_GREEN + offset, 0xffff);
+            WriteRegister(EVERGREEN_DC_LUT_WHITE_OFFSET_RED   + offset, 0xffff);
+
+            WriteRegister(EVERGREEN_DC_LUT_RW_MODE + offset, 0);
+            WriteRegister(EVERGREEN_DC_LUT_WRITE_EN_MASK + offset, 0x00000007);
+
+            WriteRegister(EVERGREEN_DC_LUT_RW_INDEX + offset, 0);
+
+        }
+        else {
+            // AVIVO: Dualhead.
+            offset = (headId > 0) ? 0x800 : 0x0;
+            reg = AVIVO_DC_LUT_30_COLOR;
+
+            WriteRegister(AVIVO_DC_LUTA_CONTROL + offset, 0);
+
+            // Set zero black offsets:
+            WriteRegister(AVIVO_DC_LUTA_BLACK_OFFSET_BLUE  + offset, 0x0);
+            WriteRegister(AVIVO_DC_LUTA_BLACK_OFFSET_GREEN + offset, 0x0);
+            WriteRegister(AVIVO_DC_LUTA_BLACK_OFFSET_RED   + offset, 0x0);
+            
+            // Set 0xffff white offsets:
+            WriteRegister(AVIVO_DC_LUTA_WHITE_OFFSET_BLUE  + offset, 0xffff);
+            WriteRegister(AVIVO_DC_LUTA_WHITE_OFFSET_GREEN + offset, 0xffff);
+            WriteRegister(AVIVO_DC_LUTA_WHITE_OFFSET_RED   + offset, 0xffff);
+
+            WriteRegister(AVIVO_DC_LUT_RW_SELECT, headId & 0x1);
+            WriteRegister(AVIVO_DC_LUT_RW_MODE, 0);
+            WriteRegister(AVIVO_DC_LUT_WRITE_EN_MASK, 0x0000003f);
+
+            WriteRegister(AVIVO_DC_LUT_RW_INDEX, 0);
+        }
+        
+        for (i = 0; i < 256; i++) {
+            // Compute perfect value for slot i for a perfect 10 bit identity LUT
+            // intended for a 8 bit output encoder, i.e., 2 least significant bits
+            // zero to avoid dithering and similar stuff, the 8 most significant
+            // bits for each 10 bit color channel linearly increasing one unit
+            // per slot:
+            r = i << 2;
+            m = (r << 20) | (r << 10) | (r << 0); 
+
+            // Write 32 bit value of this slot:
+            WriteRegister(reg, m);
+        }
+
+        if (isDCE5(screenId)) {
+            WriteRegister(NI_DEGAMMA_CONTROL + offset,
+                          (NI_GRPH_DEGAMMA_MODE(NI_DEGAMMA_BYPASS) |
+                           NI_OVL_DEGAMMA_MODE(NI_DEGAMMA_BYPASS) |
+                           NI_ICON_DEGAMMA_MODE(NI_DEGAMMA_BYPASS) |
+                           NI_CURSOR_DEGAMMA_MODE(NI_DEGAMMA_BYPASS)));
+            WriteRegister(NI_GAMUT_REMAP_CONTROL + offset,
+                          (NI_GRPH_GAMUT_REMAP_MODE(NI_GAMUT_REMAP_BYPASS) |
+                           NI_OVL_GAMUT_REMAP_MODE(NI_GAMUT_REMAP_BYPASS)));
+            WriteRegister(NI_REGAMMA_CONTROL + offset,
+                          (NI_GRPH_REGAMMA_MODE(NI_REGAMMA_BYPASS) |
+                           NI_OVL_REGAMMA_MODE(NI_REGAMMA_BYPASS)));
+            WriteRegister(NI_OUTPUT_CSC_CONTROL + offset,
+                          (NI_OUTPUT_CSC_GRPH_MODE(NI_OUTPUT_CSC_BYPASS) |
+                           NI_OUTPUT_CSC_OVL_MODE(NI_OUTPUT_CSC_BYPASS)));
+            /* XXX match this to the depth of the crtc fmt block, move to modeset? */
+            WriteRegister(0x6940 + offset, 0);
+        }
+        
+        // Done.
+        return(1);
+	}
+
+    // Unhandled:
+    if (PsychPrefStateGet_Verbosity() > 3) printf("PsychOSKDLoadIdentityLUT(): This function is not supported on this GPU. Returning 0.\n");
+    return(0);
 }

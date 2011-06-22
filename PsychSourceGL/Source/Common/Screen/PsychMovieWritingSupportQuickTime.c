@@ -3,7 +3,7 @@
 	
 	PLATFORMS:	
 	
-		MacOS/X and MS-Windows
+		MacOS/X and MS-Windows, but only if GStreamer support is disabled.
 		
 		This is the movie editing and writing/creation engine based on the
 		Apple QuickTime API. It works on Apple MacOS/X and MS-Windows.
@@ -30,6 +30,7 @@
 
 // No Quicktime support for GNU/Linux:
 #if PSYCH_SYSTEM != PSYCH_LINUX
+#ifndef PTB_USE_GSTREAMER
 
 #if PSYCH_SYSTEM == PSYCH_OSX
 #include <Quicktime/QuickTimeComponents.h>
@@ -516,24 +517,12 @@ bail:
 	return(myErr == 0);
 }
 
+psych_bool PsychAddAudioBufferToMovie(int moviehandle, unsigned int nrChannels, unsigned int nrSamples, double* buffer)
+{
+    PsychErrorExitMsg(PsychError_unimplemented, "Sorry, storing audio tracks in movies is not supported by the Quicktime based movie writing functions.");
+    return(0);
+}
+
 // End of routines.
-	
-#else
-
-// This is Linux: Implement dummy functions:
-void PsychMovieWritingInit(void) { return; }
-void PsychExitMovieWriting(void) { return; }
-void PsychDeleteAllMovieWriters(void) { return; }
-unsigned char*	PsychGetVideoFrameForMoviePtr(int moviehandle, unsigned int* twidth, unsigned int* theight) { return(NULL); }
-int PsychAddVideoFrameToMovie(int moviehandle, int frameDurationUnits, psych_bool isUpsideDown) { return(0); }
-int PsychCreateNewMovieFile(char* moviefile, int width, int height, double framerate, char* movieoptions)
-{
-	PsychErrorExitMsg(PsychError_unimplemented, "Sorry, movie writing and editing support not yet implemented on this operating system.");
-}
-
-int PsychFinalizeNewMovieFile(int movieHandle)
-{
-	PsychErrorExitMsg(PsychError_unimplemented, "Sorry, movie writing and editing support not yet implemented on this operating system.");
-}
-
+#endif
 #endif

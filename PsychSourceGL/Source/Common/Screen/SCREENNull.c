@@ -26,6 +26,8 @@
 
 #include "Screen.h"
 
+#include "PsychGraphicsCardRegisterSpecs.h"
+
 #if PSYCH_SYSTEM == PSYCH_OSX
 #include <IOKit/IOKitLib.h>
 #include <sys/time.h>
@@ -40,8 +42,8 @@ PsychError SCREENNull(void)
 {
 #define RADEON_D1CRTC_INTERRUPT_CONTROL 0x60DC
 
-#define RADEON_R500_GEN_INT_CNTL   0x100
-#define RADEON_R500_GEN_INT_STATUS 0x104
+//#define RADEON_R500_GEN_INT_CNTL   0x100
+//#define RADEON_R500_GEN_INT_STATUS 0x104
 //#define RADEON_R500_GEN_INT_CNTL   0x040
 //#define RADEON_R500_GEN_INT_STATUS 0x044
 //#define RADEON_R500_GEN_INT_CNTL   0x200
@@ -60,6 +62,42 @@ PsychError SCREENNull(void)
 	//all sub functions should have these two lines
 	PsychPushHelp(useString, synopsisString, seeAlsoString);
 	if(PsychIsGiveHelp()){PsychGiveHelp();return(PsychError_none);};
+
+    #if PSYCH_SYSTEM != PSYCH_WINDOWS
+        // Test GPU low-level dithering control:
+        int screenId, ditherEnable;
+		PsychCopyInIntegerArg(1, TRUE, &screenId);
+		PsychCopyInIntegerArg(2, TRUE, &ditherEnable);
+
+		if (PsychPrefStateGet_Verbosity() > 2) printf("SetDithering: ScreenId %i : DitherSetting %i.\n", screenId, ditherEnable);
+        PsychSetOutputDithering(NULL, screenId, (unsigned int) ditherEnable);
+
+
+        unsigned int crtcoff[6] = { EVERGREEN_CRTC0_REGISTER_OFFSET, EVERGREEN_CRTC1_REGISTER_OFFSET, EVERGREEN_CRTC2_REGISTER_OFFSET, EVERGREEN_CRTC3_REGISTER_OFFSET, EVERGREEN_CRTC4_REGISTER_OFFSET, EVERGREEN_CRTC5_REGISTER_OFFSET };
+
+//        printf("Pre:  AVIVO_DC_LUTA_BLACK_OFFSET_BLUE = %i\n", PsychOSKDReadRegister(screenId, AVIVO_DC_LUTA_BLACK_OFFSET_BLUE, NULL));
+/*
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUTA_BLACK_OFFSET_BLUE + 0x0000, 0, NULL);
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUTA_BLACK_OFFSET_GREEN + 0x0000, 0, NULL);
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUTA_BLACK_OFFSET_RED + 0x0000, 0, NULL);
+
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUTA_WHITE_OFFSET_BLUE + 0x0000, 0xffff, NULL);
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUTA_WHITE_OFFSET_GREEN + 0x0000, 0xffff, NULL);
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUTA_WHITE_OFFSET_RED + 0x0000, 0xffff, NULL);
+
+        PsychOSKDWriteRegister(screenId, AVIVO_DC_LUT_RW_INDEX, 0, NULL);        
+        for (i=0; i < 256; i++) {
+            m = i << 1;
+            PsychOSKDWriteRegister(screenId, AVIVO_DC_LUT_30_COLOR, (m << 20) | (m << 10) | (m << 0), NULL);
+        }
+*/        
+//        printf("Post: AVIVO_DC_LUTA_BLACK_OFFSET_BLUE = %i\n", PsychOSKDReadRegister(screenId, AVIVO_DC_LUTA_BLACK_OFFSET_BLUE, NULL));
+
+        for (i=0; i < 6; i++) printf("EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE[%i] = %i\n", i, PsychOSKDReadRegister(screenId, EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE + crtcoff[i], NULL));
+
+        
+        return(PsychError_none);
+    #endif
 
 	#if PSYCH_SYSTEM == PSYCH_LINUX
 /*		PsychAllocInWindowRecordArg(1, TRUE, &windowRecord);
@@ -85,7 +123,7 @@ PsychError SCREENNull(void)
 		hi = value >> 16;
 		lo = value & 0xffff;
 
-		if (PsychPrefStateGet_Verbosity() > 2) printf("%p :: hi = %i , lo = %i , val = %i\n", (void*) regOffset, hi, lo, value);
+		if (PsychPrefStateGet_Verbosity() > 2) printf("%p :: hi = %i , lo = %i , val = %i\n", (void*) (size_t) regOffset, hi, lo, value);
 
 		PsychCopyOutDoubleArg(1, FALSE, (double) value);
 		PsychCopyOutDoubleArg(2, FALSE, (double) hi);

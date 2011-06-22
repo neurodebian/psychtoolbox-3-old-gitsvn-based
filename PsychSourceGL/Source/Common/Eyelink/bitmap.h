@@ -3,7 +3,6 @@
  *  PsychToolbox
  *
  *  Created by Nuha Jabakhanji on 10-10-01.
- *  
  *
  */
 
@@ -14,20 +13,8 @@
  */
 
 #ifndef _BITMAP_H_
-#  define _BITMAP_H_
+#define _BITMAP_H_
 
-//#  include <GLUT/glut.h>
-#  ifdef WIN32
-#	 include <GLUT/glut.h>
-#    include <windows.h>
-#    include <wingdi.h>
-#  else
-#	 include <GLUT/glut.h>
-# endif
-
-//#  endif /* WIN32 */
-
-	
 #  ifndef WIN32
 	typedef struct                       /**** BMP file header structure ****/
     {
@@ -60,8 +47,7 @@
 		BITMAPINFOHEADER bmiHeader;      /* Image header */
     } BITMAPINFO;
 #  endif /* !WIN32 */
-	
-	
-	extern GLubyte *LoadDIBitmap(const char *filename, BITMAPINFO **info);
 
-#endif 
+extern psych_uint8* LoadDIBitmap(const char *filename, BITMAPINFO **info);
+
+#endif
