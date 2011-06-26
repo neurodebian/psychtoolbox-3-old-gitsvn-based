@@ -6,6 +6,10 @@ include /usr/share/octave/debian/defs.make
 # get Matlab paths
 include /usr/share/matlab/debian/defs.make
 
+srcpkg = $(shell LC_ALL=C dpkg-parsechangelog | grep '^Source:' | cut -d ' ' -f 2,2)
+debver = $(shell LC_ALL=C dpkg-parsechangelog | grep '^Version:' | cut -d ' ' -f 2,2 )
+uver = $(shell echo $(debver) | cut -d '-' -f 1,1 )
+
 # Directories which are created/populated/cleanedup
 BDIRS=PsychSourceGL/Projects/Linux/build/ Psychtoolbox/PsychBasic/Octave3LinuxFiles Psychtoolbox/PsychBasic/PsychPlugins
 OCT_SHAREDDIR=debian/psychtoolbox-3-common/usr/share/psychtoolbox-3
@@ -118,3 +122,7 @@ override_dh_clean:
 	: # Prune some Debian generated files
 	-rm debian/octave-psychtoolbox-3.links debian/psychtoolbox-3-lib.links
 	$(MAKE) -C PsychSourceGL/Cohorts/PortAudio clean
+
+get-orig-source:
+	git archive --format=tar --prefix=$(srcpkg)-$(gitver)/ dfsg | \
+        gzip -9 > $(srcpkg)_$(uver).orig.tar.gz
