@@ -1,3 +1,12 @@
+psychtoolbox-3 (3.0.9+svn2167.dfsg1-1) UNRELEASED; urgency=low
+
+  * New upstream point release (aiming at becoming a beta)
+  * Removed BIG FAT WARNING
+  * Added Recommends and Suggests on some octave toolboxes, and
+    gstreamer plugins sets (base, good, bad, ugly)
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Sat, 25 Jun 2011 22:24:21 -0400
+
 psychtoolbox-3 (3.0.9+svn2078.dfsg1-1) UNRELEASED; urgency=low
 
   * New upstream point release

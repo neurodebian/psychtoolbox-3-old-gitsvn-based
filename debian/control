@@ -47,21 +47,14 @@ Description: toolbox for vision research -- arch/interpreter independent part
  seeking algorithm.
  .
  This package contains architecture independent files (such as .m scripts)
- .
- =========================== BIG FAT WARNING ============================
- .
- This packaged version of Psychtoolbox-3 for Debian has been neither
- extensively tested nor officially released.  It is known not to be fully
- compatible with 64-bit systems (yet).  Please do not use it for
- conducting real experiments, and please report any detected problems to
- team@neuro.debian.net so we could assure future stable performance of
- PTB-3 on your systems.
- .
- ========================================================================
 
 Package: psychtoolbox-3-lib
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: gstreamer0.10-plugins-base,
+            gstreamer0.10-plugins-good,
+Suggests: gstreamer0.10-plugins-bad,
+          gstreamer0.10-plugins-ugly
 Description: toolbox for vision research -- arch-specific parts
  Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
  GNU/Octave functions for vision research. It makes it easy to
@@ -79,23 +72,17 @@ Description: toolbox for vision research -- arch-specific parts
  .
  This package contains additional binaries (tools/dynamic libraries) used
  by both Octave and Matlab frontends.
- .
- =========================== BIG FAT WARNING ============================
- .
- This packaged version of Psychtoolbox-3 for Debian has been neither
- extensively tested nor officially released.  It is known not to be fully
- compatible with 64-bit systems (yet).  Please do not use it for
- conducting real experiments, and please report any detected problems to
- team@neuro.debian.net so we could assure future stable performance of
- PTB-3 on your systems.
- .
- ========================================================================
 
 Package: octave-psychtoolbox-3
 Architecture: any
 Depends: ${octave:Depends}, ${shlibs:Depends}, ${misc:Depends},
-		 psychtoolbox-3-common (= ${source:Version}),
-		 psychtoolbox-3-lib (= ${binary:Version}),
+         psychtoolbox-3-common (= ${source:Version}),
+         psychtoolbox-3-lib (= ${binary:Version}),
+Recommends: octave-audio,
+            octave-image,
+            octave-optim,
+            octave-signal,
+            octave-statistics,
 Provides: psychtoolbox, psychtoolbox-3
 Description: toolbox for vision research -- Octave bindings
  Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
@@ -113,17 +100,6 @@ Description: toolbox for vision research -- Octave bindings
  seeking algorithm.
  .
  This package contains bindings for Octave.
- .
- =========================== BIG FAT WARNING ============================
- .
- This packaged version of Psychtoolbox-3 for Debian has been neither
- extensively tested nor officially released.  It is known not to be fully
- compatible with 64-bit systems (yet).  Please do not use it for
- conducting real experiments, and please report any detected problems to
- team@neuro.debian.net so we could assure future stable performance of
- PTB-3 on your systems.
- .
- ========================================================================
 
 Package: psychtoolbox-3-dbg
 Section: debug
@@ -146,17 +122,6 @@ Description: toolbox for vision research -- debug symbols for binaries
  .
  To ease debugging and troubleshooting this package contains debug
  symbols for Octave bindings and other binaries.
- .
- =========================== BIG FAT WARNING ============================
- .
- This packaged version of Psychtoolbox-3 for Debian has been neither
- extensively tested nor officially released.  It is known not to be fully
- compatible with 64-bit systems (yet).  Please do not use it for
- conducting real experiments, and please report any detected problems to
- team@neuro.debian.net so we could assure future stable performance of
- PTB-3 on your systems.
- .
- ========================================================================
 
 #Package: matlab-psychtoolbox-3
 #Section: contrib/science

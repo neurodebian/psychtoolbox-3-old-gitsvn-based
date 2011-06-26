@@ -1,7 +1,7 @@
 % UseTheSource - How to access the Psychtoolbox source code.
 %
 % If you are interested in the source code for the C language
-% implementation of Psychtoolbox (i.e., the MEX file extensions
+% modules of Psychtoolbox (i.e., the MEX file extensions
 % like Screen, WaitSecs, GetSecs, PsychHID, ...) then use the
 % following procedure.
 %
@@ -11,7 +11,7 @@
 % 1. Open a Unix terminal window on OS-X or Linux or a NT command
 %    shell on M$-Windows.
 %
-% 2. Use the "svn" command line tool to download source code. On
+% 2. Use the "svn" commandline tool to download source code. On
 %    OS-X or Linux, the svn tool is usually stored in the
 %    /usr/local/bin directory, you may want to add this to your
 %    PATH. On Windows, the svn client should be already in your
@@ -22,22 +22,23 @@
 %
 %    svn checkout https://svn.berlios.de/svnroot/repos/osxptb/trunk /Users/kleinerm/MyPTB/
 %
-%    This command would download the full 'beta' distribution,
-%    corresponding to official, tested, production releases:
+%    This command would download the full 'beta' distribution instead,
+%    which corresponds to the most recent official, tested, production release:
 %
 %    svn checkout https://svn.berlios.de/svnroot/repos/osxptb/beta /Users/kleinerm/MyPTB/
 %
-%    Inside the /Users/kleinerm/MyPTB you would see the following
+%    Inside the /Users/kleinerm/MyPTB folder you would see the following
 %    subfolders:
+%
 %    Psychtoolbox/   -- The regular Psychtoolbox folder.
-%    managementools/ -- Miscellaneous scripts for managing PTB releases
+%    managementools/ -- Miscellaneous scripts for managing PTB releases.
 %    PsychSourceGL/  -- The C source code for Psychtoolbox.
 %
-%    Inside PsychSourceGL you will find everything you need to
-%    understand or modify PTBs working if you are brave and patient
+%    Inside PsychSourceGL you will find everything you need to understand
+%    or to modify Psychtoolbox inner working if you are brave and patient
 %    enough ;-)
 %
-%    The toolbox itself is split into multiple branches:
+%    As already mentioned, the toolbox itself is split into multiple branches:
 %
 %    trunk  - The code that is currently under development. May or may not
 %             compile and work at any given point in time, may or may not
@@ -53,7 +54,7 @@
 %    the corresponding code in the SVN repository.
 %
 %    Be aware that you can only download code from the repository. If
-%    you want to participate in PTBs development you'll need write access
+%    you want to participate in PTB's development you'll need write access
 %    to the repository. Contact David Brainard if you want to apply for
 %    write access. Make yourself familiar with the Subversion toolchain
 %    if you want to do serious work (http://subversion.tigris.org).
@@ -62,21 +63,16 @@
 %    web interface: http://svn.berlios.de/wsvn/osxptb
 %
 %    For almost all source code, i.e., unless otherwise stated in the
-%    source files themselves, the GNU GPL license applies:
+%    source files themselves or accompanying documentation, the
+%    MIT license applies. See the file License.txt in the Psychtoolbox
+%    root folder for more details.
 %
-%    Psychtoolbox is free software; you can redistribute it and/or modify
-%    it under the terms of the GNU General Public License as published by
-%    the Free Software Foundation; either version 2 of the License, or
-%    (at your option) any later version. The file License.txt in the
-%    Psychtoolbox root folder contains the exact conditions for use,
-%    modification and redistribution.
-%
-%    Components & Libraries which are not covered by the GPL, but other GPL
-%    compatible free software licenses will carry individual descriptions
-%    of their licenses inside the source files or in accompanying license
-%    files within the corresponding subfolders. Such libraries are usually
-%    contained in the PsychSourceGL/Cohorts/ subdirectory of the
-%    distribution.
+%    Components & Libraries which are not covered by the MIT license, but
+%    other MIT compatible free software licenses will carry individual
+%    descriptions of their licenses inside the source files or in
+%    accompanying license files within the corresponding subfolders. Such
+%    libraries are usually contained in the PsychSourceGL/Cohorts/
+%    subdirectory of the distribution.
 %
 %    Good luck and "Use the source" (Master Yoda).
 %

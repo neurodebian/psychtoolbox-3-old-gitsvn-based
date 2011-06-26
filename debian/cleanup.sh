@@ -13,6 +13,7 @@ $FINDREGEX '.*((|Mac)OSX|Octave3OSXFiles|Windows|.bundle|.FBCLockFolder)' -print
 $RM -rf PsychSourceGL/Cohorts/{PsychtoolboxOSXKernelDriver,HID\ Utilities\ Source,IOWarrior}
 $RM -rf Psychtoolbox/PsychContributed/WinTab
 $RM -rf Psychtoolbox/PsychAlpha/PsychtoolboxKernelDriver.kext*
+$RM -rf Psychtoolbox/PsychAlpha/PsychtoolboxKernelDriverUserClientTool
 
 # Test and its data (input? output?)
 $RM -f Psychtoolbox/PsychTests/StandaloneTimingProgram Psychtoolbox/.FBCIndex
@@ -34,7 +35,7 @@ $RM -f Psychtoolbox/PsychContributed/ATIRadeonperf_Linux
 # not pruning for now
 # built for i386 so needs following Depends ATM:
 # ia32-libs, lib32gcc1, lib32z1, libc6-i386, zlib1g
-$RM -f ./Psychtoolbox/PsychBasic/PsychPlugins/libptbdrawtext_ftgl.*
+$RM -f ./Psychtoolbox/PsychBasic/PsychPlugins/libptbdrawtext_ftgl*.*
 
 # TODO: build
 # $RM -rf ./PsychSourceGL/Cohorts/FTGLTextRenderer # libftgl-dev -- check ver
