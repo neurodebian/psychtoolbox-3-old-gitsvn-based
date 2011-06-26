@@ -51,6 +51,10 @@ Description: toolbox for vision research -- arch/interpreter independent part
 Package: psychtoolbox-3-lib
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: gstreamer0.10-plugins-base,
+            gstreamer0.10-plugins-good,
+Suggests: gstreamer0.10-plugins-bad,
+          gstreamer0.10-plugins-ugly
 Description: toolbox for vision research -- arch-specific parts
  Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
  GNU/Octave functions for vision research. It makes it easy to
@@ -72,8 +76,13 @@ Description: toolbox for vision research -- arch-specific parts
 Package: octave-psychtoolbox-3
 Architecture: any
 Depends: ${octave:Depends}, ${shlibs:Depends}, ${misc:Depends},
-		 psychtoolbox-3-common (= ${source:Version}),
-		 psychtoolbox-3-lib (= ${binary:Version}),
+         psychtoolbox-3-common (= ${source:Version}),
+         psychtoolbox-3-lib (= ${binary:Version}),
+Recommends: octave-audio,
+            octave-image,
+            octave-optim,
+            octave-signal,
+            octave-statistics,
 Provides: psychtoolbox, psychtoolbox-3
 Description: toolbox for vision research -- Octave bindings
  Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
