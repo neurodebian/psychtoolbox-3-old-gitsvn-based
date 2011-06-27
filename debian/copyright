@@ -1,12 +1,12 @@
-Format-Specification: http://svn.debian.org/wsvn/dep/web/deps/dep5.mdwn?op=file&rev=135
-Name: Psychtoolbox-3
-Maintainer: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
+Format-Specification: http://svn.debian.org/wsvn/dep/web/deps/dep5.mdwn?op=file&rev=174
+Upstream-Name: Psychtoolbox-3
+Upstream-Contact: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
 Source: http://svn.berlios.de/svnroot/repos/osxptb/
 Note:
   If you want to acknowledge use of this software when you publish your
   research, you might say something like this, "We wrote our experiments
-  in Matlab, using the Psychophysics Toolbox extensions (Brainard, 1997;
-  Pelli, 1997)."
+  in Octave (or Matlab), using the Psychophysics Toolbox extensions
+  (Brainard, 1997;  Pelli, 1997)."
   Brainard, D.H. (1997) The Psychophysics Toolbox, Spatial Vision 10:443-446.
   Pelli, D.G. (1997) The VideoToolbox software for visual psychophysics:
             Transforming numbers into movies, Spatial Vision 10:437-442.
@@ -15,24 +15,27 @@ Files: *
 Copyright:
   1996-2007, David Brainard
   1996-2007, Denis Pelli
-  2005-2010, Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
-License: GPL-2+
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 2 of the License, or
-  (at your option) any later version.
+  1996-2007, Allen Ingling  <allen.ingling@nyu.edu>
+  2005-2011, Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
+License: MIT
+  Permission is hereby granted, free of charge, to any person obtaining a
+  copy of this software and associated documentation files (the
+  "Software"), to deal in the Software without restriction, including
+  without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit
+  persons to whom the Software is furnished to do so, subject to the
+  following conditions:
   .
-  This package is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  The above copyright notice and this permission notice shall be included
+  in all copies or substantial portions of the Software.
   .
-  You should have received a copy of the GNU General Public License
-  along with this program. If not, see <http://www.gnu.org/licenses/>.
-  .
-  On Debian systems, the complete text of the GNU General
-  Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
-
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+  OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+  NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+  OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+  USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Files: PsychSourceGL/Source/Common/PsychCV/OpenEyesCVEyeTracker/{cvEyeTracker.cc,r*}
 Copyright:
@@ -134,8 +137,8 @@ Note: Based loosely on the c-code RGBE implementation written by Bruce
 
 Files: Psychtoolbox/PsychHardware/DatapixxToolbox
 Copyright: 2009, VPixx Technologies http://www.vpixx.com
-           2009-2010, Mario Kleiner 
+           2009-2010, Mario Kleiner
 
 Files: debian/*
-Copyright: 2010, Yaroslav Halchenko <debian@onerussian.com>
-License: GPL-2
+Copyright: 2010-2011, Yaroslav Halchenko <debian@onerussian.com>
+License: MIR
