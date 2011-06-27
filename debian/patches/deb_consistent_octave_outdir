@@ -1,0 +1,16 @@
+--- a/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
++++ b/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
+@@ -22,12 +22,7 @@
+ 
+ fprintf('Building plugin type %i ...\n\n', mode);
+ 
+-% Target folder depends if this is a 64 bit or 32 bit runtime:
+-if ~isempty(findstr(computer, '_64'))
+-    target = 'PsychBasic/Octave3LinuxFiles64/';
+-else
+-    target = 'PsychBasic/Octave3LinuxFiles/';
+-end
++target = 'PsychBasic/Octave3LinuxFiles/';
+ 
+ if mode==0
+     % Build Screen.mex:
