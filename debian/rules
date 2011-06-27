@@ -19,7 +19,7 @@ export LDFLAGS=-Wl,--as-needed
 
 # Upstream advises to build without optimization at the moment
 export CXXFLAGS=-Wall -g -O0
-export CFLAGS=-Wall -g -O0
+export CFLAGS=-Wall -g -O0 -std=gnu99
 
 %:
 	dh $@
