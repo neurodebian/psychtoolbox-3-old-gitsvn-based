@@ -17,9 +17,13 @@ OCT_LIBDIR=debian/octave-psychtoolbox-3/usr/lib/psychtoolbox-3
 
 export LDFLAGS=-Wl,--as-needed
 
+# Critical for building on machines with multiarch support
+# (e.g. ubuntu 11.04)
+GLIB_INCLUDES=$(shell pkg-config --cflags glib-2.0)
+
 # Upstream advises to build without optimization at the moment
 export CXXFLAGS=-Wall -g -O0
-export CFLAGS=-Wall -g -O0 -std=gnu99
+export CFLAGS=-Wall -g -O0 -std=gnu99 $(GLIB_INCLUDES)
 
 %:
 	dh $@

@@ -5,8 +5,10 @@ psychtoolbox-3 (3.0.9+svn2167.dfsg1-1) UNRELEASED; urgency=low
   * Removed BIG FAT WARNING
   * Added Recommends and Suggests on some octave toolboxes, and
     gstreamer plugins sets (base, good, bad, ugly)
+  * Provide include paths for glib-2.0 from pkg-config -- necessary
+    for build on systems with multiarch support
 
- -- Yaroslav Halchenko <debian@onerussian.com>  Sat, 25 Jun 2011 22:24:21 -0400
+ -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 27 Jun 2011 22:55:34 -0400
 
 psychtoolbox-3 (3.0.9+svn2078.dfsg1-1) UNRELEASED; urgency=low
 
