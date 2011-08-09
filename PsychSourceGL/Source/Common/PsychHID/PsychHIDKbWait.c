@@ -37,6 +37,7 @@
 */
 
 #include "PsychHID.h"
+#if PSYCH_SYSTEM == PSYCH_OSX
 
 #define NUMDEVICEUSAGES 2
 
@@ -120,3 +121,4 @@ PsychError PSYCHHIDKbWait(void)
     return(PsychError_none);	
 }
 
+#endif

@@ -185,6 +185,7 @@ if useDPixx
     PsychImaging('PrepareConfiguration');
     PsychImaging('AddTask', 'General', 'UseDataPixx');
     win = PsychImaging('OpenWindow', screenid, 0);
+    LoadIdentityClut(win);
 else
     % Default: No need for imaging pipeline:
     win = Screen('OpenWindow', screenid, 0);

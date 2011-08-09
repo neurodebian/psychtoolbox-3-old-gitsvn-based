@@ -1,9 +1,15 @@
-function SetMouse(x,y,windowPtrOrScreenNumber)
-% SetMouse(x,y,[windowPtrOrScreenNumber])
+function SetMouse(x,y,windowPtrOrScreenNumber, mouseid)
+% SetMouse(x, y [, windowPtrOrScreenNumber][, mouseid])
 % 
+% Position the mouse cursor on the screen.
+%
 % The cursor position (x,y) is "local", i.e. relative to the origin of the
 % window or screen, if supplied. Otherwise it's "global", i.e. relative to
 % the origin of the main screen (the one with the menu bar).
+%
+% On Linux, the optional 'mouseid' parameter allows to select which
+% of potentially multiple cursors should be repositioned. On OS/X and
+% Windows this parameter is silently ignored.
 % 
 % OS 9: ___________________________________________________________________
 %
@@ -61,12 +67,16 @@ function SetMouse(x,y,windowPtrOrScreenNumber)
 
 % SetMouse.m wraps the Screen('PositionCursor',..) call to emulate the old SetMouse.mex
 
-if(nargin==2)
-   windowPtrOrScreenNumber=0;
-end
-
-if(nargin<2)
+if nargin < 2
    error('SetMouse requires x and y positions');
 end
 
-Screen('SetMouseHelper',windowPtrOrScreenNumber, x,y);    
+if nargin < 3
+   windowPtrOrScreenNumber = 0;
+end
+
+if nargin < 4
+   mouseid = [];
+end
+
+Screen('SetMouseHelper', windowPtrOrScreenNumber, x, y, mouseid);

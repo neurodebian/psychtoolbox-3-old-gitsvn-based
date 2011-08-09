@@ -184,10 +184,10 @@ void InitializeSynopsis()
 	
 	// Helper functions.  Don't call these directly, use eponymous wrappers.
 	synopsis[i++] = "\n% Helper functions.  Don't call these directly, use eponymous wrappers:";
-	synopsis[i++] ="[x, y, buttonVector]= Screen('GetMouseHelper', numButtons);";
-	synopsis[i++] = "Screen('HideCursorHelper', windowPntr);";
-	synopsis[i++] = "Screen('ShowCursorHelper', windowPntr);";
-	synopsis[i++] = "Screen('SetMouseHelper', windowPntrOrScreenNumber, x, y);";
+	synopsis[i++] ="[x, y, buttonVector, hasKbFocus, valuators]= Screen('GetMouseHelper', numButtons [, screenNumber][, mouseIndex]);";
+	synopsis[i++] = "Screen('HideCursorHelper', windowPntr [, mouseIndex]);";
+	synopsis[i++] = "Screen('ShowCursorHelper', windowPntr [, cursorshapeid][, mouseIndex]);";
+	synopsis[i++] = "Screen('SetMouseHelper', windowPntrOrScreenNumber, x, y [, mouseIndex]);";
 	
 	// Internal testing of Screen
 	synopsis[i++] = "\n% Internal testing of Screen";
@@ -197,7 +197,7 @@ void InitializeSynopsis()
 	
 	// Movie and multimedia handling functions:
 	synopsis[i++] = "\n% Movie and multimedia playback functions:";
-	synopsis[i++] =  "[ moviePtr [duration] [fps] [width] [height] [count]]=Screen('OpenMovie', windowPtr, moviefile [, async=0] [, preloadSecs=1]);";
+	synopsis[i++] =  "[ moviePtr [duration] [fps] [width] [height] [count] [aspectRatio]]=Screen('OpenMovie', windowPtr, moviefile [, async=0] [, preloadSecs=1]);";
 	synopsis[i++] =  "Screen('CloseMovie', moviePtr);";
 	synopsis[i++] =  "[ texturePtr [timeindex]]=Screen('GetMovieImage', windowPtr, moviePtr, [waitForImage], [fortimeindex], [specialFlags = 0] [, specialFlags2 = 0]);";
 	synopsis[i++] =  "[droppedframes] = Screen('PlayMovie', moviePtr, rate, [loop], [soundvolume]);";

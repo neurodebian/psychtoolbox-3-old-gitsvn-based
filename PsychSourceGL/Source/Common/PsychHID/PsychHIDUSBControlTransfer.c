@@ -40,7 +40,7 @@ static char seeAlsoString[] = "";
 PsychError PSYCHHIDUSBControlTransfer(void) 
 {
 	PsychUSBDeviceRecord	*dev;
-	int usbHandle, bmRequestType, bRequest, wValue, wIndex, wLength, dataElementWidth;
+	int usbHandle, bmRequestType, bRequest, wValue, wIndex, wLength;
 	int m, n, p, err;
 	const int USB_OUTTRANSFER = 0x80;	// bmRequestType & USB_OUTTRANSFER? -> Receive data from device.
 	psych_uint8 *buffer = NULL;
@@ -98,9 +98,11 @@ PsychError PSYCHHIDUSBControlTransfer(void)
 	// Make the actual control request.
 	if ((err = PsychHIDOSControlTransfer(dev, (psych_uint8) bmRequestType, (psych_uint8) bRequest, (psych_uint16) wValue, (psych_uint16) wIndex, (psych_uint16) wLength, (void*) buffer)) != 0) {
 		// Failed! err contains a non-zero system specific error code from the underlying OS:
-		PsychHIDErrors(err, &name, &description); 
-		printf("PsychHID-ERROR: Control transfer failed: Errorcode: %08x = '%s' [%s]\n\n", err, name, description);
-
+		if (PSYCH_SYSTEM == PSYCH_OSX) {
+            PsychHIDErrors(NULL, err, &name, &description); 
+            printf("PsychHID-ERROR: Control transfer failed: Errorcode: %08x = '%s' [%s]\n\n", err, name, description);
+        }
+        
 		PsychErrorExitMsg(PsychError_system, "The USB Control transfer failed.");
 	}
 
