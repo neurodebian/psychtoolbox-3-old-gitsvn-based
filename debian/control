@@ -22,7 +22,8 @@ Build-Depends: debhelper (>= 7.0.50~), rsync,
                libfreenect-dev,
                libfontconfig1-dev,
                libfreetype6-dev,
-               libasound2-dev
+               libasound2-dev,
+               libopenal-dev,
 Standards-Version: 3.9.1
 Homepage: http://psychtoolbox.org
 Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox-3.git
