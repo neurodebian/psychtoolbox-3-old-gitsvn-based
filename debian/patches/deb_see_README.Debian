@@ -1,6 +1,6 @@
 --- a/PsychSourceGL/Source/Common/Screen/SCREENGetMouseHelper.c
 +++ b/PsychSourceGL/Source/Common/Screen/SCREENGetMouseHelper.c
-@@ -718,7 +718,7 @@ PsychError SCREENGetMouseHelper(void)
+@@ -871,7 +871,7 @@ PsychError SCREENGetMouseHelper(void)
  					if(!PsychPrefStateGet_SuppressAllWarnings()) {
  	    					printf("PTB-ERROR: Failed to enable realtime-scheduling with Priority(%i) [%s]!\n", schedulingparam.sched_priority, strerror(errno));
  						if (errno==EPERM) {
@@ -9,7 +9,7 @@
  						}
  					}
  					errno=0;
-@@ -744,7 +744,7 @@ PsychError SCREENGetMouseHelper(void)
+@@ -897,7 +897,7 @@ PsychError SCREENGetMouseHelper(void)
  					if(!PsychPrefStateGet_SuppressAllWarnings()) {
  	    					printf("PTB-ERROR: Failed to disable realtime-scheduling with Priority(%i) [%s]!\n", schedulingparam.sched_priority, strerror(errno));
  						if (errno==EPERM) {
