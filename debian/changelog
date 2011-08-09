@@ -1,3 +1,11 @@
+psychtoolbox-3 (3.0.9+svn2230.dfsg1-1) UNRELEASED; urgency=low
+
+  * New upstream point release
+  * gfortran into build-depends to assure noise-less operation of
+    mkoctfile
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 09 Aug 2011 14:25:00 -0400
+
 psychtoolbox-3 (3.0.9+svn2167.dfsg1-1) UNRELEASED; urgency=low
 
   * New upstream point release (aiming at becoming a beta):

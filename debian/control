@@ -6,6 +6,7 @@ Uploaders: Yaroslav Halchenko <debian@onerussian.com>, Michael Hanke <michael.ha
 Build-Depends: debhelper (>= 7.0.50~), rsync,
                matlab-support-dev,
                octave-pkg-dev (>= 0.5.7),
+               gfortran,
                libpciaccess-dev,
                libxml2-dev,
                libglib2.0-dev,
