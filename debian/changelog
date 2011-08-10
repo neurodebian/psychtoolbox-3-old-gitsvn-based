@@ -5,6 +5,8 @@ psychtoolbox-3 (3.0.9+svn2230.dfsg1-1) UNRELEASED; urgency=low
     mkoctfile
   * Enabled building of moalcore.mex and PsychHID.mex for octave
     (libopenal-dev into build-Depends)
+  * Build-Depend on 1.6 (instead of 1.5) version of GLEW to enable
+    OML_sync_control extension
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 09 Aug 2011 14:25:00 -0400
 
