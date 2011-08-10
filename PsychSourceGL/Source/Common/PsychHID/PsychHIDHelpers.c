@@ -3,10 +3,11 @@
   
   PROJECTS: PsychHID
   
-  PLATFORMS:  OSX
+  PLATFORMS:  All
   
   AUTHORS:
-  Allen.Ingling@nyu.edu		awi 
+  Allen.Ingling@nyu.edu             awi 
+  mario.kleiner@tuebingen.mpg.de    mk
       
   HISTORY:
   5/05/03  awi		Created.
@@ -19,6 +20,20 @@
 */
 
 #include "PsychHID.h"
+
+#if PSYCH_SYSTEM != PSYCH_OSX
+
+// Global variable which holds a reference to the last
+// accessed hid_device* on non-OS/X. This is for error
+// handling:
+hid_device* last_hid_device = NULL;
+
+// List with all known low level USB-HID devices from enumeration:
+struct hid_device_info* hidlib_devices = NULL;
+pRecDevice hid_devices = NULL;
+hid_device* source[MAXDEVICEINDEXS];
+
+#endif
 
 // Tracker used to maintain references to open generic USB devices.
 // PsychUSBDeviceRecord is currently defined in PsychHID.h.
@@ -37,6 +52,9 @@ void PsychInitializePsychHID(void)
 	for (i = 0; i < PSYCH_HID_MAX_GENERIC_USB_DEVICES; i++) {
 		usbDeviceRecordBank[i].valid = 0;
 	}
+
+	// Initialize OS specific interfaces and routines:
+	PsychHIDInitializeHIDStandardInterfaces();
 
 	return;
 }
@@ -93,6 +111,111 @@ void PsychHIDCloseAllUSBDevices(void)
 }
 
 /*
+    PsychHIDCleanup() 
+    
+    Cleanup before flushing the mex file.   
+*/
+PsychError PsychHIDCleanup(void) 
+{
+	long error;
+	pRecDevice curdev = NULL;
+    
+	// Disable online help system:
+	PsychClearGiveHelp();
+	
+	// Shutdown keyboard queue functions on OS/X:
+	#if PSYCH_SYSTEM == PSYCH_OSX
+	error = PSYCHHIDKbQueueRelease();	// PsychHIDKbQueueRelease.c, but has to be called with uppercase PSYCH because that's how it's registered (otherwise crashes on clear mex)
+	#endif
+    
+	// Shutdown USB-HID report low-level functions, e.g., for DAQ toolbox on OS/X:
+	error = PsychHIDReceiveReportsCleanup(); // PsychHIDReceiveReport.c
+	
+	// Release all other HID device data structures:
+	#if PSYCH_SYSTEM == PSYCH_OSX
+	// Via Apple HIDUtils:
+        if(HIDHaveDeviceList()) HIDReleaseDeviceList();
+	#else        
+        // Then our high-level list:
+        while (hid_devices) {
+            // Get current device record to release:
+            curdev = hid_devices;
+            
+            // Advance to the next one for next loop iteration:
+            hid_devices = hid_devices->pNext;
+            
+            // Interface attached aka device opened? If so we need to close the device handle:
+            if (curdev->interface) hid_close((hid_device*) curdev->interface);
+            
+            // Release:
+            free(curdev);
+        }
+        
+        // Reset last hid device for error handling:
+        last_hid_device = NULL;
+        
+        // Last the HIDLIB low-level list: This will also trigger
+        // HIDAPI shutdown and cleanup:
+        if (hidlib_devices) hid_free_enumeration(hidlib_devices);
+        hidlib_devices = NULL;
+	#endif
+    
+	// Close and release all open generic USB devices:
+	PsychHIDCloseAllUSBDevices();
+
+	// Shutdown os specific interfaces and routines:
+	PsychHIDShutdownHIDStandardInterfaces();
+
+	return(PsychError_none);
+}
+
+/* 
+    PsychHIDGetDeviceRecordPtrFromIndex()
+    
+    The inverse of PsychHIDGetIndexFromRecord()
+    
+    Accept the index from the list of device records and return a pointer to the indicated record.  Externally the list is one-indexed.  
+*/
+pRecDevice PsychHIDGetDeviceRecordPtrFromIndex(int deviceIndex)
+{
+    int				i;
+    pRecDevice 		currentDevice=NULL;
+
+    PsychHIDVerifyInit();
+    i=1;
+    for(currentDevice=HIDGetFirstDevice(); currentDevice != NULL; currentDevice=HIDGetNextDevice(currentDevice)){    
+        if(i==deviceIndex) {
+            #if PSYCH_SYSTEM != PSYCH_OSX
+                if (!currentDevice->interface) {
+                    currentDevice->interface = (void*) hid_open_path(currentDevice->transport);
+                    if (!currentDevice->interface) PsychErrorExitMsg(PsychError_system, "HIDLIB Failed to open USB device!");
+
+                    // Set read ops on device to non-blocking:
+                    hid_set_nonblocking((hid_device*) currentDevice->interface, 1);
+                }
+            #endif
+            return(currentDevice);
+        }
+        ++i;
+    }
+    
+    PsychErrorExitMsg(PsychError_internal, "Invalid device index specified.  Has a device has been unplugged? Try rebuilding the device list");
+    return(NULL);  //make the compiler happy.
+}
+
+#if PSYCH_SYSTEM == PSYCH_OSX
+
+void PsychHIDInitializeHIDStandardInterfaces(void)
+{
+    return;
+}
+
+void PsychHIDShutdownHIDStandardInterfaces(void)
+{
+    return;
+}
+
+/*
     PSYCHHIDCheckInit() 
     
     Check to see if we need to create the USB-HID device list. If it has not been created then create it.   
@@ -125,60 +248,7 @@ psych_bool PsychHIDWarnInputDisabled(const char* callerName)
 }
 
 /*
-    PsychHIDCleanup() 
-    
-    Cleanup before flushing the mex file.   
-*/
-PsychError PsychHIDCleanup(void) 
-{
-	long error;
-
-	// Disable online help system:
-	PsychClearGiveHelp();
-	
-	// Shutdown keyboard queue functions on OS/X:
-	error=PSYCHHIDKbQueueRelease();			// PsychHIDKbQueueRelease.c, but has to be called with uppercase PSYCH because that's how it's registered (otherwise crashes on clear mex)
-
-	// Shutdown USB-HID report low-level functions, e.g., for DAQ toolbox on OS/X:
-	error=PsychHIDReceiveReportsCleanup(); // PsychHIDReceiveReport.c
-	
-	// Release all other HID device data structures:
-    if(HIDHaveDeviceList())HIDReleaseDeviceList();
-	
-	// Close and release all open generic USB devices:
-	PsychHIDCloseAllUSBDevices();
-
-    return(PsychError_none);
-}
-
-/* 
-    PsychHIDGetDeviceRecordPtrFromIndex()
-    
-    The inverse of PsychHIDGetIndexFromRecord()
-    
-    Accept the index from the list of device records and return a pointer to the indicated record.  Externally the list is one-indexed.  
-*/
-pRecDevice PsychHIDGetDeviceRecordPtrFromIndex(int deviceIndex)
-{
-    int				i;
-    pRecDevice 			currentDevice=NULL;
-
-    PsychHIDVerifyInit();
-    i=1;
-    for(currentDevice=HIDGetFirstDevice(); currentDevice != NULL; currentDevice=HIDGetNextDevice(currentDevice)){    
-        if(i==deviceIndex)
-            return(currentDevice);
-        ++i;
-    }
-    PsychErrorExitMsg(PsychError_internal, "Invalid device index specified.  Has a device has been unplugged? Try rebuilding the device list");
-    return(NULL);  //make the compiler happy.
-}
-
-
-/*
     PsychHIDGetDeviceListByUsage()
-    
-    
 */ 
 void PsychHIDGetDeviceListByUsage(long usagePage, long usage, int *numDeviceIndices, int *deviceIndices, pRecDevice *deviceRecords)
 {
@@ -199,9 +269,7 @@ void PsychHIDGetDeviceListByUsage(long usagePage, long usage, int *numDeviceIndi
 }
  
 /*
- PsychHIDGetDeviceListByUsages()
- 
- 
+    PsychHIDGetDeviceListByUsages()
  */ 
 void PsychHIDGetDeviceListByUsages(int numUsages, long *usagePages, long *usages, int *numDeviceIndices, int *deviceIndices, pRecDevice *deviceRecords)
 {
@@ -225,8 +293,6 @@ void PsychHIDGetDeviceListByUsages(int numUsages, long *usagePages, long *usages
 		}
 	}
 }
-
-
 
 
 /*
@@ -264,7 +330,6 @@ int PsychHIDGetIndexFromRecord(pRecDevice deviceRecord, pRecElement elementRecor
 }
 
 
-
 pRecElement PsychHIDGetElementRecordFromDeviceRecordAndElementIndex(pRecDevice deviceRecord, int elementIndex)
 {
     int				i;
@@ -286,7 +351,6 @@ pRecElement PsychHIDGetElementRecordFromDeviceRecordAndElementIndex(pRecDevice d
 }
 
 
-
 pRecElement PsychHIDGetCollectionRecordFromDeviceRecordAndCollectionIndex(pRecDevice deviceRecord, int elementIndex)
 {
     int				i;
@@ -306,7 +370,6 @@ pRecElement PsychHIDGetCollectionRecordFromDeviceRecordAndCollectionIndex(pRecDe
     return(NULL);  //make the compiler happy.
 
 }
-
 
 
 /*
@@ -387,7 +450,6 @@ void PsychHIDGetTypeMaskStringFromTypeMask(HIDElementTypeMask maskValue, char **
 }
 
 
-
 /*
     PsychHIDCountCollectionElements()
     
@@ -412,8 +474,6 @@ int PsychHIDCountCollectionElements(pRecElement collectionRecord, HIDElementType
     }
     return(numElements);
 }
-
-
 
 
 /*
@@ -444,3 +504,85 @@ int PsychHIDFindCollectionElements(pRecElement collectionRecord, HIDElementTypeM
     return(numElements);
 }
 	
+#else
+
+/* Linux and MS-Windows support via HIDLIB: */
+/* ======================================== */
+
+/*
+    PSYCHHIDCheckInit() 
+    
+    Check to see if we need to create the USB-HID device list. If it has not been created then create it.   
+*/
+void PsychHIDVerifyInit(void)
+{
+    int busId, devId, intId;
+    pRecDevice currentDevice = NULL;
+    struct hid_device_info* hid_dev = NULL;
+    
+    // If hid_devices list of all HID devices not yet initialized,
+    // perform device enumeration:
+    if (!hidlib_devices) {        
+        // Low-Level enumeration by HIDLIB:
+        hidlib_devices = hid_enumerate(0x0, 0x0);
+        
+        // Build our own higher-level device list filled with info
+        // from the low-level list:
+        for (hid_dev = hidlib_devices; hid_dev != NULL; hid_dev = hid_dev->next) {
+            // Allocate and zero-init high level struct currentDevice:
+            currentDevice = calloc(1, sizeof(recDevice));
+            
+            // Copy low-level props to corresponding high-level props:
+            currentDevice->usagePage = hid_dev->usage_page;
+            currentDevice->usage = hid_dev->usage;
+            // Abuse the "transport" string for the device path. On OS/X this just contains "USB":
+            sprintf(&currentDevice->transport[0], "%s", hid_dev->path);
+            currentDevice->vendorID = hid_dev->vendor_id;
+            currentDevice->productID = hid_dev->product_id;
+            currentDevice->version = hid_dev->release_number;
+            if (hid_dev->manufacturer_string) wcstombs(&currentDevice->manufacturer[0], hid_dev->manufacturer_string, 256);
+            if (hid_dev->product_string) wcstombs(&currentDevice->product[0], hid_dev->product_string, 256);
+            if (hid_dev->serial_number) wcstombs(&currentDevice->serial[0], hid_dev->serial_number, 256);
+
+            // Convert unique device path into unique numeric location id:
+            sscanf(hid_dev->path, "%i:%i:%i", &busId, &devId, &intId);
+            currentDevice->locID = busId * 1000000 + devId * 100 + intId;
+
+            // Interface number is great for identifying DAQ devices, but not available
+            // on OS/X, so this will be a Linux/Windows only thing.
+            currentDevice->interfaceId = hid_dev->interface_number;
+
+            // Enqueue record into linked list:
+            currentDevice->pNext = hid_devices;
+            hid_devices = currentDevice;
+        }
+    }
+    
+    return;
+}
+
+pRecDevice HIDGetFirstDevice(void)
+{
+    return hid_devices;
+}
+
+pRecDevice HIDGetNextDevice(pRecDevice pDevice)
+{
+    return pDevice->pNext;
+}
+
+/* HIDCountDevices(): Return count of all enumerated HID devices: */
+psych_uint32 HIDCountDevices(void)
+{
+    pRecDevice cur_dev = hid_devices;
+    psych_uint32 count = 0;
+    
+    while (cur_dev) {
+        count++;
+        cur_dev = cur_dev->pNext;
+    }
+    
+    return count;
+}
+
+#endif

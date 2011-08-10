@@ -18,6 +18,8 @@
 
 #include "PsychHID.h"
 
+#if PSYCH_SYSTEM == PSYCH_OSX
+
 static char useString[]= "numberOfCollections=PsychHID('NumCollections', deviceNumber)";
 static char synopsisString[] = 
         "Return the the number of collections on the specified USB HID device.  A collection is "
@@ -47,7 +49,4 @@ PsychError PSYCHHIDGetNumCollections(void)
     return(PsychError_none);	
 }
 
-
-
-
-
+#endif

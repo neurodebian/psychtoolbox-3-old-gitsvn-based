@@ -6,13 +6,14 @@ Uploaders: Yaroslav Halchenko <debian@onerussian.com>, Michael Hanke <michael.ha
 Build-Depends: debhelper (>= 7.0.50~), rsync,
                matlab-support-dev,
                octave-pkg-dev (>= 0.5.7),
+               gfortran,
                libpciaccess-dev,
                libxml2-dev,
                libglib2.0-dev,
                libxxf86vm-dev,
                libglu1-mesa-dev,
                libxext-dev,
-               libglew-dev | libglew1.5-dev,
+               libglew-dev (>= 1.6.0) | libglew1.6-dev,
                freeglut3-dev,
                libgstreamer-plugins-base0.10-dev,
                libraw1394-dev,
@@ -21,7 +22,8 @@ Build-Depends: debhelper (>= 7.0.50~), rsync,
                libfreenect-dev,
                libfontconfig1-dev,
                libfreetype6-dev,
-               libasound2-dev
+               libasound2-dev,
+               libopenal-dev,
 Standards-Version: 3.9.1
 Homepage: http://psychtoolbox.org
 Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/psychtoolbox-3.git

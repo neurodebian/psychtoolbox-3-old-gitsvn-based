@@ -211,6 +211,17 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 	struct pci_mem_region *region;
 	int ret;
 	int screenId = 0;
+	int currentgpuidx = 0, targetgpuidx = -1;
+
+	// A bit of a hack for now: Allow user to select which gpu in a multi-gpu
+	// system should be used for low-level mmio based features. If the environment
+	// variable PSYCH_USE_GPUIDX is set to a number, it will try to use that GPU:
+	// TODO: Replace this by true multi-gpu support and - far in the future? -
+	// automatic mapping of screens to gpu's:
+	if (getenv("PSYCH_USE_GPUIDX")) {
+		targetgpuidx = atoi(getenv("PSYCH_USE_GPUIDX"));
+		if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: Will try to use GPU number %i for low-level access during this session.\n", targetgpuidx);
+	}
 
 	// Safe-guard:
 	if (gfx_cntl_mem || gpu) {
@@ -246,8 +257,19 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			// dev is our current candidate gpu. Matching vendor?
 			if (dev->vendor_id == PCI_VENDOR_ID_NVIDIA || dev->vendor_id == PCI_VENDOR_ID_ATI || dev->vendor_id == PCI_VENDOR_ID_AMD || dev->vendor_id == PCI_VENDOR_ID_INTEL) {
 				// Yes. This is our baby from NVidia or ATI/AMD or Intel:
-				gpu = dev;
-				break;
+
+				// Select the targetgpuidx'th detected gpu:
+				// TODO: Replace this hack by true multi-gpu support and - far in the future? -
+				// automatic mapping of screens to gpu's:
+				if (currentgpuidx >= targetgpuidx) {
+					if ((PsychPrefStateGet_Verbosity() > 2) && (targetgpuidx >= 0)) printf("PTB-INFO: Choosing GPU number %i for low-level access during this session.\n", currentgpuidx);
+
+					// Assign as gpu:
+					gpu = dev;
+					break;
+				}
+
+				currentgpuidx++;
 			}
 		}
 	}
@@ -288,14 +310,14 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			// BAR 0 is MMIO:
 			region = &gpu->regions[0];
 			fDeviceType = kPsychGeForce;
-            fNumDisplayHeads = 2;
+			fNumDisplayHeads = 2;
 		}
 
 		if (gpu->vendor_id == PCI_VENDOR_ID_ATI || gpu->vendor_id == PCI_VENDOR_ID_AMD) {
 			// BAR 2 is MMIO:
 			region = &gpu->regions[2];
 			fDeviceType = kPsychRadeon;
-            fNumDisplayHeads = 2;
+			fNumDisplayHeads = 2;
 		}
 		
 		if (gpu->vendor_id == PCI_VENDOR_ID_INTEL) {
@@ -310,7 +332,7 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			}
 
 			fDeviceType = kPsychIntelIGP;
-            fNumDisplayHeads = 2;
+			fNumDisplayHeads = 2;
 		}
 
 		// Try to MMAP MMIO registers with write access, assign their base address to gfx_cntl_mem on success:
@@ -354,17 +376,17 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 		}
 		
 		if (fDeviceType == kPsychRadeon) {
-            // On Radeons we distinguish between Avivo (10) or DCE-4 style (40) or DCE-5 (50) for now.
+			// On Radeons we distinguish between Avivo (10) or DCE-4 style (40) or DCE-5 (50) for now.
 			fCardType = isDCE5(screenId) ? 50 : (isDCE4(screenId) ? 40 : 10);
             
 			// On DCE-4 and later GPU's (Evergreen) we limit the minimum MMIO
 			// offset to the base address of the 1st CRTC register block for now:
 			if (isDCE4(screenId) || isDCE5(screenId)) {
-                gfx_lowlimit = 0x6df0;
+				gfx_lowlimit = 0x6df0;
                 
-                // Also, DCE-4 supports up to six display heads:
-                fNumDisplayHeads = 6;
-            }
+				// Also, DCE-4 supports up to six display heads:
+				fNumDisplayHeads = 6;
+			}
 			
 			if (PsychPrefStateGet_Verbosity() > 2) {
 				printf("PTB-INFO: Connected to %s %s GPU with %s display engine. Beamposition timestamping enabled.\n", pci_device_get_vendor_name(gpu), pci_device_get_device_name(gpu), (fCardType >= 40) ? ((fCardType >= 50) ? "DCE-5" : "DCE-4") : "AVIVO");
@@ -379,8 +401,8 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			}
 		}
 
-        // Perform auto-detection of screen to head mappings:
-        PsychAutoDetectScreenToHeadMappings(fNumDisplayHeads);
+		// Perform auto-detection of screen to head mappings:
+		PsychAutoDetectScreenToHeadMappings(fNumDisplayHeads);
 
 		// Ready to rock!
 	} else {
@@ -402,6 +424,7 @@ static CFDictionaryRef	        displayOriginalCGSettings[kPsychMaxPossibleDispla
 static psych_bool		displayOriginalCGSettingsValid[kPsychMaxPossibleDisplays];
 static CFDictionaryRef	        displayOverlayedCGSettings[kPsychMaxPossibleDisplays];        	//these track settings overlayed with 'Resolutions'.  
 static psych_bool		displayOverlayedCGSettingsValid[kPsychMaxPossibleDisplays];
+static psych_bool               displayBeampositionHealthy[kPsychMaxPossibleDisplays];
 static CGDisplayCount 		numDisplays;
 
 // displayCGIDs stores the X11 Display* handles to the display connections of each PTB logical screen:
@@ -409,6 +432,11 @@ static CGDirectDisplayID 	displayCGIDs[kPsychMaxPossibleDisplays];
 // displayX11Screens stores the mapping of PTB screenNumber's to corresponding X11 screen numbers:
 static int                      displayX11Screens[kPsychMaxPossibleDisplays];
 static psych_bool               displayCursorHidden[kPsychMaxPossibleDisplays];
+
+// XInput-2 extension data per display:
+static int                      xi_opcode = 0, xi_event = 0, xi_error = 0;
+static int                      xinput_ndevices[kPsychMaxPossibleDisplays];
+static XIDeviceInfo*            xinput_info[kPsychMaxPossibleDisplays];
 
 // X11 has a different - and much more powerful and flexible - concept of displays than OS-X or Windows:
 // One can have multiple X11 connections to different logical displays. A logical display corresponds
@@ -477,7 +505,10 @@ void InitializePsychDisplayGlue(void)
         displayLockSettingsFlags[i]=FALSE;
         displayOriginalCGSettingsValid[i]=FALSE;
         displayOverlayedCGSettingsValid[i]=FALSE;
-		displayCursorHidden[i]=FALSE;
+	displayCursorHidden[i]=FALSE;
+	displayBeampositionHealthy[i]=TRUE;
+	xinput_ndevices[i]=0;
+	xinput_info[i]=NULL;
     }
     
 	if (firstTime) {
@@ -505,9 +536,44 @@ void InitializePsychDisplayGlue(void)
     InitPsychtoolboxKernelDriverInterface();
 }
 
+static void InitXInputExtensionForDisplay(CGDirectDisplayID dpy, int idx)
+{
+  int major, minor;
+  int rc, i;
+
+  // XInputExtension supported? If so do basic init:
+  if (!XQueryExtension(dpy, "XInputExtension", &xi_opcode, &xi_event, &xi_error)) {
+    printf("PTB-WARNING: XINPUT1/2 extension unsupported. Will only be able to handle one mouse and mouse cursor.\n");
+    goto out;
+  }
+
+  // XInput V 2.0 or later supported?
+  major = 2;
+  minor = 0;
+  rc = XIQueryVersion(dpy, &major, &minor);
+  if (rc == BadRequest) {
+    printf("PTB-WARNING: No XInput-2 support. Server supports version %d.%d only.\n", major, minor);
+    printf("PTB-WARNING: XINPUT1/2 extension unsupported. Will only be able to handle one mouse and mouse cursor.\n");
+    goto out;
+  } else if (rc != Success) {
+    printf("PTB-ERROR: Internal error during XInput-2 extension init sequence! This is a bug in Xlib!\n");
+    printf("PTB-WARNING: XINPUT1/2 extension unsupported. Will only be able to handle one mouse and mouse cursor.\n");
+    goto out;
+  }
+
+  // printf("PsychHID: INFO: XI2 supported. Server provides version %d.%d.\n", major, minor);
+
+  // Enumerate all XI2 input devices for this x-display:
+  xinput_info[idx] = XIQueryDevice(dpy, XIAllDevices, &xinput_ndevices[idx]);
+
+out:
+  return;
+}
+
 void InitCGDisplayIDList(void)
 {  
-  int i, j, k, count, scrnid;
+  int major, minor;
+  int rc, i, j, k, count, scrnid;
   char* ptbdisplays = NULL;
   char displayname[1000];
   CGDirectDisplayID x11_dpy = NULL;
@@ -544,6 +610,15 @@ void InitCGDisplayIDList(void)
 
 	  // Set the screenNumber --> X11 display mappings up:
 	  for (k=numDisplays; (k<numDisplays + count) && (k<kPsychMaxPossibleDisplays); k++) {
+	    if (k == numDisplays) {
+		// 1st entry for this x-display: Init XInput2 extension for it:
+		InitXInputExtensionForDisplay(x11_dpy, numDisplays);
+	    } else {
+		// Successive entry. Copy info from 1st entry:
+		xinput_info[k] = xinput_info[numDisplays];
+		xinput_ndevices[k] = xinput_ndevices[numDisplays];
+	    }
+
 	    // Mapping of logical screenNumber to X11 Display:
 	    displayCGIDs[k]= x11_dpy;
 	    // Mapping of logical screenNumber to X11 screenNumber for X11 Display:
@@ -584,18 +659,65 @@ void InitCGDisplayIDList(void)
     // Query number of available screens on this X11 display:
     count=ScreenCount(x11_dpy);
 
+    InitXInputExtensionForDisplay(x11_dpy, 0);
+
     // Set the screenNumber --> X11 display mappings up:
-    for (i=0; i<count && i<kPsychMaxPossibleDisplays; i++) { displayCGIDs[i]= x11_dpy; displayX11Screens[i]=i; }
+    for (i=0; i<count && i<kPsychMaxPossibleDisplays; i++) {
+	displayCGIDs[i]= x11_dpy;
+	displayX11Screens[i]=i;
+	xinput_info[i] = xinput_info[0];
+	xinput_ndevices[i] = xinput_ndevices[0];
+    }
     numDisplays=i;
   }
 
   if (numDisplays>1) printf("PTB-Info: A total of %i physical X-Windows display screens is available for use.\n", numDisplays);
-  fflush(NULL);
 
   // Initialize screenId -> GPU headId mapping:
   PsychInitScreenToHeadMappings(numDisplays);
 
   return;
+}
+
+void PsychCleanupDisplayGlue(void)
+{
+	CGDirectDisplayID dpy, last_dpy;
+	int i;
+
+	last_dpy = NULL;
+	// Go trough full screen list:
+	for (i=0; i < PsychGetNumDisplays(); i++) {
+	  // Get display-ptr for this screen:
+	  PsychGetCGDisplayIDFromScreenNumber(&dpy, i);
+
+	  // Did we close this connection already (dpy==last_dpy)?
+	  if (dpy != last_dpy) {
+	    // Nope. Keep track of it...
+	    last_dpy=dpy;
+	    // ...and close display connection to X-Server:
+	    XCloseDisplay(dpy);
+
+	    // Release actual xinput info list for this x11 display connection:
+	    if (xinput_info[i]) {
+		XIFreeDeviceInfo(xinput_info[i]);
+	    }
+	  }
+
+	  // NULL-Out xinput extension data:
+	  xinput_info[i] = NULL;
+	  xinput_ndevices[i] = 0;
+	}
+
+	// All connections should be closed now. We can't NULL-out the display list, but
+	// Matlab will flush the Screen - Mexfile anyway...
+	return;
+}
+
+XIDeviceInfo* PsychGetInputDevicesForScreen(int screenNumber, int* nDevices)
+{
+  if(screenNumber >= numDisplays) PsychErrorExit(PsychError_invalidScumber);
+  if (nDevices) *nDevices = xinput_ndevices[screenNumber];
+  return(xinput_info[screenNumber]);
 }
 
 int PsychGetXScreenIdForScreen(int screenNumber)
@@ -1142,7 +1264,7 @@ psych_bool PsychRestoreScreenSettings(int screenNumber)
 }
 
 
-void PsychHideCursor(int screenNumber)
+void PsychHideCursor(int screenNumber, int deviceIdx)
 {
   // Static "Cursor" object which defines a completely transparent - and therefore invisible
   // X11 cursor for the mouse-pointer.
@@ -1152,7 +1274,7 @@ void PsychHideCursor(int screenNumber)
   if(screenNumber>=numDisplays) PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychHideCursor() is out of range"); //also checked within SCREENPixelSizes
 
   // Cursor already hidden on screen? If so, nothing to do:
-  if(displayCursorHidden[screenNumber]) return;
+  if ((deviceIdx < 0) && displayCursorHidden[screenNumber]) return;
 
   // nullCursor already ready?
   if( nullCursor == (Cursor) -1 ) {
@@ -1174,37 +1296,85 @@ void PsychHideCursor(int screenNumber)
     XFreeGC(displayCGIDs[screenNumber], gc );
   }
 
-  // Attach nullCursor to our onscreen window:
-  XDefineCursor(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), nullCursor );
-  XFlush(displayCGIDs[screenNumber]);
-  displayCursorHidden[screenNumber]=TRUE;
+  if (deviceIdx < 0) {
+	  // Attach nullCursor to our onscreen window:
+	  XDefineCursor(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), nullCursor );
+	  XFlush(displayCGIDs[screenNumber]);
+	  displayCursorHidden[screenNumber]=TRUE;
+  } else {
+	// XInput cursor: Master pointers only.
+	int nDevices;
+	XIDeviceInfo* indevs = PsychGetInputDevicesForScreen(screenNumber, &nDevices);
+
+	// Sanity check:
+	if (NULL == indevs) PsychErrorExitMsg(PsychError_user, "Sorry, your system does not support individual mouse pointers.");
+	if (deviceIdx >= nDevices) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such cursor pointer.");
+	if (indevs[deviceIdx].use != XIMasterPointer) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such master cursor pointer.");
+
+	// Attach nullCursor to our onscreen window:
+	XIDefineCursor(displayCGIDs[screenNumber], indevs[deviceIdx].deviceid, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), nullCursor);
+	XFlush(displayCGIDs[screenNumber]);
+  }
 
   return;
 }
 
-void PsychShowCursor(int screenNumber)
+void PsychShowCursor(int screenNumber, int deviceIdx)
 {
   Cursor arrowCursor;
 
   // Check for valid screenNumber:
   if(screenNumber>=numDisplays) PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychHideCursor() is out of range"); //also checked within SCREENPixelSizes
 
-  // Cursor not hidden on screen? If so, nothing to do:
-  if(!displayCursorHidden[screenNumber]) return;
+  if (deviceIdx < 0) {
+	// Cursor not hidden on screen? If so, nothing to do:
+	if(!displayCursorHidden[screenNumber]) return;
 
-  // Reset to standard Arrow-Type cursor, which is a visible one.
-  arrowCursor = XCreateFontCursor(displayCGIDs[screenNumber], 2);
-  XDefineCursor(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), arrowCursor);
-  XFlush(displayCGIDs[screenNumber]);
-  displayCursorHidden[screenNumber]=FALSE;
+	// Reset to standard Arrow-Type cursor, which is a visible one.
+	arrowCursor = XCreateFontCursor(displayCGIDs[screenNumber], 2);
+	XDefineCursor(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), arrowCursor);
+	XFlush(displayCGIDs[screenNumber]);
+	displayCursorHidden[screenNumber]=FALSE;
+  } else {
+	// XInput cursor: Master pointers only.
+	int nDevices;
+	XIDeviceInfo* indevs = PsychGetInputDevicesForScreen(screenNumber, &nDevices);
+
+	// Sanity check:
+	if (NULL == indevs) PsychErrorExitMsg(PsychError_user, "Sorry, your system does not support individual mouse pointers.");
+	if (deviceIdx >= nDevices) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such cursor pointer.");
+	if (indevs[deviceIdx].use != XIMasterPointer) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such master cursor pointer.");
+
+	// Reset to standard Arrow-Type cursor, which is a visible one.
+	arrowCursor = XCreateFontCursor(displayCGIDs[screenNumber], 2);
+	XIDefineCursor(displayCGIDs[screenNumber], indevs[deviceIdx].deviceid, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), arrowCursor);
+	XFlush(displayCGIDs[screenNumber]);
+  }
 }
 
-void PsychPositionCursor(int screenNumber, int x, int y)
+void PsychPositionCursor(int screenNumber, int x, int y, int deviceIdx)
 {
   // Reposition the mouse cursor:
-  if (XWarpPointer(displayCGIDs[screenNumber], None, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), 0, 0, 0, 0, x, y)==BadWindow) {
-    PsychErrorExitMsg(PsychError_internal, "Couldn't position the mouse cursor! (XWarpPointer() failed).");
+  if (deviceIdx < 0) {
+	// Core protocol cursor:
+	if (XWarpPointer(displayCGIDs[screenNumber], None, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), 0, 0, 0, 0, x, y)==BadWindow) {
+			  PsychErrorExitMsg(PsychError_internal, "Couldn't position the mouse cursor! (XWarpPointer() failed).");
+	}
+  } else {
+	// XInput cursor: Master pointers only.
+	int nDevices;
+	XIDeviceInfo* indevs = PsychGetInputDevicesForScreen(screenNumber, &nDevices);
+
+	// Sanity check:
+	if (NULL == indevs) PsychErrorExitMsg(PsychError_user, "Sorry, your system does not support individual mouse pointers.");
+	if (deviceIdx >= nDevices) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such cursor pointer.");
+	if (indevs[deviceIdx].use != XIMasterPointer) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such master cursor pointer.");
+
+	if (XIWarpPointer(displayCGIDs[screenNumber], indevs[deviceIdx].deviceid, None, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), 0, 0, 0, 0, x, y)) {
+			  PsychErrorExitMsg(PsychError_internal, "Couldn't position the mouse cursor! (XIWarpPointer() failed).");
+	}
   }
+
   XFlush(displayCGIDs[screenNumber]);
 }
 
@@ -1286,17 +1456,19 @@ unsigned int PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, flo
 //
 int PsychGetDisplayBeamPosition(CGDirectDisplayID cgDisplayId, int screenNumber)
 {
+
 	// Beamposition queries aren't supported by the X11 graphics system.
 	// However, for gfx-hardware where we have reliable register specs, we
 	// can do it ourselves, bypassing the X server.
 	
 	// On systems that we can't handle, we return -1 as an indicator
 	// to high-level routines that we don't know the rasterbeam position.
+	double tdeadline, tnow;
 	int vblbias, vbltotal;
 	int beampos = -1;
 
 	// Get beamposition from low-level driver code:
-	if (PsychOSIsKernelDriverAvailable(screenNumber)) {
+	if (PsychOSIsKernelDriverAvailable(screenNumber) && displayBeampositionHealthy[screenNumber]) {
 		// Is application of the beamposition workaround requested by high-level code?
 		// Or is this a NVidia GPU? In the latter case we always use the workaround,
 		// because many NVidia GPU's (especially pre NV-50 hardware) need this in many
@@ -1306,7 +1478,36 @@ int PsychGetDisplayBeamPosition(CGDirectDisplayID cgDisplayId, int screenNumber)
 		    (fDeviceType == kPsychGeForce)) {
 			// Yes: Avoid queries that return zero -- If query result is zero, retry
 			// until it becomes non-zero: Some hardware may needs this to resolve...
-			while (0 == (beampos = PsychOSKDGetBeamposition(screenNumber)));
+			// We use a timeout of 100 msecs though to prevent hangs if we try to
+			// query a disabled crtc's scanout position or similar bad things happen...
+			PsychGetPrecisionTimerSeconds(&tdeadline);
+			tdeadline += 0.1;
+			while (0 == (beampos = PsychOSKDGetBeamposition(screenNumber))) {
+				PsychGetPrecisionTimerSeconds(&tnow);
+				if (tnow > tdeadline) {
+					// Trouble: Hanging here for more than 100 msecs?
+					// This display head is dead. Output a info to the user
+					// and disable it for further beamposition queries.
+					displayBeampositionHealthy[screenNumber] = FALSE;
+					beampos = -1;
+
+					if (PsychPrefStateGet_Verbosity() > 1) {
+						printf("PTB-WARNING: Hang in beamposition query detected! Seems my mapping of screen numbers to GPU's and display outputs is wrong?\n");
+						printf("PTB-WARNING: In a single GPU system you can resolve this by plugging in your monitors in a different order, changing the\n");
+						printf("PTB-WARNING: display arrangement in the control panel, or using the Screen('Preference', 'ScreenToHead', screenId [, newHeadId]);\n");
+						printf("PTB-WARNING: command at the top of your scripts to set the mapping manually.\n");
+						printf("PTB-WARNING: \n");
+						printf("PTB-WARNING: I am not yet able to handle multi-GPU systems reliably at all. If you have such a system it may work if\n");
+						printf("PTB-WARNING: you plug your monitor(s) into one of the other GPU's output connectors, trying different combinations.\n");
+						printf("PTB-WARNING: Or you simply live without high precision stimulus onset timestamping for now. Or you use the free and open-source\n");
+						printf("PTB-WARNING: graphics drivers (intel, radeon, or nouveau) instead of the proprietary Catalyst or NVidia binary drivers.\n");
+						printf("PTB-WARNING: I've disabled high precision timestamping for this screen for the remainder of the session.\n\n");
+						fflush(NULL);
+					}
+
+					break;
+				}
+			}
 		} else {
 			// Read final beampos:
 			beampos = PsychOSKDGetBeamposition(screenNumber);

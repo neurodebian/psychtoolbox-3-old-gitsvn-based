@@ -39,7 +39,7 @@ build-stamp:
 	: #  3  dependent on portaudio above
 	: #  4  libeyelink -- non-distributable binary blob with open-sourced API
 	cd PsychSourceGL/Source/; \
-		for mode in 0 1 2 3   5 6 7; do \
+		for mode in 0 1 2 3   5 6 7 8 9; do \
 		  octave -p $(CURDIR)/Psychtoolbox/PsychOneliners -q --eval "linuxmakeitoctave3_ubuntugutsy($$mode)" || exit 1; \
 	done
 
@@ -66,6 +66,8 @@ override_dh_auto_install:
 
 	: # Move .mex to reside alongside with .m to gain easy help in octave
 	mv $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles/* $(OCT_SHAREDDIR)/PsychBasic
+	: # But PsychHID must go into PsychHardware alongside with .m
+	mv $(OCT_SHAREDDIR)/PsychBasic/PsychHID.mex $(OCT_SHAREDDIR)/PsychHardware
 	rmdir $(OCT_SHAREDDIR)/PsychBasic/Octave3LinuxFiles
 
 	: # Move .mex binaries under /usr/lib and create symlinks file to point back

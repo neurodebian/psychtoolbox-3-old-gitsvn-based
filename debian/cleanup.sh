@@ -96,7 +96,7 @@ $RM -rf ./Psychtoolbox/PsychHardware/iViewXToolbox/tcp_udp_ip/tcpip*
 
 # to find more of non-sources and report them:
 echo "I: Various non-sources/data"
-find -regextype posix-egrep -type f ! -regex '.*\.(m(|at)|dat|c(|c|pp)|h|java|sh|txt|in|rtf|py|php|wav|png|jpg|JPG|tiff|html|mov|xml)' -ls | grep -v -e '\.git' -e '\.pc'
+find -regextype posix-egrep -type f ! -regex '.*\.(m(|at)|dat|c(|c|pp)|h|java|sh|txt|in|rtf|py|php|wav|bmp|png|jpg|JPG|tiff|html|mov|xml)' -ls | grep -v -e '\.git' -e '\.pc'
 
 # Look among executables:
 echo "I: Suspecious executables left"
