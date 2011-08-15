@@ -62,8 +62,12 @@
 %   den_lens_ws         - Relative lens density data (re 700 nm).  W&S, Table 1(2.4.6), p. 109.
 %                       -   This is the first data set in the table, not the Norren and Vos 
 %                       -   data.  It is for an open pupil.
-%   den_lens_ssf        - Stockman-Sharpe-Fach (1999) lens optical density spectrum.  See CVRL database.
-%   den_mac_bone        - Macular pigment density from Bone et al. (1992).  See CVRL database.
+%   den_lens_cie_1      - Part one of CIE component lens density function. CIE 170-1:2006, Table 6.10
+%   den_lens_cie_2      - Part two of CIE component lens density function. CIE 170-1:2006, Table 6.10
+%   den_lens_ssf        - Stockman-Sharpe-Fach (1999) lens optical density spectrum.
+%                       -   See CVRL database, CIE 170-1:2006, Table 6.10, 32 yo, pupil <= 3 degrees.
+%                       -   This is also the sum of den_lens_cie_1 and den_lens_cie_2
+%   den_mac_bone        - Macular pigment density from Bone et al. (1992).  See CVRL database, CIE 170-1:2006, Table 6.4, 2-deg.
 %   den_mac_vos         - Macular pigment density from Vos.  See CVRL database.
 %   den_mac_ws          - Macular pigment density from W&S, Table 2(2.4.6), p. 112.
 %   spd_appratusrel     - Relative spectrum from a monitor.  Used by IsomerizationInDishDemo.
@@ -84,8 +88,14 @@
 %   T_cones_sp          - Smith-Pokorny cone fundamentals.
 %   T_DCS200            - Sensitivities of a Kodak DCS-200 color camera.
 %   T_Lanom             - Demarco et al. anomolous L cone sensitivity.
+%   T_log10coneabsorbance_ss - Stockman-Sharpe (2000) log10 LMS cone photopigment absorbance.
+%                       -   See CVRL database, CIE 170-1:2006, Table 6.6.
+%                       -   Some S-cone values were unspecified for wls > 615 nm in the table.
+%                       -   These were filled in here by linear extrapolation.
+%                       -   Note that you want to raise 10 to these numbers
+%                       -   to get absorbance, which itself is a log-like quantity.
 %   T_Manom             - Demarco et al. anomolous M cone sensitivity.
-%   T_photopigment_ss   - Stockman-Sharpe (2000) L,M,S cone photopigment absorbances.  See CVRL database.
+%   T_photopigments_ss  - Removed.  Use T_log10coneabsorbance and raise 10 to it.
 %   T_rods              - CIE scotopic luminous efficiency function.
 %   T_stiles2           - Stiles 2-degree color matching functions.
 %   T_vos1978_Y         - Judd-Vos 1978 photopic luminance efficiency function.

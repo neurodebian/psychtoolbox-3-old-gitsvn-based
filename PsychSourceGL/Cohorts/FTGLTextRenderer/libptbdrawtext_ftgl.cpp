@@ -143,7 +143,7 @@ int PsychRebuildFont(void)
 	}
 
 	if (_useOwnFontmapper) {
-		FcResult result;
+		FcResult result = FcResultMatch; // Must init this due to weirdness in libfontconfig...
 		FcPattern* target = NULL;
 		
 		if (_fontName[0] == '-') {
@@ -169,7 +169,14 @@ int PsychRebuildFont(void)
 									 NULL);
 		}
 
+		// Set default settings for missing pattern properties:
 		FcDefaultSubstitute(target);
+		if (!FcConfigSubstitute(NULL, target, FcMatchPattern)) {
+			// Failed!
+			if (_verbosity > 1) fprintf(stderr, "libptbdrawtext_ftgl: FontConfig failed to substitute default properties for family %s, size %f pts and style flags %i.\n", _fontName, (float) _fontSize, _fontStyle);
+			FcPatternDestroy(target);
+			return(1);
+		}
 		
 		// Have a matching pattern:
 		if (_verbosity > 3) {
@@ -179,8 +186,8 @@ int PsychRebuildFont(void)
 
 		// Perform font matching for the font in the default configuration (0) that best matches the
 		// specified target pattern:
-		FcPattern* matched = FcFontMatch(0, target, &result);
-		if (result == FcResultNoMatch) {
+		FcPattern* matched = FcFontMatch(NULL, target, &result);
+		if ((matched == NULL) || (result == FcResultNoMatch)) {
 			// Failed!
 			if (_verbosity > 1) fprintf(stderr, "libptbdrawtext_ftgl: FontConfig failed to find a matching font for family %s, size %f pts and style flags %i.\n", _fontName, (float) _fontSize, _fontStyle);
 			FcPatternDestroy(target);
@@ -227,7 +234,7 @@ int PsychRebuildFont(void)
 	// Load & Create new font and face object, based on current spec settings:
 	// We directly use the Freetype library, so we can spec the faceIndex for selection of textstyle, which wouldn't be
 	// possible with the higher-level OGLFT constructor...
-    FT_Error error = FT_New_Face( OGLFT::Library::instance(), _fontFileName, _faceIndex, &ft_face );
+	FT_Error error = FT_New_Face( OGLFT::Library::instance(), _fontFileName, _faceIndex, &ft_face );
 	if (error) {
 		if (_verbosity > 1) fprintf(stderr, "libptbdrawtext_ftgl: Freetype did not load face with index %i from font file %s.\n", _faceIndex, _fontFileName);
 		return(1);
@@ -354,9 +361,9 @@ int PsychDrawText(double xStart, double yStart, int textLen, double* text)
 	
 	glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
 	glPushAttrib(GL_ALL_ATTRIB_BITS);
-    glPixelStorei( GL_UNPACK_ALIGNMENT, 1);
-    glEnable( GL_TEXTURE_2D );
-    glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 1);
+	glEnable( GL_TEXTURE_2D );
+	glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
 	
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
@@ -392,7 +399,7 @@ int PsychDrawText(double xStart, double yStart, int textLen, double* text)
 	glMatrixMode(GL_PROJECTION);
 	glPopMatrix();
 	glMatrixMode(GL_MODELVIEW);
-    glDisable( GL_TEXTURE_2D );
+	glDisable( GL_TEXTURE_2D );
 	glPopAttrib();
 	glPopClientAttrib();
 	
@@ -433,6 +440,7 @@ int PsychInitText(void)
 	_needsRebuild = true;
 	faceT = NULL;
 	faceM = NULL;
+	ft_face = NULL;
 
 	// Try to initialize libfontconfig - our fontMapper library for font matching and selection:
 	if (!FcInit()) {
@@ -465,7 +473,7 @@ int PsychShutdownText(void)
 		faceM = NULL;
 
 		// Delete Freetype face object:
-		FT_Done_Face(ft_face);
+		if (ft_face) FT_Done_Face(ft_face);
 		ft_face = NULL;
 		if (_verbosity > 3) fprintf(stderr, "libptbdrawtext_ftgl: Shutting down.\n");
 	}
@@ -474,7 +482,14 @@ int PsychShutdownText(void)
 	_firstCall = false;
 	
 	// Shutdown fontmapper library:
-	FcFini();
+	// Actually, don't! Some versions of octave also use fontconfig internally, and there is only
+	// one shared library instance in the process. Calling FcFini() here will shutdown that instance
+	// and wreak havoc if octave or other clients later try to access that shutdown instance after
+	// we've closed down. Keeping it alive is ok, let octave/matlab/the os whatever do the cleanup.
+	// Luckily we can always call FcInit() in our init path, as it turns into a no-op if fontconfig
+	// has been already brought online by some other client, e.g., octave or matlab.
+	// Should fix bug from forum msg #12560
+	// FcFini();
 
 	return(0);
 }

@@ -4,6 +4,15 @@ function varargout = ColorCal2(command, varargin)
 % Description:
 % Interface function to communicate with the ColorCal2 USB device.
 %
+% LINUX: If you want to use this function without the need to run
+% Matlab or Octave as root user (i.e., without need for root login or the
+% sudo command), please copy the file ...
+% Psychtoolbox/PsychHardware/ColorCal2/60-cambridgeresearch-permissions.rules
+% ... into the folder /etc/udev/rules.d/ on your system. This one time copy will
+% require administrator privileges, but after that, any user should be able
+% to use the ColorCal devices or other CRS Ltd. devices without special permissions.
+%
+%
 % Required Input:
 % command (string) - Command to send to the ColorCal2 device.  Commands are
 %                    case insensitive.
@@ -98,6 +107,12 @@ end
 
 % Connect to the ColorCal2 if we haven't already.
 if isempty(usbHandle)
+    if IsWinMatlabR11Style
+        error('Sorry, ColorCal2 is unsupported on Matlab versions before R2007a');
+    end
+    
+    LoadPsychHID;
+
 	usbHandle = PsychHID('OpenUSBDevice', 2145, 4097);
 	disp('- ColorCal2 connected');
 	
