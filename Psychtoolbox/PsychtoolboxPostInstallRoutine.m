@@ -433,7 +433,8 @@ if IsWin & ~IsOctave %#ok<AND2>
             fprintf('ERROR: startup option -win32 to the matlab.exe start command, ie.\n');
             fprintf('ERROR: matlab.exe -win32\n');
             fprintf('ERROR: If you do not know how to do this, consult the Matlab help about startup\n');
-            fprintf('ERROR: options for Windows.\n\n');
+            fprintf('ERROR: options for Windows.\n');
+            fprintf('ERROR: See also http://psychtoolbox.org/wikka.php?wakka=Faq64BitSupport.\n\n');
         end
         
         fprintf('\n\nInstallation aborted. Fix the reported problem and retry.\n\n');
@@ -567,6 +568,9 @@ try
         fprintf('* libusb-1.0 USB low-level access library.\n');
         fprintf('* libfreenect: Kinect driver library.\n');
         fprintf('\n');
+        fprintf('For PsychHID() support:\n\n');
+        fprintf('* libusb-1.0 USB low-level access library.\n');
+        fprintf('\n\n');
         fprintf('For Eyelink():\n\n');
         fprintf('* The Eyelink core libraries from the SR-Research download website.\n');
         fprintf('\n');

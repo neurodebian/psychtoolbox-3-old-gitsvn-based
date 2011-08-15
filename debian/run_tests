@@ -42,14 +42,27 @@
 
 out=tests_output_`date +"20%y%m%d%H%M%S"`
 timelimit=15
+timeescape=$(($timelimit - 5))
+timelimitkill=$(($timelimit + 5))
 
 mkdir -p $out
 {
 	for f in "$@"; do
 		echo -n "TEST $f: ";
 		outlog="$out/${f%.*}.log"
-		timeout $timelimit octave -q --eval "$f" >| $outlog 2>&1
+		( sleep $timeescape; xdotool key Escape; ) &
+		# if it is a function -- eval it, otherwise run the script
+		if grep -v '^[% ]*$' AlphaAdditionTest.m| head -1 | grep -q -e '^ *function'; then
+			timeout --kill-after=$timelimitkill $timelimit \
+				octave -q --eval "${f%.m}" >| $outlog 2>&1
+		else
+			# just run it then
+			timeout --kill-after=$timelimitkill $timelimit \
+				octave -q $f >| $outlog 2>&1
+		fi
 		rv=$?
+		# time to kill our xdotool
+		kill %1 &>/dev/null || :
 		if [ $rv = 124 ]; then st='TIMEOUT';
 		elif [ $rv = 0 ]; then st='OK';
 		else fout="`grep -v octave-core $outlog | tail -1`"; st="FAILED $fout"; fi
