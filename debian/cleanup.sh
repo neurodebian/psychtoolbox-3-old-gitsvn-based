@@ -6,10 +6,11 @@ set -eu
 RM="git rm --ignore-unmatch"
 FINDREGEX="find -regextype posix-egrep -regex"
 
-{ $FINDREGEX '.*\.(o|dll|exe|mex.*|dylib|class)' -print0; \
+{ $FINDREGEX '.*\.(o|dll.*|exe|mex.*|dylib|class)' -print0; \
   $FINDREGEX '.*\.(old|bak).*' -print0; } | xargs -0 --no-run-if-empty $RM -rf
 $FINDREGEX '.*((|Mac)OSX|Octave3OSXFiles|Windows|.bundle|.FBCLockFolder)' -print0| xargs -0 --no-run-if-empty $RM -rf
 # more of non-Linux OS specifics
+$RM -rf PsychSourceGL/Cohorts/libusb1-win32
 $RM -rf PsychSourceGL/Cohorts/{PsychtoolboxOSXKernelDriver,HID\ Utilities\ Source,IOWarrior}
 $RM -rf Psychtoolbox/PsychContributed/WinTab
 $RM -rf Psychtoolbox/PsychAlpha/PsychtoolboxKernelDriver.kext*
