@@ -46,6 +46,10 @@
 //constants
 #define 	kPsychMaxPossiblePixelDepths		10
 
+#define		kPsychMaxPossibleDisplays			10
+#define     kPsychMaxPossibleCrtcs              10      //Maximum number of physical display scanout engines (crtc's) per screen.
+#define		kPsychMaxNumberWindowBuffers		2		//The maximum upper bound.  Really it depends on display hardware and should be probed.
+
 //includes 
 #include "Screen.h"
 
@@ -231,6 +235,9 @@ typedef struct {
 
 // Apply 10 bit framebuffer mode hack, regardless what automatic detection says: 2^21
 #define kPsychEnforce10BitFramebufferHack 2097152
+
+// Do not return OS provided nominal framerate, but zero instead, to override defective OS queries: 2^22
+#define kPsychIgnoreNominalFramerate 4194304
 
 //function protoptypes
 

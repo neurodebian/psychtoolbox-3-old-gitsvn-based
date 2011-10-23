@@ -91,6 +91,7 @@ TO DO:
 #define kPsychGfxCapFBOBlit		4096		// Hw supports blitting between FBO's, aka EXT_framebuffer_blit.
 #define kPsychGfxCapNeedsUnsignedByteRGBATextureUpload 8192		// Hw requires use of GL_UNSIGNED_BYTE instead of GL_UNSIGNED_INT_8_8_8_8_REV for optimal RGBA8 texture upload.
 #define kPsychGfxCapSupportsOpenML 16384	// System supports OML_sync_control extension of OpenML for precisely timed bufferswaps and stimulus onset timestamping.
+#define kPsychGfxCapSNTex16		32768		// Hw supports 16 bit signed normalized integer textures.
 
 // Definition of flags for imagingMode of Image processing pipeline.
 // These are used internally, but need to be exposed to Matlab as well.
@@ -214,7 +215,9 @@ typedef struct{
   GLXContext		contextObject;       // GLX OpenGL rendering context.
   int             	pixelFormatObject;   // Just here for compatibility. Its a dummy entry without meaning.
   Display*              deviceContext;       // Pointer to the X11 display connection.
-  Window                windowHandle;        // Handle to the onscreen window.
+  Display*              privDpy;             // Pointer to the private X11 display connection for non-OpenGL ops.
+  GLXWindow             windowHandle;        // Handle to the onscreen window.
+  Window                xwindowHandle;       // Associated X-Window if any.
   GLXContext		glusercontextObject; // OpenGL context for userspace rendering code, e.g., moglcore...
   CVOpenGLTextureRef QuickTimeGLTexture;     // Used for textures returned by movie routines in PsychMovieSupport.c
   // CVOpenGLTextureRef is not ready yet. Its typedefd to a void* to make the compiler happy.
@@ -288,6 +291,7 @@ typedef struct _PsychWindowRecordType_{
         double                                  VideoRefreshInterval;   // MK: Estimated video refresh interval of display. Can be different to IFI.
 		double									ifi_beamestimate;		// MK: Yet another video refresh estimate, based on beamposition method (or 0 if invalid).
         int                                     VBL_Endline;            // MK: Estimated scanline which marks end of VBL area.
+        int                                     VBL_Startline;          // MK: Start scanline of VBL area.
         psych_bool                              PipelineFlushDone;      // MK: Will be set by SCREENDrawingFinished to signal pipeline flush.
         psych_bool                              backBufferBackupDone;   // MK: Will be set by SCREENDrawingFinished to signal backbuffer backup.
         psych_bool                              vSynced;				// MK: Flag that stores VSYNC enable state: TRUE = Sync to VBL, FALSE = Don't.

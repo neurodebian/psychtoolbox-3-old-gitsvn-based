@@ -136,6 +136,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "[VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('AsyncFlipEnd', windowPtr);";
 	synopsis[i++] = "[VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('AsyncFlipCheckEnd', windowPtr);";
 	synopsis[i++] = "[VBLTimestamp StimulusOnsetTime swapCertainTime] = Screen('WaitUntilAsyncFlipCertain', windowPtr);";
+	synopsis[i++] = "[info] = Screen('GetFlipInfo', windowPtr [, infoType=0] [, auxArg1]);";
 	synopsis[i++] = "[telapsed] = Screen('DrawingFinished', windowPtr [, dontclear] [, sync]);";
 	synopsis[i++] = "framesSinceLastWait = Screen('WaitBlanking', windowPtr [, waitFrames]);";
 
@@ -164,6 +165,7 @@ void InitializeSynopsis()
 	synopsis[i++] = "info = Screen('GetWindowInfo', windowPtr [, infoType=0] [, auxArg1]);";
 	synopsis[i++] = "resolutions=Screen('Resolutions', screenNumber);";
 	synopsis[i++] = "oldResolution=Screen('Resolution', screenNumber [, newwidth] [, newheight] [, newHz] [, newPixelSize] [, specialMode]);";
+ 	synopsis[i++] = "oldSettings = Screen('ConfigureDisplay', setting, screenNumber, outputId [, newwidth][, newheight][, newHz][, newX][, newY]);";
 
 	// Get and set information about the environment, computer, and video card (i.e. screen):
 	synopsis[i++] = "\n% Get/set details of environment, computer, and video card (i.e. screen):";
