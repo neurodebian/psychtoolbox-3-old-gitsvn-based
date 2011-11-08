@@ -1,4 +1,12 @@
-psychtoolbox-3 (3.0.9+svn2265.dfsg1-1) UNRELEASED; urgency=low
+psychtoolbox-3 (3.0.9+svn2351.dfsg1-1) neurodebian; urgency=low
+
+  * New upstream point release
+  * Adjusted debian/cleanup.sh (thanks Mario for heads up)
+  * Renamed debian/cleanup.sh into debian/dfsg-upstream
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 07 Nov 2011 22:02:20 -0500
+
+psychtoolbox-3 (3.0.9+svn2265.dfsg1-1) neurodebian; urgency=low
 
   * New upstream point release
   * gfortran into build-depends to assure noise-less operation of
@@ -11,7 +19,7 @@ psychtoolbox-3 (3.0.9+svn2265.dfsg1-1) UNRELEASED; urgency=low
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 09 Aug 2011 14:25:00 -0400
 
-psychtoolbox-3 (3.0.9+svn2167.dfsg1-1) UNRELEASED; urgency=low
+psychtoolbox-3 (3.0.9+svn2167.dfsg1-1) neurodebian; urgency=low
 
   * New upstream point release (aiming at becoming a beta):
     - core is now distributed under MIT license
@@ -23,13 +31,13 @@ psychtoolbox-3 (3.0.9+svn2167.dfsg1-1) UNRELEASED; urgency=low
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 27 Jun 2011 22:55:34 -0400
 
-psychtoolbox-3 (3.0.9+svn2078.dfsg1-1) UNRELEASED; urgency=low
+psychtoolbox-3 (3.0.9+svn2078.dfsg1-1) neurodebian; urgency=low
 
   * New upstream point release
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 17 May 2011 18:00:28 -0400
 
-psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) UNRELEASED; urgency=low
+psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) neurodebian; urgency=low
 
   * New patch up_portaudio_patches to consolidate upstream's
     linux-relevant patches for portaudio -- fixes problem with missing
@@ -43,7 +51,7 @@ psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) UNRELEASED; urgency=low
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Thu, 20 Jan 2011 12:17:42 -0500
 
-psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre1) UNRELEASED; urgency=low
+psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre1) neurodebian; urgency=low
 
   * Initial release (Closes: #606557)
 

@@ -86,6 +86,12 @@ static psych_threadid	masterthread = (psych_threadid) NULL;
 // Count of currently async-flipping onscreen windows:
 static unsigned int	asyncFlipOpsActive = 0;
 
+// Return count of currently async-flipping onscreen windows:
+unsigned int PsychGetNrAsyncFlipsActive(void)
+{
+	return(asyncFlipOpsActive);
+}
+
 // Dynamic rebinding of ARB extensions to core routines:
 // This is a trick to get GLSL working on current OS-X (10.4.4). MacOS-X supports the OpenGL
 // shading language on all graphics cards as an ARB extension. But as OS-X only supports
@@ -533,9 +539,17 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
     // Retrieve display handle for beamposition queries:
     PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, screenSettings->screenNumber);
 
-    // Retrieve final vbl_startline, aka physical height of the display in pixels:
-    PsychGetScreenSize(screenSettings->screenNumber, &dummy_width, &vbl_startline);
-      
+    // VBL startline not yet assigned by PsychOSOpenOnscreenWindow()?
+    if ((*windowRecord)->VBL_Startline == 0) {
+        // Not yet assigned: Retrieve final vbl_startline, aka physical height of the display in pixels:
+        PsychGetScreenSize(screenSettings->screenNumber, &dummy_width, &vbl_startline);
+        (*windowRecord)->VBL_Startline = (int) vbl_startline;
+    }
+    else {
+        // Already assigned: Get it for our consumption:
+        vbl_startline = (*windowRecord)->VBL_Startline;
+    }
+
     // Associated screens id and depth:
     (*windowRecord)->screenNumber=screenSettings->screenNumber;
     (*windowRecord)->depth=PsychGetScreenDepthValue(screenSettings->screenNumber);
@@ -577,7 +591,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
     // the projection and modelview matrices, viewports and such to proper values:
     PsychSetDrawingTarget(*windowRecord);
 
-	if(PsychPrefStateGet_Verbosity()>2) {		
+	if(PsychPrefStateGet_Verbosity() > 3) {		
 		  printf("\n\nOpenGL-Extensions are: %s\n\n", (char*) glGetString(GL_EXTENSIONS));
 	}
 
@@ -641,7 +655,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 		}
 	}
 	
-    if((PsychPrefStateGet_Verbosity() > 1) && ((*windowRecord)->windowIndex == PSYCH_FIRST_WINDOW)) {
+    if((PsychPrefStateGet_Verbosity() > 2) && ((*windowRecord)->windowIndex == PSYCH_FIRST_WINDOW)) {
 		multidisplay = (totaldisplaycount>1) ? true : false;    
 		if (multidisplay) {
 			printf("\n\nPTB-INFO: You are using a multi-display setup (%i active displays):\n", totaldisplaycount);
@@ -1381,7 +1395,8 @@ void PsychCloseWindow(PsychWindowRecordType *windowRecord)
 				PsychReleaseFlipInfoStruct(windowRecord);
 
 				// Check if 10 bpc native framebuffer support was supposed to be enabled:
-				if ((windowRecord->specialflags & kPsychNative10bpcFBActive) && PsychOSIsKernelDriverAvailable(windowRecord->screenNumber)) {
+				if (((windowRecord->specialflags & kPsychNative10bpcFBActive) || (PsychPrefStateGet_ConserveVRAM() & kPsychBypassLUTFor10BitFramebuffer))
+				    && PsychOSIsKernelDriverAvailable(windowRecord->screenNumber)) {
 					// Try to switch framebuffer back to standard 8 bpc mode. This will silently
 					// do nothing if framebuffer wasn't in non-8bpc mode:
 					PsychEnableNative10BitFramebuffer(windowRecord, FALSE);
@@ -2193,7 +2208,6 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     double vbl_lines_elapsed, onset_lines_togo;
     double vbl_time_elapsed; 
     double onset_time_togo;
-    long scw, sch;
 	psych_uint64 targetVBL;						// Target VBL count for scheduled flips with Windows Vista DWM.
     psych_uint64 preflip_vblcount = 0;          // VBL counters and timestamps acquired from low-level OS specific routines.
     psych_uint64 postflip_vblcount = 0;         // Currently only supported on OS-X, but Linux/X11 implementation will follow.
@@ -2266,9 +2280,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     PsychGetCGDisplayIDFromScreenNumber(&displayID, windowRecord->screenNumber);
     screenwidth=(int) PsychGetWidthFromRect(windowRecord->rect);
     screenheight=(int) PsychGetHeightFromRect(windowRecord->rect);
-    // Query real size of the underlying display in order to define the vbl_startline:
-    PsychGetScreenSize(windowRecord->screenNumber, &scw, &sch);
-    vbl_startline = (int) sch;
+    vbl_startline = windowRecord->VBL_Startline;
 
     // Enable this windowRecords framebuffer as current drawingtarget:
     PsychSetDrawingTarget(windowRecord);
@@ -2409,6 +2421,11 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 		// an immediate (asap) swap is triggered:
 		targetWhen = tremaining - 1.0;
 	}
+
+	// Invalidate target swapbuffer count values. Will get set to useful values
+	// if PsychOSScheduleFlipWindowBuffers() succeeds:
+	windowRecord->target_sbc = 0;
+	if (windowRecord->slaveWindow) windowRecord->slaveWindow->target_sbc = 0;
 
 	// Emit swap scheduling commands:
 	// These are allowed to fail, due to some error condition or simply because this
@@ -2655,13 +2672,13 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 	}
 	#endif
 	
-    // Update of hardware gamma table in sync with flip requested?
-    if ((windowRecord->inRedTable) && (windowRecord->loadGammaTableOnNextFlip > 0)) {
+	// Update of hardware gamma table in sync with flip requested?
+	if ((windowRecord->inRedTable) && (windowRecord->loadGammaTableOnNextFlip > 0)) {
 		// Perform hw-table upload on M$-Windows in sync with retrace, wait until completion. On
 		// OS-X just schedule update in sync with next retrace, but continue immediately.
 		// See above for code that made sure we only reach this statement immediately prior
 		// to the expected swap time, so this is as properly synced to target retrace as it gets:
-		PsychLoadNormalizedGammaTable(windowRecord->screenNumber, windowRecord->inTableSize, windowRecord->inRedTable, windowRecord->inGreenTable, windowRecord->inBlueTable);
+		PsychLoadNormalizedGammaTable(windowRecord->screenNumber, -1, windowRecord->inTableSize, windowRecord->inRedTable, windowRecord->inGreenTable, windowRecord->inBlueTable);
 	}
 	
 	// Only perform a bog-standard bufferswap request if no OS-specific method has been
@@ -3084,7 +3101,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 		}
 		
 		// VBL IRQ based timestamping in charge? Either because selected by usercode, or as a fallback for failed/disabled beampos timestamping or OS-Builtin timestamping?
-		if ((PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX) && ((vbltimestampmode == 3) || (vbltimestampmode == 4 && windowRecord->VBL_Endline == -1 && swap_msc < 0) || ((vbltimestampmode == 1 || vbltimestampmode == 2) && windowRecord->VBL_Endline == -1))) {
+		if ((PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX) && ((vbltimestampmode == 3) || (!osspecific_asyncflip_scheduled && vbltimestampmode == 4 && windowRecord->VBL_Endline == -1 && swap_msc < 0) || ((vbltimestampmode == 1 || vbltimestampmode == 2) && windowRecord->VBL_Endline == -1))) {
 			// Yes. Try some consistency checks for that:
 
 			// Some diagnostics at high debug-levels:
@@ -3148,7 +3165,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
 				PsychPrefStateSet_VBLTimestampingMode(-1);
 				time_at_vbl = time_at_swapcompletion;
 				*time_at_onset=time_at_vbl;
-			}			
+			}
 		}
 		
 		// Shall OS-Builtin optimal timestamping override all other results (vbltimestampmode 4)
@@ -3213,9 +3230,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         
         // Invalidate timestamp of last vbl:
         windowRecord->time_at_last_vbl = 0;
-		windowRecord->rawtime_at_swapcompletion = 0;
-		windowRecord->postflip_vbltimestamp = -1;
-		windowRecord->osbuiltin_swaptime = 0;
+	windowRecord->rawtime_at_swapcompletion = 0;
+	windowRecord->postflip_vbltimestamp = -1;
+	windowRecord->osbuiltin_swaptime = 0;
     }
 
 	// Increment the "flips successfully completed" counter:
@@ -4952,7 +4969,12 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 			windowRecord->gfxcaps |= kPsychGfxCapNeedsUnsignedByteRGBATextureUpload;
 		}
 	}
-	
+
+        if (glewIsSupported("GL_EXT_texture_snorm")) {
+		if (verbose) printf("Hardware supports signed normalized textures of 16 bpc integer format.\n");
+		windowRecord->gfxcaps |= kPsychGfxCapSNTex16;
+	}
+
 	// Support for basic FBO's? Needed for any operation of the imaging pipeline, e.g.,
 	// full imaging pipe, fast offscreen windows, Screen('TransformTexture')...
 	
@@ -5062,8 +5084,9 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 		}		
 	}
 
-	// Running under Chromium OpenGL virtualization?
-	if (strstr((char*) glGetString(GL_VENDOR), "Humper") && strstr((char*) glGetString(GL_RENDERER), "Chromium")) {
+	// Running under Chromium OpenGL virtualization or Mesa Software Rasterizer?
+	if ((strstr((char*) glGetString(GL_VENDOR), "Humper") && strstr((char*) glGetString(GL_RENDERER), "Chromium")) ||
+        (strstr((char*) glGetString(GL_VENDOR), "Mesa") && strstr((char*) glGetString(GL_RENDERER), "Software Rasterizer"))) {
 		// Yes: We're very likely running inside a Virtual Machine, e.g., VirtualBox.
 		// This does not provide sufficiently accurate display timing for production use of Psychtoolbox.
 		// Output a info message for user and disable all calibrations and sync tests -- they would fail anyway.
@@ -5193,8 +5216,8 @@ void PsychExecuteBufferSwapPrefix(PsychWindowRecordType *windowRecord)
 			PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, windowRecord->screenNumber);
 			
 			// Retrieve final vbl_startline, aka physical height of the display in pixels:
-			PsychGetScreenSize(windowRecord->screenNumber, &scanline, &vbl_startline);
-
+            vbl_startline = windowRecord->VBL_Startline;
+            
 			// Busy-Wait: The special handling of <=0 values makes sure we don't hang here
 			// if beamposition queries are broken as well:
 			lastline = (long) PsychGetDisplayBeamPosition(cgDisplayID, windowRecord->screenNumber);

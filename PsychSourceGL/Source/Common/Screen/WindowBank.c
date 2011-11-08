@@ -206,7 +206,7 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
             tmpwindowRecordArrayWINBANK=realloc(windowRecordArrayWINBANK, (PSYCH_ALLOC_WINDOW_RECORDS + PSYCH_ALLOC_WINDOW_RECORDS_INC) * sizeof(PsychWindowRecordType*));
             if (tmpwindowRecordArrayWINBANK==NULL) {
                 // realloc() failed due to out-of-memory!
-		PsychErrorExit(PsychError_outofMemory);   //out of memory
+                PsychErrorExit(PsychError_outofMemory);   //out of memory
             }
 
             // Success! Update limits and initialize new slots:
@@ -220,8 +220,8 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
             // Ready for addition of new windows.
         }
     	
-	//allocate storage
-	if( (*winRec=(PsychWindowRecordType *)malloc(sizeof(PsychWindowRecordType))) == NULL )
+	// Allocate storage, zero-init it:
+	if((*winRec = (PsychWindowRecordType *) calloc(1, sizeof(PsychWindowRecordType))) == NULL)
 		PsychErrorExit(PsychError_outofMemory);   //out of memory
 	
 	//increment counts	
@@ -344,6 +344,10 @@ void PsychCreateWindowRecord(PsychWindowRecordType **winRec)
 	// ...and other timing values:
 	(*winRec)->postflip_vbltimestamp = -1.0;
 
+    // Init to zero default:
+    (*winRec)->VBL_Startline = 0;
+    (*winRec)->VBL_Endline = 0;
+    
 	return;
 }
 
@@ -536,9 +540,7 @@ void  PsychAssignParentWindow(PsychWindowRecordType *childWin, PsychWindowRecord
 	childWin->parentWindow = parentWin;
 	
 	// Copy some state and settings from parent to child:
-	childWin->targetSpecific.contextObject = parentWin->targetSpecific.contextObject;
-	childWin->targetSpecific.deviceContext = parentWin->targetSpecific.deviceContext;
-	childWin->targetSpecific.glusercontextObject = parentWin->targetSpecific.glusercontextObject;
+	memcpy(&childWin->targetSpecific, &parentWin->targetSpecific, sizeof(parentWin->targetSpecific));
 
 	// Copy default drawing shaders from parent:
 	childWin->defaultDrawShader   = parentWin->defaultDrawShader;

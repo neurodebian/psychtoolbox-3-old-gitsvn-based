@@ -218,10 +218,12 @@ PsychError PsychModuleInit(void)
 	PsychErrorExit(PsychRegister("GetOpenGLDrawMode", &SCREENGetOpenGLDrawMode));
 	PsychErrorExit(PsychRegister("Resolutions", &SCREENResolutions));
 	PsychErrorExit(PsychRegister("Resolution", &SCREENResolution));
+	PsychErrorExit(PsychRegister("ConfigureDisplay", &SCREENConfigureDisplay));
 	PsychErrorExit(PsychRegister("CreateMovie", &SCREENCreateMovie));
 	PsychErrorExit(PsychRegister("FinalizeMovie", &SCREENFinalizeMovie));
 	PsychErrorExit(PsychRegister("AddFrameToMovie", &SCREENGetImage));
 	PsychErrorExit(PsychRegister("AddAudioBufferToMovie", &SCREENAddAudioBufferToMovie));
+	PsychErrorExit(PsychRegister("GetFlipInfo", &SCREENGetFlipInfo));
     
 	PsychSetModuleAuthorByInitials("awi");
 	PsychSetModuleAuthorByInitials("dhb");
@@ -232,7 +234,6 @@ PsychError PsychModuleInit(void)
 	PsychSetModuleAuthorByInitials("cb");
 
 	InitializeSynopsis();
-	InitializePsychDisplayGlue();
 	InitWindowBank();
 	PsychMovieInit();
 	PsychVideoCaptureInit();
@@ -245,6 +246,10 @@ PsychError PsychModuleInit(void)
 	// Reset the "userspaceGL" flag which tells PTB that userspace GL rendering was active
 	// due to Screen('BeginOpenGL') command.
 	PsychSetUserspaceGLFlag(FALSE);
+
+    // Call display glue init last, as its error handling could go crazy if triggered
+    // before the init routines above got executed:
+	InitializePsychDisplayGlue();
 
 	return(PsychError_none);
 }

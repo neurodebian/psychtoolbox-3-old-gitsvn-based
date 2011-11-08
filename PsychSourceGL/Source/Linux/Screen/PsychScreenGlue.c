@@ -63,6 +63,12 @@
 #define XF86VidModeNumberErrors 0
 #endif
 
+
+// Event and error base for XRandR extension:
+int xr_event, xr_error;
+psych_bool has_xrandr_1_2 = FALSE;
+psych_bool has_xrandr_1_3 = FALSE;
+
 /* Following structures are needed by our ATI/AMD/NVIDIA beamposition query implementation: */
 /* Location and format of the relevant hardware registers of the ATI R500/R600 chips
  * was taken from the official register spec for that chips which was released to
@@ -94,7 +100,6 @@ static int    numKernelDrivers = 0;
 
 // Offset of crtc blocks of evergreen gpu's for each of the six possible crtc's:
 unsigned int crtcoff[(DCE4_MAXHEADID + 1)] = { EVERGREEN_CRTC0_REGISTER_OFFSET, EVERGREEN_CRTC1_REGISTER_OFFSET, EVERGREEN_CRTC2_REGISTER_OFFSET, EVERGREEN_CRTC3_REGISTER_OFFSET, EVERGREEN_CRTC4_REGISTER_OFFSET, EVERGREEN_CRTC5_REGISTER_OFFSET };
-// unsigned int crtcoff[(DCE4_MAXHEADID + 1)] = { 0x6df0, 0x79f0, 0x105f0, 0x111f0, 0x11df0, 0x129f0 };
 
 /* Is a given ATI/AMD GPU a DCE5 type ASIC, i.e., with the new display engine? */
 static psych_bool isDCE5(int screenId)
@@ -401,8 +406,8 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			}
 		}
 
-		// Perform auto-detection of screen to head mappings:
-		PsychAutoDetectScreenToHeadMappings(fNumDisplayHeads);
+		// Perform auto-detection of screen to head mappings, unless already done by XRandR:
+		if (!has_xrandr_1_2) PsychAutoDetectScreenToHeadMappings(fNumDisplayHeads);
 
 		// Ready to rock!
 	} else {
@@ -420,7 +425,7 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 
 // Maybe use NULLs in the settings arrays to mark entries invalid instead of using psych_bool flags in a different array.   
 static psych_bool		displayLockSettingsFlags[kPsychMaxPossibleDisplays];
-static CFDictionaryRef	        displayOriginalCGSettings[kPsychMaxPossibleDisplays];        	//these track the original video state before the Psychtoolbox changed it.  
+static PsychScreenSettingsType	displayOriginalCGSettings[kPsychMaxPossibleDisplays];        	//these track the original video state before the Psychtoolbox changed it.  
 static psych_bool		displayOriginalCGSettingsValid[kPsychMaxPossibleDisplays];
 static CFDictionaryRef	        displayOverlayedCGSettings[kPsychMaxPossibleDisplays];        	//these track settings overlayed with 'Resolutions'.  
 static psych_bool		displayOverlayedCGSettingsValid[kPsychMaxPossibleDisplays];
@@ -432,6 +437,7 @@ static CGDirectDisplayID 	displayCGIDs[kPsychMaxPossibleDisplays];
 // displayX11Screens stores the mapping of PTB screenNumber's to corresponding X11 screen numbers:
 static int                      displayX11Screens[kPsychMaxPossibleDisplays];
 static psych_bool               displayCursorHidden[kPsychMaxPossibleDisplays];
+static XRRScreenResources*      displayX11ScreenResources[kPsychMaxPossibleDisplays];
 
 // XInput-2 extension data per display:
 static int                      xi_opcode = 0, xi_event = 0, xi_error = 0;
@@ -474,7 +480,7 @@ void InitCGDisplayIDList(void);
 void PsychLockScreenSettings(int screenNumber);
 void PsychUnlockScreenSettings(int screenNumber);
 psych_bool PsychCheckScreenSettingsLock(int screenNumber);
-//psych_bool PsychGetCGModeFromVideoSetting(CFDictionaryRef *cgMode, PsychScreenSettingsType *setting);
+psych_bool PsychGetCGModeFromVideoSetting(CFDictionaryRef *cgMode, PsychScreenSettingsType *setting);
 void InitPsychtoolboxKernelDriverInterface(void);
 
 // Error callback handler for X11 errors:
@@ -507,9 +513,13 @@ void InitializePsychDisplayGlue(void)
         displayOverlayedCGSettingsValid[i]=FALSE;
 	displayCursorHidden[i]=FALSE;
 	displayBeampositionHealthy[i]=TRUE;
+	displayX11ScreenResources[i] = NULL;
 	xinput_ndevices[i]=0;
 	xinput_info[i]=NULL;
     }
+
+    has_xrandr_1_2 = FALSE;
+    has_xrandr_1_3 = FALSE;
     
 	if (firstTime) {
 		firstTime = FALSE;
@@ -570,6 +580,180 @@ out:
   return;
 }
 
+static void ProcessRandREvents(int screenNumber)
+{
+  XEvent evt;
+
+  if (!has_xrandr_1_2) return;
+
+  // Check for screen config change events and dispatch them:
+  while (XCheckTypedWindowEvent(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], displayX11Screens[screenNumber]), xr_event + RRScreenChangeNotify, &evt)) {
+    // Screen changed: Dispatch new configuration to X-Lib:
+    XRRUpdateConfiguration(&evt);
+  }
+}
+
+static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
+{
+  int major, minor;
+  int o, m, num_crtcs, isPrimary, crtcid, crtccount;
+  int primaryOutput = -1, primaryCRTC = -1;
+  int crtcs[100];
+
+  // Preinit to "undefined":
+  displayX11ScreenResources[idx] = NULL;
+
+  // XRandR extension supported? If so do basic init:
+  if (!XRRQueryExtension(dpy, &xr_event, &xr_error) ||
+      !XRRQueryVersion(dpy, &major, &minor)) {
+    printf("PTB-WARNING: XRandR extension unsupported. Display infos and configuration functions will be very limited!\n");
+    return;
+  }
+
+  // Detect version of XRandR:
+  if (major > 1 || (major == 1 && minor >= 2)) has_xrandr_1_2 = TRUE;
+  if (major > 1 || (major == 1 && minor >= 3)) has_xrandr_1_3 = TRUE;
+
+  // Select screen configuration notify events to get delivered to us:
+  Window root = RootWindow(dpy, displayX11Screens[idx]);
+  XRRSelectInput(dpy, root, xr_event + RRScreenChangeNotify);
+
+  // Fetch current screen configuration info for this screen and display:
+  XRRScreenResources* res = XRRGetScreenResourcesCurrent(dpy, root);
+  displayX11ScreenResources[idx] = res;
+  if (NULL == res) {
+    printf("PTB-WARNING: Could not query configuration of x-screen %i on display %s. Display infos and configuration will be very limited.\n",
+	   displayX11Screens[idx], DisplayString(dpy));
+    return;
+  }
+
+  if (!has_xrandr_1_2) {
+    printf("PTB-WARNING: XRandR version 1.2 unsupported! Could not query useful info for x-screen %i on display %s. Infos and configuration will be very limited.\n",
+	   displayX11Screens[idx], DisplayString(dpy));
+    return;
+  }
+
+  // Total number of assigned crtc's for this screen:
+  crtccount = 0;
+
+  // Iterate over all outputs for this screen:  
+  for (o = 0; o < res->noutput; o++) {
+    XRROutputInfo *output_info = XRRGetOutputInfo(dpy, res, res->outputs[o]);
+    if (!output_info) {
+      printf("PTB-WARNING: Could not get output info for %i'th output of screen %i [display %s]!\n", o, displayX11Screens[idx], DisplayString(dpy));
+      continue;
+    }
+
+    // Get info about this output:
+    if (has_xrandr_1_3 && (XRRGetOutputPrimary(dpy, root) > 0)) {
+      isPrimary = (XRRGetOutputPrimary(dpy, root) == output_info->crtc) ? 1 : 0;
+    }
+    else {
+      isPrimary = -1;
+    }
+
+    for (crtcid = 0; crtcid < res->ncrtc; crtcid++) {
+	if (res->crtcs[crtcid] == output_info->crtc) break;
+    }
+    if (crtcid == res->ncrtc) crtcid = -1;
+
+    // Store crtc for this output:
+    crtcs[o] = crtcid;
+
+    printf("PTB-INFO: Display '%s' : Screen %i : Output %i [%s]: %s : ",
+	   DisplayString(dpy), displayX11Screens[idx], o, (const char*) output_info->name, (isPrimary > -1) ? ((isPrimary == 1) ? "Primary output" : "Secondary output") : "Unknown or offline output");
+    printf("%s : CRTC %i [XID %i]\n", (output_info->connection == RR_Connected) ? "Connected" : "Offline", crtcid, (int) output_info->crtc);
+
+    if ((isPrimary > 0) && (crtcid >= 0)) {
+	primaryOutput = o;
+	primaryCRTC = crtcid;
+    }
+    
+    // Is this output - and its crtc - really enabled for this screen?
+    if (crtcid >=0) {
+      // Yes: Add its crtcid to the list of crtc's for this screen:
+      PsychSetScreenToHead(idx, crtcid, crtccount);
+      crtccount++;
+    }
+
+    // Release info for this output:
+    XRRFreeOutputInfo(output_info);
+  }
+
+  // Found a defined primary output?
+  if (primaryOutput == -1) {
+    // Could not find primary output -- none defined. Use first connected
+    // output as primary output:
+    for (o = 0; o < res->noutput; o++) {
+      XRROutputInfo *output_info = XRRGetOutputInfo(dpy, res, res->outputs[o]);
+      if (output_info && (output_info->connection == RR_Connected) && (crtcs[o] >= 0)) {
+	primaryOutput = o;
+	primaryCRTC = crtcs[o];
+        XRRFreeOutputInfo(output_info);
+	break;
+      }
+
+      if (output_info) XRRFreeOutputInfo(output_info);
+    }
+
+    // Still undefined? Use first output as primary output:
+    if (primaryOutput == -1) {
+	primaryOutput = 0;
+	primaryCRTC = (crtcs[0] >= 0) ? crtcs[0] : 0;
+    }
+  }
+
+  printf("PTB-INFO: Display '%s' : Screen %i : Assigning primary output as %i with crtc %i.\n", DisplayString(dpy), displayX11Screens[idx], primaryOutput, primaryCRTC);
+
+  // Assign primary crtc of primary output - index 0 - as default display head for this screen:
+  // We swap the contents of slot 0 - the primary crtc slot - and whatever slot currently
+  // contains the crtcid of our primaryCRTC. This way we shuffle the primary crtc into the
+  // 1st slot (zero):
+  for (o = 0; o < crtccount; o++) {
+    if (PsychScreenToHead(idx, o) == primaryCRTC) {
+      PsychSetScreenToHead(idx, PsychScreenToHead(idx, 0), o);
+    }
+  }
+  PsychSetScreenToHead(idx, primaryCRTC, 0);
+
+  return;
+}
+
+// Linux only: Retrieve modeline and crtc_info for a specific output on a specific screen:
+// Caution: If crtc is non-NULL and receives a valid XRRCrtcInfo*, then this pointer must
+//          be released by the caller via XRRFreeCrtcInfo(crtc), or resources will leak!
+XRRModeInfo* PsychOSGetModeLine(int screenId, int outputIdx, XRRCrtcInfo **crtc)
+{
+  int m;
+  XRRModeInfo *mode = NULL;
+  XRRCrtcInfo *crtc_info = NULL;
+
+  // Query info about video modeline and crtc of output 'outputIdx':
+  XRRScreenResources *res = displayX11ScreenResources[screenId];
+  if (has_xrandr_1_2 && (PsychScreenToHead(screenId, outputIdx) >= 0)) {
+    crtc_info = XRRGetCrtcInfo(displayCGIDs[screenId], res, res->crtcs[PsychScreenToHead(screenId, outputIdx)]);
+    
+    for (m = 0; (m < res->nmode) && crtc_info; m++) {
+      if (res->modes[m].id == crtc_info->mode) {
+        mode = &res->modes[m];
+        break;
+      }
+    }
+  }
+
+  // Optionally return crtc_info in *crtc:
+  if (crtc) {
+    // Return crtc_info, if any - NULL otherwise:
+    *crtc = crtc_info;
+  }
+  else {
+    // crtc_info not required by caller. We release it:
+    if (crtc_info) XRRFreeCrtcInfo(crtc_info);
+  }
+
+  return(mode);
+}
+
 void InitCGDisplayIDList(void)
 {  
   int major, minor;
@@ -580,6 +764,9 @@ void InitCGDisplayIDList(void)
  
   // NULL-out array of displays:
   for(i=0;i<kPsychMaxPossibleDisplays;i++) displayCGIDs[i]=NULL;
+
+  // Preinit screen to head mappings to identity default:
+  PsychInitScreenToHeadMappings(0);
 
   // Initial count of screens is zero:
   numDisplays = 0;
@@ -623,6 +810,9 @@ void InitCGDisplayIDList(void)
 	    displayCGIDs[k]= x11_dpy;
 	    // Mapping of logical screenNumber to X11 screenNumber for X11 Display:
 	    displayX11Screens[k]=scrnid++;
+
+	    // Get all relevant screen config info and cache it internally:
+	    GetRandRScreenConfig(x11_dpy, k);
 	  }
 
 	  printf(" ...success! Added %i new physical display screens of %s as PTB screens %i to %i.\n",
@@ -667,14 +857,18 @@ void InitCGDisplayIDList(void)
 	displayX11Screens[i]=i;
 	xinput_info[i] = xinput_info[0];
 	xinput_ndevices[i] = xinput_ndevices[0];
+
+	// Get all relevant screen config info and cache it internally:
+	GetRandRScreenConfig(x11_dpy, i);
     }
     numDisplays=i;
   }
 
   if (numDisplays>1) printf("PTB-Info: A total of %i physical X-Windows display screens is available for use.\n", numDisplays);
 
-  // Initialize screenId -> GPU headId mapping:
-  PsychInitScreenToHeadMappings(numDisplays);
+  // Initialize screenId -> GPU headId mapping to identity mappings,
+  // unless already setup by XRandR setup code:
+  if (!has_xrandr_1_2) PsychInitScreenToHeadMappings(numDisplays);
 
   return;
 }
@@ -706,6 +900,10 @@ void PsychCleanupDisplayGlue(void)
 	  // NULL-Out xinput extension data:
 	  xinput_info[i] = NULL;
 	  xinput_ndevices[i] = 0;
+
+	  // Release per-screen RandR info structures:
+	  if (displayX11ScreenResources[i]) XRRFreeScreenResources(displayX11ScreenResources[i]);
+	  displayX11ScreenResources[i] = NULL;
 	}
 
 	// All connections should be closed now. We can't NULL-out the display list, but
@@ -782,16 +980,12 @@ void PsychCaptureScreen(int screenNumber)
 */
 void PsychReleaseScreen(int screenNumber)
 {	
-    CGDisplayErr  error=0;
-    
     if(screenNumber>=numDisplays) PsychErrorExit(PsychError_invalidScumber);
+
     // MK: We could do this to release exclusive access to the X-Server, but i'm too
     // scared of doing it at the moment:
     // XUngrabServer(displayCGIDs[screenNumber]);
 
-    // On Linux we restore the original display settings of the to be released screen:
-    PsychRestoreScreenSettings(screenNumber);
-    if(error) PsychErrorExitMsg(PsychError_internal, "Unable to release display");
     PsychUnlockScreenSettings(screenNumber);
 }
 
@@ -819,6 +1013,9 @@ void PsychGetScreenDepths(int screenNumber, PsychDepthType *depths)
 
   if(screenNumber>=numDisplays) PsychErrorExitMsg(PsychError_internal, "screenNumber is out of range"); //also checked within SCREENPixelSizes
 
+  // Update XLib's view of this screens configuration:
+  ProcessRandREvents(screenNumber);
+
   x11_depths = XListDepths(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), &count);
   if (depths && count>0) {
     // Query successful: Add all values to depth struct:
@@ -835,65 +1032,158 @@ void PsychGetScreenDepths(int screenNumber, PsychDepthType *depths)
   }
 }
 
+double PsychOSVRefreshFromMode(XRRModeInfo *mode)
+{
+  double dot_clock = (double) mode->dotClock / 1000.0;
+  double vrefresh = (((dot_clock * 1000.0) / mode->hTotal) * 1000.0) / mode->vTotal;
+
+  // Divide vrefresh by 1000 to get real Hz - value:
+  vrefresh = vrefresh / 1000.0;
+
+  // Doublescan mode? If so, divide vrefresh by 2:
+  if (mode->modeFlags & RR_DoubleScan) vrefresh /= 2.0;
+
+  // Interlaced mode? If so, multiply vrefresh by 2:
+  if (mode->modeFlags & RR_Interlace) vrefresh *= 2.0;
+ 
+  return(vrefresh);
+}
+
 /*   PsychGetAllSupportedScreenSettings()
  *
  *	 Queries the display system for a list of all supported display modes, ie. all valid combinations
  *	 of resolution, pixeldepth and refresh rate. Allocates temporary arrays for storage of this list
  *	 and returns it to the calling routine. This function is basically only used by Screen('Resolutions').
  */
-int PsychGetAllSupportedScreenSettings(int screenNumber, long** widths, long** heights, long** hz, long** bpp)
+int PsychGetAllSupportedScreenSettings(int screenNumber, int outputId, long** widths, long** heights, long** hz, long** bpp)
 {
-//    int i, rc, numPossibleModes;
-//    DEVMODE result;
-//    long tempWidth, tempHeight, currentFrequency, tempFrequency, tempDepth;
-//
-//    if(screenNumber>=numDisplays) PsychErrorExit(PsychError_invalidScumber);
-//
-//	// First pass: How many modes are supported?
-//	i=-1;
-//	do {
-//        result.dmSize = sizeof(DEVMODE);
-//        result.dmDriverExtra = 0;
-//        rc = EnumDisplaySettings(PsychGetDisplayDeviceName(screenNumber), i, &result);
-//        i++;
-//	} while (rc!=0);
-//
-//    // Get a list of avialable modes for the specified display:
-//    numPossibleModes= i;
-//	
-//	// Allocate output arrays: These will get auto-released at exit
-//	// from Screen():
-//	*widths = (long*) PsychMallocTemp(numPossibleModes * sizeof(int));
-//	*heights = (long*) PsychMallocTemp(numPossibleModes * sizeof(int));
-//	*hz = (long*) PsychMallocTemp(numPossibleModes * sizeof(int));
-//	*bpp = (long*) PsychMallocTemp(numPossibleModes * sizeof(int));
-//	
-//	// Fetch modes and store into arrays:
-//    for(i=0; i < numPossibleModes; i++) {
-//        result.dmSize = sizeof(DEVMODE);
-//        result.dmDriverExtra = 0;
-//        rc = EnumDisplaySettings(PsychGetDisplayDeviceName(screenNumber), i, &result);
-//		(*widths)[i] = (long)  result.dmPelsWidth;
-//		(*heights)[i] = (long)  result.dmPelsHeight;
-//		(*hz)[i] = (long) result.dmDisplayFrequency;
-//		(*bpp)[i] = (long) result.dmBitsPerPel;
-//    }
-//
-//	return(numPossibleModes);
+  int i, j, o, nsizes, nrates, numPossibleModes;
+  XRRModeInfo *mode = NULL;
+  XRROutputInfo *output_info = NULL;
 
-	// FIXME: Not yet implemented!
-	return(0);
+  if(screenNumber >= numDisplays) PsychErrorExit(PsychError_invalidScumber);
+
+  // Only supported with RandR 1.2 or later:
+  if (!has_xrandr_1_2) return(0);
+
+  if (outputId < 0) {
+    // Iterate over all screen sizes and count number of size x refresh rate combos:
+    numPossibleModes = 0;
+    XRRScreenSize *scs = XRRSizes(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), &nsizes);
+    for (i = 0; i < nsizes; i++) {
+      XRRRates(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), i, &nrates);
+      numPossibleModes += nrates;
+    }
+
+    // Allocate output arrays: These will get auto-released at exit from Screen():
+    *widths  = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+    *heights = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+    *hz      = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+    *bpp     = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+
+    // Reiterate and fill all slots:
+    numPossibleModes = 0;
+    for (i = 0; i < nsizes; i++) {
+      short* rates = XRRRates(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), i, &nrates);
+      for (j = 0; j < nrates; j++) {
+        (*widths)[numPossibleModes]  = (long) scs[i].width;
+	(*heights)[numPossibleModes] = (long) scs[i].height;
+	(*hz)[numPossibleModes]      = (long) rates[j];
+	(*bpp)[numPossibleModes]     = (long) PsychGetScreenDepthValue(screenNumber);
+	numPossibleModes++;
+      }
+    }
+
+    // Done:
+    return(numPossibleModes);
+  }
+
+  // Find crtc for given outputid and screen:
+  XRRScreenResources *res = displayX11ScreenResources[screenNumber];
+  if (outputId >= kPsychMaxPossibleCrtcs) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+  outputId = PsychScreenToHead(screenNumber, outputId);
+  if (outputId >= res->ncrtc || outputId < 0) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+  RRCrtc crtc = res->crtcs[outputId];
+
+  // Find output associated with the crtc for this outputId:
+  for (o = 0; o < res->noutput; o++) {
+    output_info = XRRGetOutputInfo(displayCGIDs[screenNumber], res, res->outputs[o]);
+    if (output_info->crtc == crtc) break;
+    XRRFreeOutputInfo(output_info);
+  }
+
+  // Got it?
+  if (o == res->noutput) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+
+  // Got it: output_info contains a list of all modes (XID's) supported by this
+  // display output / crtc combo: Iterate over all of them and return them.
+  numPossibleModes = output_info->nmode;
+
+  // Allocate output arrays: These will get auto-released at exit from Screen():
+  *widths  = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+  *heights = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+  *hz      = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+  *bpp     = (long*) PsychMallocTemp(numPossibleModes * sizeof(long));
+
+  for (i = 0; i < numPossibleModes; i++) {
+    // Fetch modeline for i'th mode:
+    for (j = 0; j < res->nmode; j++) {
+      if (res->modes[j].id == output_info->modes[i]) break;
+    }
+
+    (*widths)[i] = (long) res->modes[j].width;
+    (*heights)[i] = (long) res->modes[j].height;
+    (*hz)[i] = (long) (PsychOSVRefreshFromMode(&res->modes[j]) + 0.5);
+    (*bpp)[i] = (long) 32;
+  }
+
+  // Free output info:
+  XRRFreeOutputInfo(output_info);
+
+  // Done:
+  return(numPossibleModes);
 }
 
 /*
-    static PsychGetCGModeFromVideoSettings()
-   
-*/
+ * PsychGetCGModeFromVideoSettings()
+ */
 psych_bool PsychGetCGModeFromVideoSetting(CFDictionaryRef *cgMode, PsychScreenSettingsType *setting)
 {
-  // Dummy assignment:
-  *cgMode = 1;
-  return(TRUE);
+    int i, j, nsizes, nrates;
+
+    // No op on system without RandR:
+    if (!has_xrandr_1_2) {
+        // Dummy assignment:
+        *cgMode = 1;
+        return(TRUE);
+    }
+
+    // Extract parameters from setting struct:
+    CGDirectDisplayID dpy = displayCGIDs[setting->screenNumber];
+    int width  = (int) PsychGetWidthFromRect(setting->rect);
+    int height = (int) PsychGetHeightFromRect(setting->rect);
+    int fps    = (int) (setting->nominalFrameRate + 0.5);
+
+    // Find matching mode:
+    int size_index = -1;
+    XRRScreenSize *scs = XRRSizes(dpy, PsychGetXScreenIdForScreen(setting->screenNumber), &nsizes);
+    for (i = 0; i < nsizes; i++) {
+      if ((width == scs[i].width) && (height == scs[i].height)) {
+        short *rates = XRRRates(dpy, PsychGetXScreenIdForScreen(setting->screenNumber), i, &nrates);
+	for (j = 0; j < nrates; j++) {
+	  if (rates[j] == (short) fps) {
+	    // Our requested size x fps combo is supported:
+	    size_index = i;
+	  }
+	}
+      }
+    }
+
+    // Found valid settings?
+    if (size_index == -1) return(FALSE);
+
+    *cgMode = size_index;
+    return(TRUE);
 }
 
 
@@ -917,6 +1207,10 @@ psych_bool PsychCheckVideoSettings(PsychScreenSettingsType *setting)
 void PsychGetScreenDepth(int screenNumber, PsychDepthType *depth)
 {    
   if(screenNumber>=numDisplays) PsychErrorExitMsg(PsychError_internal, "screenNumber is out of range"); //also checked within SCREENPixelSizes
+
+  // Update XLib's view of this screens configuration:
+  ProcessRandREvents(screenNumber);
+
   PsychAddValueToDepthStruct(DefaultDepth(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), depth);
 }
 
@@ -929,9 +1223,10 @@ int PsychGetScreenDepthValue(int screenNumber)
     return(PsychGetValueFromDepthStruct(0,&depthStruct));
 }
 
-
 float PsychGetNominalFramerate(int screenNumber)
 {
+  if (PsychPrefStateGet_ConserveVRAM() & kPsychIgnoreNominalFramerate) return(0);
+
 #ifdef USE_VIDMODEEXTS
 
   // Information returned by the XF86VidModeExtension:
@@ -941,33 +1236,62 @@ float PsychGetNominalFramerate(int screenNumber)
   // We start with a default vrefresh of zero, which means "couldn't query refresh from OS":
   float vrefresh = 0;
 
-  if(screenNumber>=numDisplays)
+  if(screenNumber >= numDisplays || screenNumber < 0)
     PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychGetScreenDepths() is out of range"); 
 
-  if (!XF86VidModeSetClientVersion(displayCGIDs[screenNumber])) {
-    // Failed to use VidMode-Extension. We just return a vrefresh of zero.
-    return(0);
+  // First we try to get modeline of primary crtc from RandR:
+  XRRModeInfo *mode = PsychOSGetModeLine(screenNumber, 0, NULL);
+
+  // Modeline with plausible values returned by RandR?
+  if (mode && (mode->hTotal > mode->width) && (mode->vTotal > mode->height)) {
+    if (PsychPrefStateGet_Verbosity() > 4) {
+      printf ("  %s (0x%x) %6.1fMHz\n",
+      mode->name, (int)mode->id,
+      (double)mode->dotClock / 1000000.0);
+      printf ("        h: width  %4d start %4d end %4d total %4d skew %4d\n",
+      mode->width, mode->hSyncStart, mode->hSyncEnd,
+      mode->hTotal, mode->hSkew);
+      printf ("        v: height %4d start %4d end %4d total %4d\n",
+      mode->height, mode->vSyncStart, mode->vSyncEnd, mode->vTotal);
+    }
+
+    dot_clock = (int) ((double) mode->dotClock / 1000.0);
+    mode_line.htotal = mode->hTotal;
+    mode_line.vtotal = mode->vTotal;
+    mode_line.flags = 0;
+    mode_line.flags |= (mode->modeFlags & RR_DoubleScan) ? 0x0020 : 0x0;
+    mode_line.flags |= (mode->modeFlags & RR_Interlace) ? 0x0010 : 0x0;
+  }
+  else {
+    // No modeline from RandR or invalid modeline. Retry with vidmode extensions:
+    if (!XF86VidModeSetClientVersion(displayCGIDs[screenNumber])) {
+      // Failed to use VidMode-Extension. We just return a vrefresh of zero.
+      return(0);
+    }
+
+    if (!XF86VidModeGetModeLine(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), &dot_clock, &mode_line)) {
+      // Failed to use VidMode-Extension. We just return a vrefresh of zero.
+      return(0);
+    }
   }
 
   // Query vertical refresh rate. If it fails we default to the last known good value...
-  if (XF86VidModeGetModeLine(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), &dot_clock, &mode_line)) {
-    // Vertical refresh rate is: RAMDAC pixel clock / width of a scanline in clockcylces /
-    // number of scanlines per videoframe.
-    vrefresh = (((dot_clock * 1000) / mode_line.htotal) * 1000) / mode_line.vtotal;
+  // Vertical refresh rate is: RAMDAC pixel clock / width of a scanline in clockcylces /
+  // number of scanlines per videoframe.
+  vrefresh = (((dot_clock * 1000) / mode_line.htotal) * 1000) / mode_line.vtotal;
 
-    // Divide vrefresh by 1000 to get real Hz - value:
-    vrefresh = vrefresh / 1000.0f;
+  // Divide vrefresh by 1000 to get real Hz - value:
+  vrefresh = vrefresh / 1000.0f;
 
-    // Definitions from xserver's hw/xfree86/common/xf86str.h
-    // V_INTERLACE	= 0x0010,
-    // V_DBLSCAN	= 0x0020,
+  // Definitions from xserver's hw/xfree86/common/xf86str.h
+  // V_INTERLACE	= 0x0010,
+  // V_DBLSCAN	= 0x0020,
 
-    // Doublescan mode? If so, divide vrefresh by 2:
-    if (mode_line.flags & 0x0020) vrefresh /= 2;
+  // Doublescan mode? If so, divide vrefresh by 2:
+  if (mode_line.flags & 0x0020) vrefresh /= 2;
 
-    // Interlaced mode? If so, multiply vrefresh by 2:
-    if (mode_line.flags & 0x0010) vrefresh *= 2;
-  }
+  // Interlaced mode? If so, multiply vrefresh by 2:
+  if (mode_line.flags & 0x0010) vrefresh *= 2;
 
   // Done.
   return(vrefresh);
@@ -1070,6 +1394,10 @@ void PsychGetDisplaySize(int screenNumber, int *width, int *height)
 {
     if(screenNumber>=numDisplays)
         PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychGetDisplaySize() is out of range");
+
+    // Update XLib's view of this screens configuration:
+    ProcessRandREvents(screenNumber);
+
     *width = (int) XDisplayWidthMM(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber));
     *height = (int) XDisplayHeightMM(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber));
 }
@@ -1077,6 +1405,10 @@ void PsychGetDisplaySize(int screenNumber, int *width, int *height)
 void PsychGetScreenSize(int screenNumber, long *width, long *height)
 {
   if(screenNumber>=numDisplays) PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychGetScreenDepths() is out of range"); 
+
+  // Update XLib's view of this screens configuration:
+  ProcessRandREvents(screenNumber);
+
   *width=XDisplayWidth(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber));
   *height=XDisplayHeight(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber));
 }
@@ -1122,7 +1454,6 @@ int PsychGetNumScreenPlanes(int screenNumber)
 }
 
 
-
 /*
 	This is a place holder for a function which uncovers the number of dacbits.  To be filled in at a later date.
 	If you know that your card supports >8 then you can fill that in the PsychtPreferences and the psychtoolbox
@@ -1141,7 +1472,6 @@ int PsychGetDacBitsFromDisplay(int screenNumber)
 }
 
 
-
 /*
     PsychGetVideoSettings()
     
@@ -1156,14 +1486,103 @@ void PsychGetScreenSettings(int screenNumber, PsychScreenSettingsType *settings)
     PsychInitDepthStruct(&(settings->depth));
     PsychGetScreenDepth(screenNumber, &(settings->depth));
     settings->mode=PsychGetColorModeFromDepthStruct(&(settings->depth));
-    settings->nominalFrameRate=PsychGetNominalFramerate(screenNumber);
+    settings->nominalFrameRate= (int) (PsychGetNominalFramerate(screenNumber) + 0.5);
     //settings->dacbits=PsychGetDacBits(screenNumber);
 }
 
 
-
-
 //Set display parameters
+
+/* Linux only: PsychOSSetOutputConfig()
+ * Set a video mode and other settings for a specific crtc of a specific output 'outputId'
+ * for a specific screen 'screenNumber'.
+ *
+ * Returns true on success, false on failure.
+ */
+int PsychOSSetOutputConfig(int screenNumber, int outputId, int newWidth, int newHeight, int newHz, int newX, int newY)
+{
+  int modeid, maxw, maxh, output, widthMM, heightMM;
+  XRRCrtcInfo *crtc_info = NULL, *crtc_info2;
+  CGDirectDisplayID dpy = displayCGIDs[screenNumber];
+  XRRScreenResources *res = displayX11ScreenResources[screenNumber];
+
+  // Need this later:
+  PsychGetDisplaySize(screenNumber, &widthMM, &heightMM);
+
+  if (has_xrandr_1_2 && (PsychScreenToHead(screenNumber, outputId) >= 0)) {
+    crtc_info = XRRGetCrtcInfo(dpy, res, res->crtcs[PsychScreenToHead(screenNumber, outputId)]);
+  }
+  else {
+    // Failed!
+    return(FALSE);
+  }
+
+  // Disable auto-restore of screen settings - It would end badly...
+  displayOriginalCGSettingsValid[screenNumber] = FALSE;
+
+  // Find matching mode:
+  for (modeid = 0; modeid < res->nmode; modeid++) {
+    if ((res->modes[modeid].width == newWidth) && (res->modes[modeid].height == newHeight) &&
+	(newHz == (int)(PsychOSVRefreshFromMode(&res->modes[modeid]) + 0.5))) {
+      break;
+    }
+  }
+
+  // Matching mode found for modesetting?
+  if (modeid < res->nmode) {
+    // Assign default panning:
+    if (newX < 0) newX = crtc_info->x;
+    if (newY < 0) newY = crtc_info->y;
+
+    // Iterate over all outputs and compute the new screen bounding box:
+    maxw = maxh = 0;
+    for (output = 0; (PsychScreenToHead(screenNumber, output) >= 0) && (output < kPsychMaxPossibleCrtcs); output++) {
+      if (output == outputId) continue;
+      crtc_info2 = XRRGetCrtcInfo(dpy, res, res->crtcs[PsychScreenToHead(screenNumber, output)]);
+      if (crtc_info2->x + (int) crtc_info2->width > maxw) maxw = crtc_info2->x + (int) crtc_info2->width;
+      if (crtc_info2->y + (int) crtc_info2->height > maxh) maxh = crtc_info2->y + (int) crtc_info2->height;
+      XRRFreeCrtcInfo(crtc_info2);
+    }
+
+    // Incorporate our soon reconfigured crtc:
+    if (newX + newWidth  > maxw) maxw = newX + newWidth;
+    if (newY + newHeight > maxh) maxh = newY + newHeight;
+
+    // [0, 0, maxw, maxh] is the new bounding rectangle of the scanned out framebuffer. Set screen size accordingly:
+
+    // Prevent clients from getting confused by our config sequence:
+    // XGrabServer(dpy);
+
+    // Disable target crtc:
+    if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Disabling crtc %i.\n", outputId);
+    Status rc = XRRSetCrtcConfig(dpy, res, res->crtcs[PsychScreenToHead(screenNumber, outputId)], crtc_info->timestamp,
+			         0, 0, None, RR_Rotate_0, NULL, 0);
+
+    // Resize screen: MK Don't! Skip this for now, use PsychSetScreenSettings() aka Screen('Resolution') to resize
+    // the screen without changing the crtc / output settings. More flexible...
+    // if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Resizing screen %i to %i x %i pixels.\n", screenNumber, maxw, maxh);
+    // XRRSetScreenSize(dpy, RootWindow(dpy, PsychGetXScreenIdForScreen(screenNumber)), maxw, maxh, widthMM, heightMM);
+
+    // Switch mode of target crtc and reenable it:
+    if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Enabling crtc %i.\n", outputId);
+    crtc_info2 = XRRGetCrtcInfo(dpy, res, res->crtcs[PsychScreenToHead(screenNumber, outputId)]);
+    rc = XRRSetCrtcConfig(dpy, res, res->crtcs[PsychScreenToHead(screenNumber, outputId)], crtc_info2->timestamp,
+			  newX, newY, res->modes[modeid].id, crtc_info->rotation,
+			  crtc_info->outputs, crtc_info->noutput);
+    XRRFreeCrtcInfo(crtc_info);
+    XRRFreeCrtcInfo(crtc_info2);
+
+    // XUngrabServer(dpy);
+
+    // Make sure the screen change gets noticed by XLib:
+    ProcessRandREvents(screenNumber);
+
+    return(TRUE);
+  } else {
+    XRRFreeCrtcInfo(crtc_info);
+    return(FALSE);
+  }
+}
 
 /*
     PsychSetScreenSettings()
@@ -1185,50 +1604,89 @@ void PsychGetScreenSettings(int screenNumber, PsychScreenSettingsType *settings)
 
 psych_bool PsychSetScreenSettings(psych_bool cacheSettings, PsychScreenSettingsType *settings)
 {
-    CFDictionaryRef 		cgMode;
-    psych_bool 			isValid, isCaptured;
-    CGDisplayErr 		error;
+    CFDictionaryRef cgMode;
+    psych_bool      isValid, isCaptured;
+    Rotation        rotation;
+    short           rate;
+    Time            cfg_timestamp;
+    CGDirectDisplayID dpy;
 
-    //get the display IDs.  Maybe we should consolidate this out of these functions and cache the IDs in a file static
-    //variable, since basicially every core graphics function goes through this deal.    
-    if(settings->screenNumber>=numDisplays)
-        PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychSetScreenSettings() is out of range");
+    if (settings->screenNumber>=numDisplays) PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychSetScreenSettings() is out of range");
+    dpy = displayCGIDs[settings->screenNumber];
 
     //Check for a lock which means onscreen or offscreen windows tied to this screen are currently open.
     // MK Disabled: if(PsychCheckScreenSettingsLock(settings->screenNumber)) return(false);  //calling function should issue an error for attempt to change display settings while windows were open.
     
-    //store the original display mode if this is the first time we have called this function.  The psychtoolbox will disregard changes in 
-    //the screen state made through the control panel after the Psychtoolbox was launched. That is, OpenWindow will by default continue to 
-    //open windows with finder settings which were in place at the first call of OpenWindow.  That's not intuitive, but not much of a problem
-    //either. 
-    if(!displayOriginalCGSettingsValid[settings->screenNumber]){
-      displayOriginalCGSettings[settings->screenNumber]= 1; // FIXME!!! CGDisplayCurrentMode(displayCGIDs[settings->screenNumber]);
-      displayOriginalCGSettingsValid[settings->screenNumber]=TRUE;
-    }
-    
-    //Find core graphics video settings which correspond to settings as specified withing by an abstracted psychsettings structure.  
-    isValid=PsychGetCGModeFromVideoSetting(&cgMode, settings);
-    if(!isValid){
-        PsychErrorExitMsg(PsychError_internal, "Attempt to set invalid video settings"); 
-        //this is an internal error because the caller is expected to check first. 
-    }
-    
-    //If the caller passed cache settings (then it is SCREENResolutions) and we should cache the current video mode settings for this display.  These
-    //are cached in the form of CoreGraphics settings and not Psychtoolbox video settings.  The only caller which should pass a set cache flag is 
-    //SCREENResolutions
-    if(cacheSettings){
-        displayOverlayedCGSettings[settings->screenNumber]=cgMode;
-        displayOverlayedCGSettingsValid[settings->screenNumber]=TRUE;
-    }
-    
     //Check to make sure that this display is captured, which OpenWindow should have done.  If it has not been done, then exit with an error.  
     isCaptured=PsychIsScreenCaptured(settings->screenNumber);
     if(!isCaptured) PsychErrorExitMsg(PsychError_internal, "Attempt to change video settings without capturing the display");
-        
-    //Change the display mode.   
-    // FIXME: Not yet implemented.
-    
-    return(true);
+
+    // Store the original display mode if this is the first time we have called this function.  The psychtoolbox will disregard changes in 
+    // the screen state made through the control panel after the Psychtoolbox was launched. That is, OpenWindow will by default continue to 
+    // open windows with finder settings which were in place at the first call of OpenWindow.  That's not intuitive, but not much of a problem
+    // either. 
+    if(!displayOriginalCGSettingsValid[settings->screenNumber]) {
+      PsychGetScreenSettings(settings->screenNumber, &displayOriginalCGSettings[settings->screenNumber]);
+      displayOriginalCGSettingsValid[settings->screenNumber] = TRUE;
+    }
+
+    // Multi-Display configuration?
+    if (PsychScreenToHead(settings->screenNumber, 1) != -1) {
+      // Yes: At least two display heads attached. We can't use the XRRSetScreenConfigAndRate() method,
+      // it is only suitable for single-display setups. In this case, we only set the screen size, aka
+      // framebuffer size. User scripts can use the 'ConfigureDisplay' function to setup the crtc's:
+
+      // Also cannot restore display settings at Window / Screen / Runtime close time, so disable it:
+      displayOriginalCGSettingsValid[settings->screenNumber] = FALSE;
+
+      // Resize screen:
+      int widthMM, heightMM;
+      PsychGetDisplaySize(settings->screenNumber, &widthMM, &heightMM);
+      int width  = (int) PsychGetWidthFromRect(settings->rect);
+      int height = (int) PsychGetHeightFromRect(settings->rect);
+
+      if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Resizing screen %i to %i x %i pixels.\n", settings->screenNumber, width, height);
+      XRRSetScreenSize(dpy, RootWindow(dpy, PsychGetXScreenIdForScreen(settings->screenNumber)), width, height, widthMM, heightMM);
+
+      // Make sure the screen change gets noticed by XLib:
+      ProcessRandREvents(settings->screenNumber);
+
+      // Done.
+      return(true);
+    }
+
+    // Single display configuration, go ahead:
+
+    //Find core graphics video settings which correspond to settings as specified withing by an abstracted psychsettings structure.  
+    isValid = PsychGetCGModeFromVideoSetting(&cgMode, settings);
+    if(!isValid){
+        // This is an internal error because the caller is expected to check first. 
+        PsychErrorExitMsg(PsychError_internal, "Attempt to set invalid video settings"); 
+    }
+
+    // Change the display mode.
+    XRRScreenConfiguration *sc = XRRGetScreenInfo(dpy, RootWindow(dpy, PsychGetXScreenIdForScreen(settings->screenNumber)));
+
+    // Extract parameters from settings struct:
+    rate = (short) (settings->nominalFrameRate + 0.5);
+
+    // Fetch current rotation, so we can (re)apply it -- We don't support changing rotation yet:
+    XRRConfigCurrentConfiguration(sc, &rotation);
+
+    // Fetch config timestamp so we can prove to the server we're trustworthy:
+    Time timestamp = XRRConfigTimes(sc, &cfg_timestamp);
+
+    // Apply new configuration - combo of old rotation with new size (encoded in cgMode) and refresh rate:
+    Status rc = XRRSetScreenConfigAndRate(dpy, sc, RootWindow(dpy, PsychGetXScreenIdForScreen(settings->screenNumber)), cgMode, rotation, rate, timestamp);
+
+    // Cleanup:
+    XRRFreeScreenConfigInfo(sc);
+
+    // Make sure the screen change gets noticed by XLib:
+    ProcessRandREvents(settings->screenNumber);
+
+    // Done:
+    return((rc != BadValue) ? true : false);
 }
 
 /*
@@ -1240,9 +1698,13 @@ psych_bool PsychSetScreenSettings(psych_bool cacheSettings, PsychScreenSettingsT
 */
 psych_bool PsychRestoreScreenSettings(int screenNumber)
 {
-    psych_bool 			isCaptured;
-    CGDisplayErr 		error=0;
-
+    CFDictionaryRef             cgMode;
+    psych_bool                  isValid, isCaptured;
+    Rotation                    rotation;
+    short                       rate;
+    Time                        cfg_timestamp;
+    CGDirectDisplayID           dpy;
+    PsychScreenSettingsType     *settings;
 
     if(screenNumber>=numDisplays)
         PsychErrorExitMsg(PsychError_internal, "screenNumber passed to PsychGetScreenDepths() is out of range"); //also checked within SCREENPixelSizes
@@ -1259,10 +1721,72 @@ psych_bool PsychRestoreScreenSettings(int screenNumber)
     isCaptured=PsychIsScreenCaptured(screenNumber);
     if(!isCaptured) PsychErrorExitMsg(PsychError_internal, "Attempt to change video settings without capturing the display");
     
-    // FIXME: Not yet implemented...
+    // Retrieve original screen settings which we should restore for this screen:
+    settings = &displayOriginalCGSettings[screenNumber];
+
+    // Invalidate settings - we want a fresh game after restoring the resolution:
+    displayOriginalCGSettingsValid[screenNumber] = FALSE;
+
+    //Find core graphics video settings which correspond to settings as specified withing by an abstracted psychsettings structure.  
+    isValid = PsychGetCGModeFromVideoSetting(&cgMode, settings);
+    if(!isValid) {
+        // This is an internal error because the caller is expected to check first.
+        PsychErrorExitMsg(PsychError_internal, "Attempt to restore now invalid video settings"); 
+    }
+
+    //Change the display mode.
+    dpy = displayCGIDs[settings->screenNumber];
+    XRRScreenConfiguration *sc = XRRGetScreenInfo(dpy, RootWindow(dpy, PsychGetXScreenIdForScreen(settings->screenNumber)));
+
+    // Extract parameters from settings struct:
+    rate = (short) (settings->nominalFrameRate + 0.5);
+
+    // Fetch current rotation, so we can (re)apply it -- We don't support changing rotation yet:
+    XRRConfigCurrentConfiguration (sc, &rotation);
+
+    // Fetch config timestamp so we can prove to the server we're trustworthy:
+    Time timestamp = XRRConfigTimes(sc, &cfg_timestamp);
+
+    // Apply new configuration - combo of old rotation with new size (encoded in cgMode) and refresh rate:
+    Status rc = XRRSetScreenConfigAndRate(dpy, sc, RootWindow(dpy, PsychGetXScreenIdForScreen(settings->screenNumber)), cgMode, rotation, rate, timestamp);
+
+    // Cleanup:
+    XRRFreeScreenConfigInfo(sc);
+
+    // Make sure the screen change gets noticed by XLib:
+    ProcessRandREvents(settings->screenNumber);
+
+    // Done:
+    return((rc != BadValue) ? true : false);
+
     return(true);
 }
 
+void PsychOSDefineX11Cursor(int screenNumber, int deviceId, Cursor cursor)
+{
+    PsychWindowRecordType **windowRecordArray;
+    int i, numWindows;
+
+    // Iterate over all open onscreen windows associated with this screenNumber and
+    // apply new X11 cursor definition to each of them:
+    PsychCreateVolatileWindowRecordPointerList(&numWindows, &windowRecordArray);
+    for(i = 0; i < numWindows; i++) {
+	if (PsychIsOnscreenWindow(windowRecordArray[i]) && (windowRecordArray[i]->screenNumber == screenNumber)) {
+		// Candidate.
+		if (deviceId >= 0) {
+			// XInput extension for per-device settings:
+			XIDefineCursor(displayCGIDs[screenNumber], deviceId, windowRecordArray[i]->targetSpecific.xwindowHandle, cursor);
+		}
+		else {
+			// Old-School global settings:
+			XDefineCursor(displayCGIDs[screenNumber], windowRecordArray[i]->targetSpecific.xwindowHandle, cursor);
+		}
+	}
+    }
+    PsychDestroyVolatileWindowRecordPointerList(windowRecordArray);
+
+    return;
+}
 
 void PsychHideCursor(int screenNumber, int deviceIdx)
 {
@@ -1298,7 +1822,7 @@ void PsychHideCursor(int screenNumber, int deviceIdx)
 
   if (deviceIdx < 0) {
 	  // Attach nullCursor to our onscreen window:
-	  XDefineCursor(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), nullCursor );
+	  PsychOSDefineX11Cursor(screenNumber, deviceIdx, nullCursor);
 	  XFlush(displayCGIDs[screenNumber]);
 	  displayCursorHidden[screenNumber]=TRUE;
   } else {
@@ -1312,7 +1836,7 @@ void PsychHideCursor(int screenNumber, int deviceIdx)
 	if (indevs[deviceIdx].use != XIMasterPointer) PsychErrorExitMsg(PsychError_user, "Invalid 'mouseIndex' provided. No such master cursor pointer.");
 
 	// Attach nullCursor to our onscreen window:
-	XIDefineCursor(displayCGIDs[screenNumber], indevs[deviceIdx].deviceid, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), nullCursor);
+	PsychOSDefineX11Cursor(screenNumber, indevs[deviceIdx].deviceid, nullCursor);
 	XFlush(displayCGIDs[screenNumber]);
   }
 
@@ -1332,7 +1856,8 @@ void PsychShowCursor(int screenNumber, int deviceIdx)
 
 	// Reset to standard Arrow-Type cursor, which is a visible one.
 	arrowCursor = XCreateFontCursor(displayCGIDs[screenNumber], 2);
-	XDefineCursor(displayCGIDs[screenNumber], RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), arrowCursor);
+
+	PsychOSDefineX11Cursor(screenNumber, deviceIdx, arrowCursor);
 	XFlush(displayCGIDs[screenNumber]);
 	displayCursorHidden[screenNumber]=FALSE;
   } else {
@@ -1347,7 +1872,7 @@ void PsychShowCursor(int screenNumber, int deviceIdx)
 
 	// Reset to standard Arrow-Type cursor, which is a visible one.
 	arrowCursor = XCreateFontCursor(displayCGIDs[screenNumber], 2);
-	XIDefineCursor(displayCGIDs[screenNumber], indevs[deviceIdx].deviceid, RootWindow(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber)), arrowCursor);
+	PsychOSDefineX11Cursor(screenNumber, indevs[deviceIdx].deviceid, arrowCursor);
 	XFlush(displayCGIDs[screenNumber]);
   }
 }
@@ -1386,61 +1911,138 @@ void PsychPositionCursor(int screenNumber, int x, int y, int deviceIdx)
             For example, PsychReadNormalizedGammaTable() vs. PsychGetNormalizedGammaTable().
     
 */
-void PsychReadNormalizedGammaTable(int screenNumber, int *numEntries, float **redTable, float **greenTable, float **blueTable)
+void PsychReadNormalizedGammaTable(int screenNumber, int outputId, int *numEntries, float **redTable, float **greenTable, float **blueTable)
 {
-#ifdef USE_VIDMODEEXTS
-
-  CGDirectDisplayID	cgDisplayID;
-  static  float localRed[256], localGreen[256], localBlue[256];
+  CGDirectDisplayID cgDisplayID;
+  static float localRed[256], localGreen[256], localBlue[256];
   
   // The X-Windows hardware LUT has 3 tables for R,G,B, 256 slots each.
   // Each entry is a 16-bit word with the n most significant bits used for an n-bit DAC.
   psych_uint16	RTable[256];
   psych_uint16	GTable[256];
   psych_uint16	BTable[256];
-  int     i;        
+  int i;        
 
   // Query OS for gamma table:
   PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, screenNumber);
-  XF86VidModeGetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
 
-  // Convert tables:Map 16-bit values into 0-1 normalized floats:
+  if (has_xrandr_1_2) {
+    // Use RandR V 1.2 for per-crtc query:
+    XRRScreenResources *res = displayX11ScreenResources[screenNumber];
+
+    if (outputId >= kPsychMaxPossibleCrtcs) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+    outputId = PsychScreenToHead(screenNumber, ((outputId < 0) ? 0 : outputId));
+    if (outputId >= res->ncrtc || outputId < 0) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+
+    RRCrtc crtc = res->crtcs[outputId];
+    XRRCrtcGamma *lut = XRRGetCrtcGamma(cgDisplayID, crtc);
+
+    if ((lut->size != 256) && (PsychPrefStateGet_Verbosity() > 1)) {
+      printf("PTB-WARNING: ReadNormalizedGammatable: Hardware gamma table doesn't have required 256 slots, but %i slots! Returned LUT's may be wrong!\n", lut->size);
+    }
+
+    // Convert tables:Map 16-bit values into 0-1 normalized floats:
+    for (i=0; i<256; i++) localRed[i]   = ((float) lut->red[i]) / 65535.0f;
+    for (i=0; i<256; i++) localGreen[i] = ((float) lut->green[i]) / 65535.0f;
+    for (i=0; i<256; i++) localBlue[i]  = ((float) lut->blue[i]) / 65535.0f;
+    XRRFreeGamma(lut);
+  }
+  else {
+    // Use old-fashioned VidmodeExt path: No control over which output is queried on multi-display setups:
+    #ifdef USE_VIDMODEEXTS
+    XF86VidModeGetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+    #endif
+
+    // Convert tables:Map 16-bit values into 0-1 normalized floats:
+    for (i=0; i<256; i++) localRed[i]   = ((float) RTable[i]) / 65535.0f;
+    for (i=0; i<256; i++) localGreen[i] = ((float) GTable[i]) / 65535.0f;
+    for (i=0; i<256; i++) localBlue[i]  = ((float) BTable[i]) / 65535.0f;
+  }
+
+  // Assign output lut's:
   *redTable=localRed; *greenTable=localGreen; *blueTable=localBlue;
-  for (i=0; i<256; i++) localRed[i]   = ((float) RTable[i]) / 65535.0f;
-  for (i=0; i<256; i++) localGreen[i] = ((float) GTable[i]) / 65535.0f;
-  for (i=0; i<256; i++) localBlue[i]  = ((float) BTable[i]) / 65535.0f;
 
   // The LUT's always have 256 slots for the 8-bit framebuffer:
   *numEntries= 256;
-#endif
+
   return;
 }
 
-unsigned int PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redTable, float *greenTable, float *blueTable)
+unsigned int PsychLoadNormalizedGammaTable(int screenNumber, int outputId, int numEntries, float *redTable, float *greenTable, float *blueTable)
 {
-#ifdef USE_VIDMODEEXTS
-
   CGDirectDisplayID	cgDisplayID;
-  int     i;        
-  psych_uint16	RTable[256];
-  psych_uint16	GTable[256];
-  psych_uint16	BTable[256];
-
-  // Table must have 256 slots!
-  if (numEntries!=256) PsychErrorExitMsg(PsychError_user, "Loadable hardware gamma tables must have 256 slots!");    
+  int     i, j;
+  static psych_uint16	RTable[256];
+  static psych_uint16	GTable[256];
+  static psych_uint16	BTable[256];
   
   // The X-Windows hardware LUT has 3 tables for R,G,B, 256 slots each.
   // Each entry is a 16-bit word with the n most significant bits used for an n-bit DAC.
-
-  // Convert input table to X11 specific gammaTable:
-  for (i=0; i<256; i++) RTable[i] = (int)(redTable[i]   * 65535.0f + 0.5f);
-  for (i=0; i<256; i++) GTable[i] = (int)(greenTable[i] * 65535.0f + 0.5f);
-  for (i=0; i<256; i++) BTable[i] = (int)(blueTable[i]  * 65535.0f + 0.5f);
   
   // Set new gammaTable:
   PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, screenNumber);
-  XF86VidModeSetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
-#endif
+
+  if (has_xrandr_1_2) {
+    // Use RandR V 1.2 for per-crtc setup:
+
+    // Setup of all crtc's with this gamma table requested?
+    if (outputId < 0) {
+      // Yes: Iterate over all outputs, set via recursive call:
+      j = 1;
+      for (i = 0; (j > 0) && (i < kPsychMaxPossibleCrtcs) && (PsychScreenToHead(screenNumber, i) > -1); i++) {
+	j = PsychLoadNormalizedGammaTable(screenNumber, i, numEntries, redTable, greenTable, blueTable);
+      }
+
+      // Done setting all crtc's. Return success:
+      return(1);
+    }
+
+    // No: Only load a specific crtc for output 'outputId':
+    XRRScreenResources *res = displayX11ScreenResources[screenNumber];
+
+    if (outputId >= kPsychMaxPossibleCrtcs) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+    outputId = PsychScreenToHead(screenNumber, outputId);
+    if (outputId >= res->ncrtc || outputId < 0) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
+
+    RRCrtc crtc = res->crtcs[outputId];
+
+    // Get required size of gamma table:
+    j = XRRGetCrtcGammaSize(cgDisplayID, crtc);
+    if (numEntries != j) {
+      printf("PTB-ERROR: Provided gamma table has %i slots, but graphics card requires %i slots!\n", numEntries, j);
+      PsychErrorExitMsg(PsychError_user, "Loadable hardware gamma table has wrong number of slots!");
+    }
+
+    // Allocate table of appropriate size:
+    XRRCrtcGamma *lut = XRRAllocGamma(numEntries);
+
+    // Convert tables:Map 16-bit values into 0-1 normalized floats:
+    j = lut->size;
+    for (i=0; i<j; i++) lut->red[i]   = (psych_uint16) (redTable[i]   * 65535.0f + 0.5f);
+    for (i=0; i<j; i++) lut->green[i] = (psych_uint16) (greenTable[i] * 65535.0f + 0.5f);
+    for (i=0; i<j; i++) lut->blue[i]  = (psych_uint16) (blueTable[i]  * 65535.0f + 0.5f);
+
+    // Assign to crtc:
+    XRRSetCrtcGamma(cgDisplayID, crtc, lut);
+
+    // Release:
+    XRRFreeGamma(lut);
+  }
+  else {
+    // Use old-fashioned VidmodeExt path: No control over which output is setup on multi-display setups:
+    if (numEntries != 256) PsychErrorExitMsg(PsychError_user, "Loadable hardware gamma tables must have 256 slots!");    
+
+    // Convert input table to X11 specific gammaTable:
+    for (i=0; i<256; i++) RTable[i] = (int)(redTable[i]   * 65535.0f + 0.5f);
+    for (i=0; i<256; i++) GTable[i] = (int)(greenTable[i] * 65535.0f + 0.5f);
+    for (i=0; i<256; i++) BTable[i] = (int)(blueTable[i]  * 65535.0f + 0.5f);
+
+    #ifdef USE_VIDMODEEXTS
+    XF86VidModeSetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+    #endif
+  }
+
+  XFlush(cgDisplayID);
 
   // Return "success":
   return(1);
@@ -1561,7 +2163,7 @@ int PsychOSCheckKDAvailable(int screenId, unsigned int * status)
 	// but we don't have such a thing yet.  Could be also a pointer to a little struct with all
 	// relevant info...
 	// Currently we do a dummy assignment...
-	int connect = PsychScreenToHead(screenId);
+	int connect = PsychScreenToHead(screenId, 0);
 
 	if ((numKernelDrivers<=0) && (gfx_cntl_mem == NULL)) {
 		if (status) *status = ENODEV;
@@ -1620,7 +2222,7 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 	int								screenId = 0;
 	double							abortTimeOut, now;
 	int								residual;
-	unsigned int					i;
+	int                             i, iter;
 	unsigned int					old_crtc_master_enable = 0;
 	
 	// Check availability of connection:
@@ -1633,7 +2235,7 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 		return(PsychError_unimplemented);
 	}
 	
-	// The current implementation only supports syncing all heads of a single card
+	// The current implementation only supports syncing the heads of a single card
 	if (*numScreens <= 0) {
 		// Resync all displays requested: Choose screenID zero for connect handle:
 		screenId = 0;
@@ -1675,14 +2277,20 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 		
 		// Detect enabled heads:
 		old_crtc_master_enable = 0;
-		for (i = 0; i < 6; i++) {
+		for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
+            // Map 'iter'th head for this screenId to crtc index 'i'. Iterate over all crtc's for screen:
+            if ((i = PsychScreenToHead(screenId, iter)) < 0) break;
+            
 			// Bit 16 "CRTC_CURRENT_MASTER_EN_STATE" allows read-only polling
 			// of current activation state of crtc:
 			if (ReadRegister(EVERGREEN_CRTC_CONTROL + crtcoff[i]) & (0x1 << 16)) old_crtc_master_enable |= (0x1 << i);
 		}
 
 		// Shut down heads, one after each other, wait for each one to settle at its defined resting position:
-		for (i = 0; i < 6; i++) {
+		for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
+            // Map 'iter'th head for this screenId to crtc index 'i'. Iterate over all crtc's for screen:
+            if ((i = PsychScreenToHead(screenId, iter)) < 0) break;
+
 			if (PsychPrefStateGet_Verbosity() > 3) printf("Head %ld ...  ", i);
 			if (old_crtc_master_enable & (0x1 << i)) {		
 				if (PsychPrefStateGet_Verbosity() > 3) printf("active -> Shutdown. ");
@@ -1711,7 +2319,10 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 		
 		// Reenable all now disabled, but previously enabled display heads.
 		// This must be a tight loop, as every microsecond counts for a good sync...
-		for (i = 0; i < 6; i++) {
+		for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
+            // Map 'iter'th head for this screenId to crtc index 'i'. Iterate over all crtc's for screen:
+            if ((i = PsychScreenToHead(screenId, iter)) < 0) break;
+        
 			if (old_crtc_master_enable & (0x1 << i)) {		
 				// Restart this CRTC by setting its master enable bit (bit 0):
 				WriteRegister(EVERGREEN_CRTC_CONTROL + crtcoff[i], ReadRegister(EVERGREEN_CRTC_CONTROL + crtcoff[i]) | (0x1 << 0));
@@ -1932,7 +2543,7 @@ PsychError PsychOSSynchronizeDisplayScreens(int *numScreens, int* screenIds, int
 int PsychOSKDGetBeamposition(int screenId)
 {
 	int beampos = -1;
-	int headId  = PsychScreenToHead(screenId);
+	int headId  = PsychScreenToHead(screenId, 0);
 
 	// MMIO registers mapped?
 	if (gfx_cntl_mem) {
@@ -2008,87 +2619,118 @@ void PsychOSKDSetDitherMode(int screenId, unsigned int ditherOn)
 {
     static unsigned int oldDither[(DCE4_MAXHEADID + 1)] = { 0, 0, 0, 0, 0, 0 };
     unsigned int reg;
-	int headId  = (screenId >= 0) ? PsychScreenToHead(screenId) : -screenId;
+	int headId, iter;
     
     // MMIO registers mapped?
 	if (!gfx_cntl_mem) return;
 
-    // AMD/ATI Radeon, FireGL or FirePro GPU?
-	if (fDeviceType == kPsychRadeon) {
-        if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Trying to %s digital display dithering on display head %d.\n", (ditherOn) ? "enable" : "disable", headId);
+    // Check if the method is supported for this GPU type:
+    // Currently ATI/AMD GPU's only...
+    if (fDeviceType != kPsychRadeon) {
+        // Other unsupported GPU:
+        if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: SetDitherMode: Tried to call me on a non ATI/AMD GPU. Unsupported.\n");
+        return;
+    }
 
-        // Map headId to proper hardware control register offset:
-		if (isDCE4(screenId) || isDCE5(screenId)) {
-			// DCE-4 display engine (CEDAR and later afaik): Up to six crtc's. Map to proper
-            // register offset for this headId:
-            if (headId > DCE4_MAXHEADID) {
-                // Invalid head - bail:
-                if (PsychPrefStateGet_Verbosity() > 0) printf("SetDitherMode: ERROR! Invalid headId %d provided. Must be between 0 and 5. Aborted.\n", headId);
-                return;
-            }
-
-            // Map to dither format control register for head 'headId':
-            reg = EVERGREEN_FMT_BIT_DEPTH_CONTROL + crtcoff[headId];
-		} else {
-			// AVIVO display engine (R300 - R600 afaik): At most two display heads for dual-head gpu's.
-            if (headId > 1) {
-                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: INFO! Special headId %d outside valid dualhead range 0-1 provided. Will control LVDS dithering.\n", headId);
-                headId = 0;
-            }
-            else {
-                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: INFO! headId %d in valid dualhead range 0-1 provided. Will control TMDS (DVI et al.) dithering.\n", headId);
-                headId = 1;
-            }
+    // Start with headId undefined:
+    headId = -1;
+    
+    for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
+        if (screenId >= 0) {
+            // Positive screenId: Apply to all crtc's for this screenId:
             
-            // On AVIVO we can't control dithering per display head. Instead there's one global switch
-            // for LVDS connected displays (LVTMA) aka internal flat panels, e.g., of Laptops, and
-            // on global switch for "all things DVI-D", aka TMDSA:
-            reg = (headId == 0) ? RADEON_LVTMA_BIT_DEPTH_CONTROL : RADEON_TMDSA_BIT_DEPTH_CONTROL;
-		}
-
-        // Perform actual enable/disable/reconfigure sequence for target encoder/head:
-
-        // Enable dithering?
-        if (ditherOn) {
-            // Reenable dithering with old, previously stored settings, if it is disabled:
+            // Is there an iter'th crtc assigned to this screen?
+            headId = PsychScreenToHead(screenId, iter);
             
-            // Dithering currently off (all zeros)?
-            if (ReadRegister(reg) == 0) {
-                // Dithering is currently off. Do we know the old setting from a previous
-                // disable?
-                if (oldDither[headId] > 0) {
-                    // Yes: Restore old "factory settings":
-                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering previously disabled by us. Reenabling with old control setting %x.\n", oldDither[headId]);
-                    WriteRegister(reg, oldDither[headId]);
-                }
-                else {
-                    // No: Dithering was disabled all the time, so we don't know the
-                    // OS defaults. Use the numeric value of 'ditherOn' itself:
-                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering off. Enabling with userspace provided setting %x. Cross your fingers!\n", ditherOn);
-                    WriteRegister(reg, ditherOn);
-                }
-            }
-            else {
-                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering already enabled with current control value %x. Skipped.\n", ReadRegister(reg));
-            }
+            // If end of list of associated crtc's for this screenId reached, then we're done:
+            if (headId < 0) break;
         }
         else {
-            // Disable all dithering if it is enabled: Clearing the register to all zero bits does this.
-            if (ReadRegister(reg) > 0) {
-                oldDither[headId] = ReadRegister(reg);
-                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Current dither setting before our dither disable on head %d is %x. Disabling.\n", headId, oldDither[headId]);
-                WriteRegister(reg, 0x0);
+            // Negative screenId -> Only affect one head defined by screenId:
+            if (headId < 0) {
+                // Setup single target head in this iteration:
+                headId = -screenId;
             }
             else {
-                if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering already disabled. Skipped.\n");
+                // Single target head already set up: We're done:
+                break;
             }
         }
         
-        // End of Radeon et al. support code.
-	}
-    else {
-        // Other unsupported GPU:
-        if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Tried to call me on a non ATI/AMD GPU. Unsupported.\n");
+        // AMD/ATI Radeon, FireGL or FirePro GPU?
+        if (fDeviceType == kPsychRadeon) {
+            if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Trying to %s digital display dithering on display head %d.\n", (ditherOn) ? "enable" : "disable", headId);
+            
+            // Map headId to proper hardware control register offset:
+            if (isDCE4(screenId) || isDCE5(screenId)) {
+                // DCE-4 display engine (CEDAR and later afaik): Up to six crtc's. Map to proper
+                // register offset for this headId:
+                if (headId > DCE4_MAXHEADID) {
+                    // Invalid head - bail:
+                    if (PsychPrefStateGet_Verbosity() > 0) printf("SetDitherMode: ERROR! Invalid headId %d provided. Must be between 0 and 5. Aborted.\n", headId);
+                    continue;
+                }
+                
+                // Map to dither format control register for head 'headId':
+                reg = EVERGREEN_FMT_BIT_DEPTH_CONTROL + crtcoff[headId];
+            } else {
+                // AVIVO display engine (R300 - R600 afaik): At most two display heads for dual-head gpu's.
+                if (headId > 1) {
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: INFO! Special headId %d outside valid dualhead range 0-1 provided. Will control LVDS dithering.\n", headId);
+                    headId = 0;
+                }
+                else {
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: INFO! headId %d in valid dualhead range 0-1 provided. Will control TMDS (DVI et al.) dithering.\n", headId);
+                    headId = 1;
+                }
+                
+                // On AVIVO we can't control dithering per display head. Instead there's one global switch
+                // for LVDS connected displays (LVTMA) aka internal flat panels, e.g., of Laptops, and
+                // on global switch for "all things DVI-D", aka TMDSA:
+                reg = (headId == 0) ? RADEON_LVTMA_BIT_DEPTH_CONTROL : RADEON_TMDSA_BIT_DEPTH_CONTROL;
+            }
+            
+            // Perform actual enable/disable/reconfigure sequence for target encoder/head:
+            
+            // Enable dithering?
+            if (ditherOn) {
+                // Reenable dithering with old, previously stored settings, if it is disabled:
+                
+                // Dithering currently off (all zeros)?
+                if (ReadRegister(reg) == 0) {
+                    // Dithering is currently off. Do we know the old setting from a previous
+                    // disable?
+                    if (oldDither[headId] > 0) {
+                        // Yes: Restore old "factory settings":
+                        if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering previously disabled by us. Reenabling with old control setting %x.\n", oldDither[headId]);
+                        WriteRegister(reg, oldDither[headId]);
+                    }
+                    else {
+                        // No: Dithering was disabled all the time, so we don't know the
+                        // OS defaults. Use the numeric value of 'ditherOn' itself:
+                        if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering off. Enabling with userspace provided setting %x. Cross your fingers!\n", ditherOn);
+                        WriteRegister(reg, ditherOn);
+                    }
+                }
+                else {
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering already enabled with current control value %x. Skipped.\n", ReadRegister(reg));
+                }
+            }
+            else {
+                // Disable all dithering if it is enabled: Clearing the register to all zero bits does this.
+                if (ReadRegister(reg) > 0) {
+                    oldDither[headId] = ReadRegister(reg);
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Current dither setting before our dither disable on head %d is %x. Disabling.\n", headId, oldDither[headId]);
+                    WriteRegister(reg, 0x0);
+                }
+                else {
+                    if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: SetDitherMode: Dithering already disabled. Skipped.\n");
+                }
+            }
+            
+            // End of Radeon et al. support code.
+        }
+        // Next head for this screenId, if any...
     }
     
 	return;

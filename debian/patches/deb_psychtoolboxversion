@@ -1,6 +1,6 @@
 --- a/Psychtoolbox/PsychBasic/PsychtoolboxVersion.m
 +++ b/Psychtoolbox/PsychBasic/PsychtoolboxVersion.m
-@@ -113,6 +113,21 @@
+@@ -115,6 +115,21 @@ elseif IsOSX | IsLinux | IsWin %#ok<OR2>
          Psychtoolbox.version.minor=cvv(2);
          Psychtoolbox.version.point=cvv(3);
  
@@ -22,8 +22,8 @@
          % Additional parser code for SVN information. This is slooow!
          svncmdpath = GetSubversionPath;
          
-@@ -182,6 +197,7 @@
-             Psychtoolbox.date=ss(min(find(ss-' ')):end);
+@@ -185,6 +200,7 @@ elseif IsOSX | IsLinux | IsWin %#ok<OR2>
+             Psychtoolbox.date=ss(min(find(ss-' ')):end); %#ok<MXFND>
          end    
      end
 +    end

@@ -39,6 +39,8 @@
 
 #include <X11/extensions/XInput.h>
 #include <X11/extensions/XInput2.h>
+#include <X11/extensions/Xrandr.h>
+#include <X11/Xatom.h>
 
 //functions from PsychScreenGlue
 void						InitializePsychDisplayGlue(void);
@@ -50,7 +52,7 @@ void						PsychReleaseScreen(int screenNumber);
 psych_bool					PsychIsScreenCaptured(int screenNumber);
 int                         PsychGetNumDisplays(void);
 void						PsychGetScreenDepths(int screenNumber, PsychDepthType *depths);
-int                         PsychGetAllSupportedScreenSettings(int screenNumber, long** widths, long** heights, long** hz, long** bpp);
+int                         PsychGetAllSupportedScreenSettings(int screenNumber, int outputId, long** widths, long** heights, long** hz, long** bpp);
 psych_bool					PsychCheckVideoSettings(PsychScreenSettingsType *setting);
 void						PsychGetScreenDepth(int screenNumber, PsychDepthType *depth);   //dont' use this and get rid  of it.
 int                         PsychGetScreenDepthValue(int screenNumber);
@@ -69,8 +71,8 @@ psych_bool					PsychRestoreScreenSettings(int screenNumber);
 void						PsychHideCursor(int screenNumber, int deviceIdx);
 void						PsychShowCursor(int screenNumber, int deviceIdx);
 void						PsychPositionCursor(int screenNumber, int x, int y, int deviceIdx);
-void						PsychReadNormalizedGammaTable(int screenNumber, int *numEntries, float **redTable, float **greenTable, float **blueTable);
-unsigned int                PsychLoadNormalizedGammaTable(int screenNumber, int numEntries, float *redTable, float *greenTable, float *blueTable);
+void			    PsychReadNormalizedGammaTable(int screenNumber, int outputId, int *numEntries, float **redTable, float **greenTable, float **blueTable);
+unsigned int                PsychLoadNormalizedGammaTable(int screenNumber, int outputId, int numEntries, float *redTable, float *greenTable, float *blueTable);
 int                         PsychGetDisplayBeamPosition(CGDirectDisplayID cgDisplayId, int screenNumber);
 PsychError					PsychOSSynchronizeDisplayScreens(int *numScreens, int* screenIds, int* residuals, unsigned int syncMethod, double syncTimeOut, int allowedResidual);
 void						PsychOSShutdownPsychtoolboxKernelDriverInterface(void);
@@ -87,6 +89,14 @@ unsigned int                PsychOSKDGetLUTState(int screenId, unsigned int head
 // to setup and tear-down memory mappings...
 psych_bool 					PsychScreenMapRadeonCntlMemory(void);
 void 						PsychScreenUnmapDeviceMemory(void);
+
+// Linux only: Retrieve modeline and crtc_info for a specific output on a specific screen:
+XRRModeInfo* PsychOSGetModeLine(int screenId, int outputIdx, XRRCrtcInfo **crtc);
+double PsychOSVRefreshFromMode(XRRModeInfo *mode);
+int PsychOSSetOutputConfig(int screenNumber, int outputId, int newWidth, int newHeight, int newHz, int newX, int newY);
+
+// Calls XDefineCursor() or XIDefineCursor(..., deviceId, ...), setting cursor of all onscreen windows to 'cursor': 
+void PsychOSDefineX11Cursor(int screenNumber, int deviceId, Cursor cursor);
 
 //end include once
 #endif
