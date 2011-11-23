@@ -3,6 +3,7 @@ psychtoolbox-3 (3.0.9+svn2351.dfsg1-1) neurodebian; urgency=low
   * New upstream point release
   * Adjusted debian/cleanup.sh (thanks Mario for heads up)
   * Renamed debian/cleanup.sh into debian/dfsg-upstream
+  * libxrandr-dev into Build-Depends
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 07 Nov 2011 22:02:20 -0500
 
