@@ -1,3 +1,12 @@
+psychtoolbox-3 (3.0.9+svn2380.dfsg1-1) neurodebian; urgency=low
+
+  * New upstream snapshot addressing XRandR support etc
+  * Upstream moved to a new SVN hosting, git-svn linkage was updated
+  * deb_see_README.Debian patch refreshed
+  * Boosted policy to 3.9.2 -- no changes
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Thu, 01 Dec 2011 00:19:52 -0500
+
 psychtoolbox-3 (3.0.9+svn2351.dfsg1-1) neurodebian; urgency=low
 
   * New upstream point release
