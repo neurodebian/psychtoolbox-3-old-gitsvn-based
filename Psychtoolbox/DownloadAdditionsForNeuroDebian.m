@@ -1,11 +1,11 @@
 function DownloadAdditionsForNeuroDebian(targetdirectory, flavor)
-% DownloadAdditionsForNeuroDebian(targetdirectory);
+% DownloadAdditionsForNeuroDebian(targetdirectory [, flavor]);
 % Install missing Matlab or Octave mex files for the NeuroDebian Psychtoolbox.
 %
 % This function must be called after you have installed octave-psychtoolbox-3
 % properly from the NeuroDebian repository (http://neuro.debian.net).
 %
-% It needs subversion to be installed on your machine (sudo apt-get install subversion).
+% It needs Subversion to be installed on your machine (sudo apt-get install subversion).
 %
 % Then you can call this function from within Matlab, providing the full path
 % to a directory. The function will create a new folder PsychtoolboxAddOns inside
@@ -26,7 +26,8 @@ function DownloadAdditionsForNeuroDebian(targetdirectory, flavor)
 
 % History:
 % 29.09.2011  mk  Written.
-%
+% 30.11.2011  mk  Bugfix: Get from trunk, not beta.
+%                 Bugfix: On Linux + Octave, get Datapixx.mex as well.
 
 % NeuroDebian package installed?
 if ~exist('/usr/share/octave/site/m/psychtoolbox-3/', 'dir')
@@ -76,12 +77,19 @@ end
 targetRevision = ['-r ' num2str(rev) ' '];
 
 % Set flavor defaults and synonyms
-if nargin < 4
+if nargin < 2
     flavor = [];
 end
 
 if isempty(flavor)
-    flavor='beta';
+    % Default flavor is trunk. Why? Because NeuroDebian sync's with
+    % specific revisions of trunk, so the targetRevision number extracted
+    % from octave-psychtoolbox-3's PsychtoolboxVersion() corresponds to a
+    % stable point in trunk, not in beta. Therefore we need to fetch from
+    % exactly the same revision of trunk to get the missing mex files
+    % compatible with that revision of trunk - and thereby compatible
+    % with the installed octave-psychtoolbox-3:
+    flavor='trunk';
 end
 
 % Make sure that flavor is lower-case, unless its a 'Psychtoolbox-x.y.z'
@@ -120,7 +128,10 @@ switch (flavor)
 
         fprintf('\n\nPress any key to continue...\n');
         pause;
-        
+    case 'trunk'
+        % This is our default. Possibly the only reasonable choice at all for
+        % NeuroDebian.
+
     otherwise
         fprintf('\n\n\nHmm, requested flavor is the unusual flavor: %s\n',flavor);
         fprintf('Either you request something exotic, or you made a typo?\n');
@@ -129,7 +140,7 @@ switch (flavor)
         pause;
 end
 
-if strcmp(flavor, 'beta')
+if strcmp(flavor, 'beta') | strcmp(flavor, 'trunk')
     % Check if this is Matlab of version prior to V 6.5:
     v = ver('matlab');
     if ~isempty(v)
@@ -157,7 +168,7 @@ end
 
 fprintf('DownloadAdditionsForNeuroDebian(''%s'',''%s'')\n',targetdirectory, flavor);
 fprintf('Requested flavor is: %s\n',flavor);
-fprintf('Requested location for the Psychtoolbox folder is inside: %s\n',targetdirectory);
+fprintf('Requested location for the NeuroDebian additions folder is inside: %s\n',targetdirectory);
 fprintf('\n');
 
 % Search for Unix executable in path:
@@ -215,7 +226,7 @@ if ~IsOctave
   checkoutcommand = [svnpath 'svn export --force -N ' targetRevision ' http://psychtoolbox-3.googlecode.com/svn/' flavor '/Psychtoolbox/' sourcefolder ' ' pt];
 else
   % Additional Octave mex files:
-  % Only Eyelink so far...
+  % Get Eyelink:
   if IsLinux(1)
     sourcefolder = ['PsychBasic/Octave3LinuxFiles64/Eyelink.mex'];
   else
@@ -230,6 +241,20 @@ else
 
   % Build final checkout command string:
   checkoutcommand = [svnpath 'svn export --force -N ' targetRevision ' http://psychtoolbox-3.googlecode.com/svn/' flavor '/Psychtoolbox/' sourcefolder ' ' pt];
+  checkoutcommand = [checkoutcommand ' ; '];
+
+  % Get Datapixx:
+  if IsLinux(1)
+    sourcefolder = ['PsychBasic/Octave3LinuxFiles64/Datapixx.mex'];
+  else
+    sourcefolder = ['PsychBasic/Octave3LinuxFiles/Datapixx.mex'];
+  end
+
+  pt = strcat('"',p,'/Datapixx.mex"');
+
+  % Build final checkout command string:
+  checkoutcommand = [checkoutcommand ' ' svnpath 'svn export --force -N ' targetRevision ' http://psychtoolbox-3.googlecode.com/svn/' flavor '/Psychtoolbox/' sourcefolder ' ' pt];
+  checkoutcommand = [checkoutcommand ' ; '];
 end
 
 fprintf('The following EXPORT command asks the Subversion client to \ndownload the few additional bits of Psychtoolbox:\n');

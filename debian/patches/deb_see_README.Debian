@@ -20,7 +20,7 @@
  					errno=0;
 --- a/PsychSourceGL/Source/Linux/Screen/PsychWindowGlue.c
 +++ b/PsychSourceGL/Source/Linux/Screen/PsychWindowGlue.c
-@@ -104,7 +104,7 @@ psych_bool PsychRealtimePriority(psych_b
+@@ -113,7 +113,7 @@ psych_bool PsychRealtimePriority(psych_b
  	  if(!PsychPrefStateGet_SuppressAllWarnings()) {
  	    printf("PTB-INFO: Failed to enable realtime-scheduling [%s]!\n", strerror(errno));
  	    if (errno==EPERM) {
@@ -29,7 +29,7 @@
  	    }
  	  }
  	  errno=0;
-@@ -121,7 +121,7 @@ psych_bool PsychRealtimePriority(psych_b
+@@ -130,7 +130,7 @@ psych_bool PsychRealtimePriority(psych_b
  	if(!PsychPrefStateGet_SuppressAllWarnings()) {
  	  printf("PTB-INFO: Failed to disable realtime-scheduling [%s]!\n", strerror(errno));
  	  if (errno==EPERM) {

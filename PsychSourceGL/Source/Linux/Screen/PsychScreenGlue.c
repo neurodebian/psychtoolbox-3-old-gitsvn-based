@@ -46,7 +46,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-// To us libpciaccess for GPU device detection and mmaping():
+// To use libpciaccess for GPU device detection and mmaping():
 #include "pciaccess.h"
 #define PCI_CLASS_DISPLAY	0x03
 
@@ -63,6 +63,8 @@
 #define XF86VidModeNumberErrors 0
 #endif
 
+// Maximum number of slots in a gamma table to set/query: This should be plenty.
+#define MAX_GAMMALUT_SIZE 16384
 
 // Event and error base for XRandR extension:
 int xr_event, xr_error;
@@ -94,6 +96,11 @@ unsigned int  fDeviceType = 0;
 unsigned int  fCardType = 0;
 unsigned int  fPCIDeviceId = 0;
 unsigned int  fNumDisplayHeads = 0;
+
+// Minimum allowed physical crtc id for assignment to X-Screens. Used
+// for the (x-screen, output) -> physical crtc id mapping heuristic
+// for multi-x-screen ZaphodHead display setups:
+static int    minimum_crtcid = 0;
 
 // Count of kernel drivers:
 static int    numKernelDrivers = 0;
@@ -597,7 +604,7 @@ static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
 {
   int major, minor;
   int o, m, num_crtcs, isPrimary, crtcid, crtccount;
-  int primaryOutput = -1, primaryCRTC = -1;
+  int primaryOutput = -1, primaryCRTC = -1, primaryCRTCIdx = -1;
   int crtcs[100];
 
   // Preinit to "undefined":
@@ -646,22 +653,22 @@ static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
 
     // Get info about this output:
     if (has_xrandr_1_3 && (XRRGetOutputPrimary(dpy, root) > 0)) {
-      isPrimary = (XRRGetOutputPrimary(dpy, root) == output_info->crtc) ? 1 : 0;
+      isPrimary = (XRRGetOutputPrimary(dpy, root) == res->outputs[o]) ? 1 : 0;
     }
     else {
       isPrimary = -1;
     }
 
     for (crtcid = 0; crtcid < res->ncrtc; crtcid++) {
-	if (res->crtcs[crtcid] == output_info->crtc) break;
+      if (res->crtcs[crtcid] == output_info->crtc) break;
     }
     if (crtcid == res->ncrtc) crtcid = -1;
 
     // Store crtc for this output:
     crtcs[o] = crtcid;
 
-    printf("PTB-INFO: Display '%s' : Screen %i : Output %i [%s]: %s : ",
-	   DisplayString(dpy), displayX11Screens[idx], o, (const char*) output_info->name, (isPrimary > -1) ? ((isPrimary == 1) ? "Primary output" : "Secondary output") : "Unknown or offline output");
+    printf("PTB-INFO: Display '%s' : X-Screen %i : Output %i [%s]: %s : ",
+	   DisplayString(dpy), displayX11Screens[idx], o, (const char*) output_info->name, (isPrimary > -1) ? ((isPrimary == 1) ? "Primary output" : "Secondary output") : "Unknown output status");
     printf("%s : CRTC %i [XID %i]\n", (output_info->connection == RR_Connected) ? "Connected" : "Offline", crtcid, (int) output_info->crtc);
 
     if ((isPrimary > 0) && (crtcid >= 0)) {
@@ -673,6 +680,7 @@ static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
     if (crtcid >=0) {
       // Yes: Add its crtcid to the list of crtc's for this screen:
       PsychSetScreenToHead(idx, crtcid, crtccount);
+      PsychSetScreenToCrtcId(idx, crtcid + minimum_crtcid, crtccount);
       crtccount++;
     }
 
@@ -703,8 +711,6 @@ static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
     }
   }
 
-  printf("PTB-INFO: Display '%s' : Screen %i : Assigning primary output as %i with crtc %i.\n", DisplayString(dpy), displayX11Screens[idx], primaryOutput, primaryCRTC);
-
   // Assign primary crtc of primary output - index 0 - as default display head for this screen:
   // We swap the contents of slot 0 - the primary crtc slot - and whatever slot currently
   // contains the crtcid of our primaryCRTC. This way we shuffle the primary crtc into the
@@ -712,10 +718,34 @@ static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
   for (o = 0; o < crtccount; o++) {
     if (PsychScreenToHead(idx, o) == primaryCRTC) {
       PsychSetScreenToHead(idx, PsychScreenToHead(idx, 0), o);
+      primaryCRTCIdx = PsychScreenToCrtcId(idx, o);
+      PsychSetScreenToCrtcId(idx, PsychScreenToCrtcId(idx, 0), o);
     }
   }
-  PsychSetScreenToHead(idx, primaryCRTC, 0);
 
+  PsychSetScreenToHead(idx, primaryCRTC, 0);
+  PsychSetScreenToCrtcId(idx, primaryCRTCIdx, 0);
+
+  printf("PTB-INFO: Display '%s' : X-Screen %i : Assigning primary output as %i with RandR-CRTC %i and GPU-CRTC %i.\n", DisplayString(dpy), displayX11Screens[idx], primaryOutput, primaryCRTC, primaryCRTCIdx);
+
+  // This X-Screen has res->ncrtc physical CRTC's available for exclusive use.
+  // These are not available to potential additional X-Screens in a multi-x-screen "ZaphodHead"
+  // configuration. Therefore we raise the minimum_crtcid - the smallest physical crtc id available to
+  // additional outputs on additional X-Screens by res->ncrtc, so the first RandR crtc of such an
+  // additional X-Screen will map to the minimum_crtcid'th physical crtc. This avoids allocation
+  // of one physical crtc by multiple X-Screens. It should work for bog-standard ZaphodHead setups.
+  // It will work in any case on single-display setups or multi-display setups where a single
+  // X-Screen spans multiple display outputs aka multiple crtcs.
+  //
+  // The working assumption is that the user of a ZaphodHead config assigned the different
+  // GPU outputs, and thereby their associated physical crtc's, in an ascending order to
+  // X-Screens. This is a reasonable assumption, but in no way guaranteed by the system.
+  // Therefore this heuristic can go wrong on non-standard ZaphodHead Multi-X-Screen setups.
+  // In such cases the user can always use the Screen('Preference', 'ScreenToHead', ...);
+  // command or the PSYCHTOOLBOX_PIPEMAPPINGS environment variable to override the wrong
+  // mapping, although it would be a pita for complex setups.
+  minimum_crtcid += res->ncrtc;
+  
   return;
 }
 
@@ -770,6 +800,9 @@ void InitCGDisplayIDList(void)
 
   // Initial count of screens is zero:
   numDisplays = 0;
+
+  // Initial minimum allowed crtc id is zero:
+  minimum_crtcid = 0;
 
   // Multiple X11 display specifier strings provided in the environment variable
   // $PSYCHTOOLBOX_DISPLAYS? If so, we connect to all of them and enumerate all
@@ -1245,7 +1278,7 @@ float PsychGetNominalFramerate(int screenNumber)
   // Modeline with plausible values returned by RandR?
   if (mode && (mode->hTotal > mode->width) && (mode->vTotal > mode->height)) {
     if (PsychPrefStateGet_Verbosity() > 4) {
-      printf ("  %s (0x%x) %6.1fMHz\n",
+      printf ("RandR: %s (0x%x) %6.1fMHz\n",
       mode->name, (int)mode->id,
       (double)mode->dotClock / 1000000.0);
       printf ("        h: width  %4d start %4d end %4d total %4d skew %4d\n",
@@ -1264,13 +1297,17 @@ float PsychGetNominalFramerate(int screenNumber)
   }
   else {
     // No modeline from RandR or invalid modeline. Retry with vidmode extensions:
+    if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychGetNominalFramerate: Using XF86VidModeExt fallback path...\n");
+
     if (!XF86VidModeSetClientVersion(displayCGIDs[screenNumber])) {
       // Failed to use VidMode-Extension. We just return a vrefresh of zero.
+      if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychGetNominalFramerate: XF86VidModeExt fallback path failed in init.\n");
       return(0);
     }
 
     if (!XF86VidModeGetModeLine(displayCGIDs[screenNumber], PsychGetXScreenIdForScreen(screenNumber), &dot_clock, &mode_line)) {
       // Failed to use VidMode-Extension. We just return a vrefresh of zero.
+      if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychGetNominalFramerate: XF86VidModeExt fallback path failed in modeline query.\n");
       return(0);
     }
   }
@@ -1905,23 +1942,21 @@ void PsychPositionCursor(int screenNumber, int x, int y, int deviceIdx)
 
 /*
     PsychReadNormalizedGammaTable()
-    
-    TO DO: This should probably be changed so that the caller allocates the memory.
-    TO DO: Adopt a naming convention which distinguishes between functions which allocate memory for return variables from those which do not.
-            For example, PsychReadNormalizedGammaTable() vs. PsychGetNormalizedGammaTable().
-    
 */
 void PsychReadNormalizedGammaTable(int screenNumber, int outputId, int *numEntries, float **redTable, float **greenTable, float **blueTable)
 {
   CGDirectDisplayID cgDisplayID;
-  static float localRed[256], localGreen[256], localBlue[256];
+  static float localRed[MAX_GAMMALUT_SIZE], localGreen[MAX_GAMMALUT_SIZE], localBlue[MAX_GAMMALUT_SIZE];
   
-  // The X-Windows hardware LUT has 3 tables for R,G,B, 256 slots each.
-  // Each entry is a 16-bit word with the n most significant bits used for an n-bit DAC.
-  psych_uint16	RTable[256];
-  psych_uint16	GTable[256];
-  psych_uint16	BTable[256];
-  int i;        
+  // The X-Windows hardware LUT has 3 tables for R,G,B.
+  // Each entry is a 16-bit word with the n most significant bits used for an n-bit DAC or display encoder:
+  psych_uint16	RTable[MAX_GAMMALUT_SIZE];
+  psych_uint16	GTable[MAX_GAMMALUT_SIZE];
+  psych_uint16	BTable[MAX_GAMMALUT_SIZE];
+  int i, n;
+
+  // Initial assumption: Failed.
+  n = 0;
 
   // Query OS for gamma table:
   PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, screenNumber);
@@ -1937,50 +1972,135 @@ void PsychReadNormalizedGammaTable(int screenNumber, int outputId, int *numEntri
     RRCrtc crtc = res->crtcs[outputId];
     XRRCrtcGamma *lut = XRRGetCrtcGamma(cgDisplayID, crtc);
 
-    if ((lut->size != 256) && (PsychPrefStateGet_Verbosity() > 1)) {
-      printf("PTB-WARNING: ReadNormalizedGammatable: Hardware gamma table doesn't have required 256 slots, but %i slots! Returned LUT's may be wrong!\n", lut->size);
+    n = (lut) ? lut->size : 0;
+
+    if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychReadNormalizedGammaTable: Provided RandR HW-LUT size is n=%i.\n", n);
+
+    // Gamma lut query successfull?
+    if (n > 0) {
+      if ((n > MAX_GAMMALUT_SIZE) && (PsychPrefStateGet_Verbosity() > 1)) {
+        printf("PTB-WARNING: ReadNormalizedGammatable: Hardware gamma table size of %i slots exceeds our maximum of %i slots. Clamping returned size to %i slots. Returned LUT's may be wrong!\n", n, MAX_GAMMALUT_SIZE, MAX_GAMMALUT_SIZE);
+      }
+
+      // Clamp for safety:
+      n = (n <= MAX_GAMMALUT_SIZE) ? n : MAX_GAMMALUT_SIZE;
+
+      // Convert tables: Map 16-bit values into 0-1 normalized floats:
+      for (i = 0; i < n; i++) localRed[i]   = ((float) lut->red[i]) / 65535.0f;
+      for (i = 0; i < n; i++) localGreen[i] = ((float) lut->green[i]) / 65535.0f;
+      for (i = 0; i < n; i++) localBlue[i]  = ((float) lut->blue[i]) / 65535.0f;
     }
 
-    // Convert tables:Map 16-bit values into 0-1 normalized floats:
-    for (i=0; i<256; i++) localRed[i]   = ((float) lut->red[i]) / 65535.0f;
-    for (i=0; i<256; i++) localGreen[i] = ((float) lut->green[i]) / 65535.0f;
-    for (i=0; i<256; i++) localBlue[i]  = ((float) lut->blue[i]) / 65535.0f;
-    XRRFreeGamma(lut);
+    if (lut) XRRFreeGamma(lut); 
   }
-  else {
-    // Use old-fashioned VidmodeExt path: No control over which output is queried on multi-display setups:
+
+  // Do we need the fallback path with XVidmodeExtension on systems which don't support RandR-1.2?
+  // This applies to, e.g., the NVidia binary blob in the year 2011 (Sadly, not a joke):
+  if (n <= 0) {
+    // Use old-fashioned VidmodeExt path: No control over which output is queried on multi-display setups,
+    // except in a ZaphodHead configuration where each display corresponds to a separate x-screen:
     #ifdef USE_VIDMODEEXTS
-    XF86VidModeGetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+
+    // Query size of to-be-returned gamma table:
+    XF86VidModeGetGammaRampSize(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), &n);
+
+    if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychReadNormalizedGammaTable: Provided XF86VidMode HW-LUT size is n=%i.\n", n);
+
+    // Make sure we stay within our limits:
+    if (n > MAX_GAMMALUT_SIZE) {
+      printf("PTB-ERROR: ReadNormalizedGammatable: Hardware gamma table size of %i slots exceeds our maximum of %i slots! Gamma table query failed!\n", n, MAX_GAMMALUT_SIZE);
+      PsychErrorExitMsg(PsychError_user, "Gamma table query failed due to size mismatch. Please report this on the Psychtoolbox forum.");
+    }
+
+    // Make sure this works at all:
+    if (n <= 0) PsychErrorExitMsg(PsychError_user, "Gamma table query failed while trying XF86VidModeExtension fallback path.");
+
+    // Retrieve gamma table with n slots:
+    XF86VidModeGetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), n, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+
+    #else
+    PsychErrorExitMsg(PsychError_user, "Sorry, this graphics card and driver does not support gamma table queries!");
     #endif
 
-    // Convert tables:Map 16-bit values into 0-1 normalized floats:
-    for (i=0; i<256; i++) localRed[i]   = ((float) RTable[i]) / 65535.0f;
-    for (i=0; i<256; i++) localGreen[i] = ((float) GTable[i]) / 65535.0f;
-    for (i=0; i<256; i++) localBlue[i]  = ((float) BTable[i]) / 65535.0f;
+    // Convert tables: Map 16-bit values into 0-1 normalized floats:
+    for (i = 0; i < n; i++) localRed[i]   = ((float) RTable[i]) / 65535.0f;
+    for (i = 0; i < n; i++) localGreen[i] = ((float) GTable[i]) / 65535.0f;
+    for (i = 0; i < n; i++) localBlue[i]  = ((float) BTable[i]) / 65535.0f;
   }
 
   // Assign output lut's:
   *redTable=localRed; *greenTable=localGreen; *blueTable=localBlue;
 
-  // The LUT's always have 256 slots for the 8-bit framebuffer:
-  *numEntries= 256;
+  // Assign size of LUT's::
+  *numEntries = n;
 
   return;
 }
 
+/* Copy provided input LUT into target output LUT. If input is smaller than target LUT, but
+ * fits nicely because output size is an integral multiple of input, then oversample input
+ * to create proper output. If size doesn't match or output is smaller than input, abort
+ * with error.
+ *
+ * Rationale: LUT's of standard GPUs are 256 slots, LUT's of high-end GPU's can be bigger
+ *            powers-of-two sizes, e.g., 512, 1024, 2048, 4096 for some NVidia QuadroFX
+ *            parts. For reasons of backwards compatibility we always want to be able to
+ *            accept a good'ol 256 slots input LUT, even if the GPU expects something bigger.
+ *            -> This simple oversampling via replication allows us to do that without obvious
+ *               bad consequences for precision.
+ *
+ */
+static void ConvertLUTToHwLUT(int nOut, psych_uint16* Rout, psych_uint16* Gout, psych_uint16* Bout, int nIn, float *redTable, float *greenTable, float *blueTable)
+{
+  int i, s;
+
+  // Can't handle too big input tables for GPU:
+  if (nOut < nIn) {
+    printf("PTB-ERROR: Provided gamma table has %i slots, but graphics card accepts at most %i slots!\n", nIn, nOut);
+    PsychErrorExitMsg(PsychError_user, "Provided gamma table has too many slots!");
+  }
+
+  // Can't handle tables which don't fit:
+  if ((nOut % nIn) != 0) {
+    printf("PTB-ERROR: Provided gamma table has %i slots, but graphics card expects %i slots.\n", nIn, nOut);
+    printf("PTB-ERROR: Unfortunately, graphics card LUT size is not a integral multiple of provided gamma table size.\n");
+    printf("PTB-ERROR: I can not handle this case, as it could cause ugly distortions in the displayed color range.\n");
+    PsychErrorExitMsg(PsychError_user, "Provided gamma table has wrong number of slots!");
+  }
+
+  // Compute oversampling factor:
+  s = nOut / nIn;
+  if (PsychPrefStateGet_Verbosity() > 5) {
+    printf("PTB-DEBUG: PsychLoadNormalizedGammaTable: LUT size nIn %i <= nOut %i --> Oversample %i times.\n", nIn, nOut, s);
+  }
+
+  // Copy and oversample: Each slot in red/green/blueTable is replicated
+  // into s consecutive slots of R/G/Bout:
+  for (i = 0; i < nOut; i++) {
+    Rout[i] = (psych_uint16) (redTable[i/s]   * 65535.0f + 0.5f);
+    Gout[i] = (psych_uint16) (greenTable[i/s] * 65535.0f + 0.5f);
+    Bout[i] = (psych_uint16) (blueTable[i/s]  * 65535.0f + 0.5f);
+  }
+}
+
 unsigned int PsychLoadNormalizedGammaTable(int screenNumber, int outputId, int numEntries, float *redTable, float *greenTable, float *blueTable)
 {
-  CGDirectDisplayID	cgDisplayID;
-  int     i, j;
-  static psych_uint16	RTable[256];
-  static psych_uint16	GTable[256];
-  static psych_uint16	BTable[256];
+  CGDirectDisplayID cgDisplayID;
+  int i, j, n;
+  RRCrtc crtc;
+
+  static psych_uint16	RTable[MAX_GAMMALUT_SIZE];
+  static psych_uint16	GTable[MAX_GAMMALUT_SIZE];
+  static psych_uint16	BTable[MAX_GAMMALUT_SIZE];
   
-  // The X-Windows hardware LUT has 3 tables for R,G,B, 256 slots each.
-  // Each entry is a 16-bit word with the n most significant bits used for an n-bit DAC.
+  // The X-Windows hardware LUT has 3 tables for R,G,B.
+  // Each entry is a 16-bit word with the n most significant bits used for an n-bit DAC or display encoder.
   
   // Set new gammaTable:
   PsychGetCGDisplayIDFromScreenNumber(&cgDisplayID, screenNumber);
+
+  // Initial assumption: Failure.
+  n = 0;
 
   if (has_xrandr_1_2) {
     // Use RandR V 1.2 for per-crtc setup:
@@ -1993,52 +2113,69 @@ unsigned int PsychLoadNormalizedGammaTable(int screenNumber, int outputId, int n
 	j = PsychLoadNormalizedGammaTable(screenNumber, i, numEntries, redTable, greenTable, blueTable);
       }
 
-      // Done setting all crtc's. Return success:
-      return(1);
+      // Done trying to set all crtc's. Return status:
+      return((unsigned int) j);
     }
 
-    // No: Only load a specific crtc for output 'outputId':
+    // No, or recursive self-call: Load a specific crtc for output 'outputId':
     XRRScreenResources *res = displayX11ScreenResources[screenNumber];
 
     if (outputId >= kPsychMaxPossibleCrtcs) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
     outputId = PsychScreenToHead(screenNumber, outputId);
     if (outputId >= res->ncrtc || outputId < 0) PsychErrorExitMsg(PsychError_user, "Invalid output index provided! No such output for this screen!");
 
-    RRCrtc crtc = res->crtcs[outputId];
+    crtc = res->crtcs[outputId];
 
     // Get required size of gamma table:
-    j = XRRGetCrtcGammaSize(cgDisplayID, crtc);
-    if (numEntries != j) {
-      printf("PTB-ERROR: Provided gamma table has %i slots, but graphics card requires %i slots!\n", numEntries, j);
-      PsychErrorExitMsg(PsychError_user, "Loadable hardware gamma table has wrong number of slots!");
-    }
+    n = XRRGetCrtcGammaSize(cgDisplayID, crtc);
+    if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychLoadNormalizedGammaTable: Required RandR HW-LUT size is n=%i.\n", n);
+  }
 
+  // RandR 1.2 supported and has ability to set LUT's?
+  if (has_xrandr_1_2 && (n > 0)) {
     // Allocate table of appropriate size:
-    XRRCrtcGamma *lut = XRRAllocGamma(numEntries);
+    XRRCrtcGamma *lut = XRRAllocGamma(n);
+    n = lut->size;
 
-    // Convert tables:Map 16-bit values into 0-1 normalized floats:
-    j = lut->size;
-    for (i=0; i<j; i++) lut->red[i]   = (psych_uint16) (redTable[i]   * 65535.0f + 0.5f);
-    for (i=0; i<j; i++) lut->green[i] = (psych_uint16) (greenTable[i] * 65535.0f + 0.5f);
-    for (i=0; i<j; i++) lut->blue[i]  = (psych_uint16) (blueTable[i]  * 65535.0f + 0.5f);
+    // Convert tables: Map 16-bit values into 0-1 normalized floats:
+    ConvertLUTToHwLUT(n, lut->red, lut->green, lut->blue, numEntries, redTable, greenTable, blueTable);
 
     // Assign to crtc:
     XRRSetCrtcGamma(cgDisplayID, crtc, lut);
 
-    // Release:
+    // Release lut:
     XRRFreeGamma(lut);
   }
-  else {
-    // Use old-fashioned VidmodeExt path: No control over which output is setup on multi-display setups:
-    if (numEntries != 256) PsychErrorExitMsg(PsychError_user, "Loadable hardware gamma tables must have 256 slots!");    
 
-    // Convert input table to X11 specific gammaTable:
-    for (i=0; i<256; i++) RTable[i] = (int)(redTable[i]   * 65535.0f + 0.5f);
-    for (i=0; i<256; i++) GTable[i] = (int)(greenTable[i] * 65535.0f + 0.5f);
-    for (i=0; i<256; i++) BTable[i] = (int)(blueTable[i]  * 65535.0f + 0.5f);
+  // RandR unsupported or failed?
+  if (n <= 0) {
+    // Use old-fashioned VidmodeExt fallback-path: No control over which output is setup on multi-display setups,
+    // except in a ZaphodHead configuration where each display corresponds to a separate x-screen:
+    if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychLoadNormalizedGammaTable: Using XF86VidModeExt fallback path...\n");
 
     #ifdef USE_VIDMODEEXTS
-    XF86VidModeSetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), 256, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+
+    // Query size of to-be-set hw-gamma table:
+    XF86VidModeGetGammaRampSize(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), &n);
+    if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: PsychLoadNormalizedGammaTable: Required HW-LUT size is n=%i.\n", n);
+
+    // Make sure we stay within our limits:
+    if (n > MAX_GAMMALUT_SIZE) {
+      printf("PTB-ERROR: LoadNormalizedGammatable: Hardware gamma table size of %i slots exceeds our maximum of %i slots! Gamma table setup failed!\n", n, MAX_GAMMALUT_SIZE);
+      PsychErrorExitMsg(PsychError_user, "Gamma table setup failed due to size mismatch. Please report this on the Psychtoolbox forum.");
+    }
+
+    // Make sure this works at all:
+    if (n <= 0) PsychErrorExitMsg(PsychError_user, "Gamma table setup failed while trying XF86VidModeExtension fallback path.");
+
+    // Convert input table to X11 specific gammaTable:
+    ConvertLUTToHwLUT(n, RTable, GTable, BTable, numEntries, redTable, greenTable, blueTable);
+
+    // Assign to X-Screen:
+    XF86VidModeSetGammaRamp(cgDisplayID, PsychGetXScreenIdForScreen(screenNumber), n, (unsigned short*) RTable, (unsigned short*) GTable, (unsigned short*) BTable);
+
+    #else
+    PsychErrorExitMsg(PsychError_user, "Sorry, this graphics card and driver does not support gamma table setup!");
     #endif
   }
 
@@ -2163,14 +2300,14 @@ int PsychOSCheckKDAvailable(int screenId, unsigned int * status)
 	// but we don't have such a thing yet.  Could be also a pointer to a little struct with all
 	// relevant info...
 	// Currently we do a dummy assignment...
-	int connect = PsychScreenToHead(screenId, 0);
+	int connect = PsychScreenToCrtcId(screenId, 0);
 
 	if ((numKernelDrivers<=0) && (gfx_cntl_mem == NULL)) {
 		if (status) *status = ENODEV;
 		return(0);
 	}
 	
-	if (connect == 0xff) {
+	if (connect < 0) {
 		if (status) *status = ENODEV;
 		if (PsychPrefStateGet_Verbosity() > 6) printf("PTB-DEBUGINFO: Could not access kernel driver connection for screenId %i - No such connection.\n", screenId);
 		return(0);
@@ -2279,7 +2416,7 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 		old_crtc_master_enable = 0;
 		for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
             // Map 'iter'th head for this screenId to crtc index 'i'. Iterate over all crtc's for screen:
-            if ((i = PsychScreenToHead(screenId, iter)) < 0) break;
+            if ((i = PsychScreenToCrtcId(screenId, iter)) < 0) break;
             
 			// Bit 16 "CRTC_CURRENT_MASTER_EN_STATE" allows read-only polling
 			// of current activation state of crtc:
@@ -2289,7 +2426,7 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 		// Shut down heads, one after each other, wait for each one to settle at its defined resting position:
 		for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
             // Map 'iter'th head for this screenId to crtc index 'i'. Iterate over all crtc's for screen:
-            if ((i = PsychScreenToHead(screenId, iter)) < 0) break;
+            if ((i = PsychScreenToCrtcId(screenId, iter)) < 0) break;
 
 			if (PsychPrefStateGet_Verbosity() > 3) printf("Head %ld ...  ", i);
 			if (old_crtc_master_enable & (0x1 << i)) {		
@@ -2321,7 +2458,7 @@ static PsychError PsychOSSynchronizeDisplayScreensDCE4(int *numScreens, int* scr
 		// This must be a tight loop, as every microsecond counts for a good sync...
 		for (iter = 0; iter < kPsychMaxPossibleCrtcs; iter++) {
             // Map 'iter'th head for this screenId to crtc index 'i'. Iterate over all crtc's for screen:
-            if ((i = PsychScreenToHead(screenId, iter)) < 0) break;
+            if ((i = PsychScreenToCrtcId(screenId, iter)) < 0) break;
         
 			if (old_crtc_master_enable & (0x1 << i)) {		
 				// Restart this CRTC by setting its master enable bit (bit 0):
@@ -2543,7 +2680,7 @@ PsychError PsychOSSynchronizeDisplayScreens(int *numScreens, int* screenIds, int
 int PsychOSKDGetBeamposition(int screenId)
 {
 	int beampos = -1;
-	int headId  = PsychScreenToHead(screenId, 0);
+	int headId  = PsychScreenToCrtcId(screenId, 0);
 
 	// MMIO registers mapped?
 	if (gfx_cntl_mem) {
@@ -2640,7 +2777,7 @@ void PsychOSKDSetDitherMode(int screenId, unsigned int ditherOn)
             // Positive screenId: Apply to all crtc's for this screenId:
             
             // Is there an iter'th crtc assigned to this screen?
-            headId = PsychScreenToHead(screenId, iter);
+            headId = PsychScreenToCrtcId(screenId, iter);
             
             // If end of list of associated crtc's for this screenId reached, then we're done:
             if (headId < 0) break;

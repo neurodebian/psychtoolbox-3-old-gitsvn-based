@@ -56,6 +56,9 @@ void PsychInitializePsychHID(void)
 	// Initialize OS specific interfaces and routines:
 	PsychHIDInitializeHIDStandardInterfaces();
 
+    // This sets up data structures for HID report reception inside PsychHIDReceiveReports.c:
+    PsychHIDReleaseAllReportMemory();
+
 	return;
 }
 
@@ -133,7 +136,7 @@ PsychError PsychHIDCleanup(void)
 	#if PSYCH_SYSTEM == PSYCH_OSX
 	// Via Apple HIDUtils:
         if(HIDHaveDeviceList()) HIDReleaseDeviceList();
-	#else        
+	#else
         // Then our high-level list:
         while (hid_devices) {
             // Get current device record to release:
@@ -152,10 +155,13 @@ PsychError PsychHIDCleanup(void)
         // Reset last hid device for error handling:
         last_hid_device = NULL;
         
-        // Last the HIDLIB low-level list: This will also trigger
-        // HIDAPI shutdown and cleanup:
+        // Release the HIDLIB low-level device list:
         if (hidlib_devices) hid_free_enumeration(hidlib_devices);
         hidlib_devices = NULL;
+
+	// Shutdown HIDAPI:
+        hid_exit();
+
 	#endif
     
 	// Close and release all open generic USB devices:
