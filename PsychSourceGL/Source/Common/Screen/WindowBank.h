@@ -92,6 +92,7 @@ TO DO:
 #define kPsychGfxCapNeedsUnsignedByteRGBATextureUpload 8192		// Hw requires use of GL_UNSIGNED_BYTE instead of GL_UNSIGNED_INT_8_8_8_8_REV for optimal RGBA8 texture upload.
 #define kPsychGfxCapSupportsOpenML 16384	// System supports OML_sync_control extension of OpenML for precisely timed bufferswaps and stimulus onset timestamping.
 #define kPsychGfxCapSNTex16		32768		// Hw supports 16 bit signed normalized integer textures.
+#define kPsychGfxCapUYVYTexture         65536		// Hw supports UYVY encoded textures. Used for GStreamer video capture/playback engine optimizations.
 
 // Definition of flags for imagingMode of Image processing pipeline.
 // These are used internally, but need to be exposed to Matlab as well.
@@ -122,6 +123,7 @@ TO DO:
 											// and needs some special handling it init, shutdown and during operation.
 // Value 32768 is defined in ScreenTypes.h as kPsychBusyWaitForVBLBeforeBufferSwapRequest and is also used as a 'specialflags' setting to define
 // this behaviour on a per-window basis.
+#define kPsychTwiceWidthWindow		  65536 // This flag is also used as 'specialflag' for onscreen windows. Ask for windows with twice-width, e.g., for packed pixel modes.
 
 #define kPsychIsFullscreenWindow		  4 // 'specialflags' setting 4 means: This is a fullscreen window.
 #define kPsychNeedOpenMLWorkaround1		  8 // 'specialflags' setting 8 means: This needs the special workarounds for slightly broken OpenML sync control ext.
@@ -130,10 +132,10 @@ TO DO:
 #define kPsychGUIWindow					 32 // 'specialflags' setting 32 means: This window should behave like a regular GUI window, e.g, allow moving it.
 
 // The following numbers are allocated to imagingMode flag above: A (S) means, shared with specialFlags:
-// 1,2,4,8,16,32,64,128,256,512,1024,S-2048,4096,S-8192,16384. --> Flags of 32768 and higher are available...
+// 1,2,4,8,16,32,64,128,256,512,1024,S-2048,4096,S-8192,16384,S-65536. --> Flag 32768 and Flags of 2^17 and higher are available...
 
 // The following numbers are allocated to specialFlags flag above: A (S) means, shared with imagingMode:
-// 1,2,4,8,16,32,1024,S-2048,S-8192, 32768. --> Flags of 65536 and higher are available, as well as 64,128,256,512,4096, 16384
+// 1,2,4,8,16,32,1024,S-2048,S-8192, 32768, S-65536. --> Flags of 2^17 and higher are available, as well as 64,128,256,512,4096, 16384
 
 // Definition of a single hook function spec:
 typedef struct PsychHookFunction*	PtrPsychHookFunction;
@@ -190,6 +192,7 @@ typedef struct{
         CGLContextObj		contextObject;
         CGLPixelFormatObj	pixelFormatObject;
 		CGLContextObj		glusercontextObject;    // OpenGL context for userspace rendering code, e.g., moglcore...
+		CGLContextObj		glswapcontextObject;    // OpenGL context for performing doublebuffer swaps in PsychFlipWindowBuffers().
         CVOpenGLTextureRef  QuickTimeGLTexture;     // Used for textures returned by movie routines in PsychMovieSupport.c
         void*				deviceContext;          // Pointer to an AGLContext object, or a NULL-pointer.
 		WindowRef			windowHandle;			// Handle for Carbon + AGL window when using windowed mode. (NULL in non-windowed mode).
@@ -204,6 +207,7 @@ typedef struct{
   HWND                    windowHandle;       // The window handle.
   PIXELFORMATDESCRIPTOR   pixelFormatObject;  // The context's pixel format object.
   HGLRC					  glusercontextObject;	   // OpenGL context for userspace rendering code, e.g., moglcore...
+  HGLRC                   glswapcontextObject;    // OpenGL context for performing doublebuffer swaps in PsychFlipWindowBuffers().
   CVOpenGLTextureRef      QuickTimeGLTexture; // Used for textures returned by movie routines in PsychMovieSupport.c
   // CVOpenGLTextureRef is not ready yet. Its typedefd to a void* to make the compiler happy.
 } PsychTargetSpecificWindowRecordType;
@@ -219,6 +223,7 @@ typedef struct{
   GLXWindow             windowHandle;        // Handle to the onscreen window.
   Window                xwindowHandle;       // Associated X-Window if any.
   GLXContext		glusercontextObject; // OpenGL context for userspace rendering code, e.g., moglcore...
+  GLXContext		glswapcontextObject;    // OpenGL context for performing doublebuffer swaps in PsychFlipWindowBuffers().
   CVOpenGLTextureRef QuickTimeGLTexture;     // Used for textures returned by movie routines in PsychMovieSupport.c
   // CVOpenGLTextureRef is not ready yet. Its typedefd to a void* to make the compiler happy.
 } PsychTargetSpecificWindowRecordType;
@@ -238,8 +243,15 @@ typedef struct _PsychWindowRecordType_{
 	PsychWindowIndexType                    windowIndex;
 	void					*surface; 
 	size_t					surfaceSizeBytes;	// Estimate of used system memory in bytes. Only used for accounting and debugging output.
-	PsychRectType              rect;		// Effective rectangle of window -- Normalized to always have top-left corner in (0,0)!
-	PsychRectType			globalrect;		// Same as rect, but not normalized -- Contains real window location in global desktop reference frame.
+	PsychRectType           rect;           // Bounding rectangle of true window framebuffer -- Normalized to always have top-left corner in (0,0)!
+	PsychRectType			globalrect;		// Same as rect, but not normalized -- Describes real window location in global desktop reference frame.
+	PsychRectType           clientrect;     // Bounding rectangle of *useable* framebuffer size for client stimulus drawing code. This should be returned
+                                            // to calling client code as 'Rect', 'WindowSize' etc. and used by Screen 2D drawing functions as reference
+                                            // window size. Normally clientrect == rect, but for special display modes, e.g., stereo modes 2-5, Bits+
+                                            // Color++ mode etc., the drawable area for stimuli may be of different size than the physical window backbuffer,
+                                            // e.g., half or twice as wide or high than the true scanout buffer. This is usually due to special pixel
+                                            // encodings for video scanout (two display pixels packed into one framebuffer pixel, one display pixel
+                                            // encoded by two adjacent framebuffer pixels (color++), special ultra-wide or stretched/compressed stereo displays...
 	psych_bool					isValid;		//between when we allocate the record and when we fill in values.
 	int					depth;				//Number of bits per pixel -- Attention: This is often misleading and not really reliable!
 	int					nrchannels;

@@ -6,8 +6,8 @@ function varargout = CMUBox(cmd, handle, varargin)
 % University box) and PST (E-Prime response box). It also allows to use a
 % UBW32/Bitwhacker device to be used as a response box if the device is
 % loaded with the StickOS firmware from http://cpustick.com. It also allows
-% to use the Curdes fORP devices if connected via serial port.
-%
+% to use the Curdes fORP devices if connected via serial port. And it offers
+% a simple way to access the RTBox in E-Prime mode.
 %
 % Commands and their syntax:
 % --------------------------
@@ -93,6 +93,9 @@ function varargout = CMUBox(cmd, handle, varargin)
 % to the PST and CMU response boxes. For the specifics, see the fORP manual
 % at http://www.curdes.com/ForpUserGuide.html
 %
+% 'rtbox' - Connect to a RTBox in "simple mode", the mode it uses after
+% powerup. The Box will send a byte of data for each event, each bit encoding
+% the new status of one button or other input.
 %
 % CMUBox('Close', handle);
 % - Close connection to response box 'handle'. The 'handle' is invalid
@@ -388,6 +391,15 @@ if strcmpi(cmd, 'Open')
             box.type = 1;
             fprintf('CMUBox: Using fORP interface program 2 as serial response button box!\n');
             
+        case {'rtbox'},
+            % % BaudRate is 115.2 KiloBaud, 8-N-1 config without flow
+            % control:
+            pString = 'BaudRate=115200';
+            box.useBitwhacker = 0;
+            box.Streaming = 0;
+            box.type = 1;
+            fprintf('CMUBox: Using RTBox as serial response button box!\n');
+            
         case {'cmu'},
             % BaudRate is 19.2 KiloBaud, 8-Odd-1 config without flow control:
             % This is valid for at least hardware type mark 3, and mark 4,
@@ -451,6 +463,14 @@ if strcmpi(cmd, 'Open')
         box.norelease = 0;
     end
 
+    if IsLinux
+        % Switch serial port to low-latency mode on Linux:
+        % This is extra-paranoid, as our udev rules and the
+        % 'ReceiveLatency=0.0001' setting below does already the same.
+        system(sprintf('setserial %s low_latency', port));
+        WaitSecs('YieldSecs', 0.100);
+    end
+
     % Try to open connection: Allocate an input buffer of a size of
     % 1600 * 9 * 3600 = 51840000 Bytes. This is sufficient for 1 hour of
     % uninterrupted box operation without ever reading out events from the
@@ -469,7 +489,7 @@ if strcmpi(cmd, 'Open')
     % low-latency for button transitions, as long as they are from none to
     % some and some to none.
     box.portName = portName;
-    box.port = IOPort('OpenSerialPort', portName, ['InputBufferSize=51840000 HardwareBufferSizes=32768,32768 Terminator=0 ' pString]);
+    box.port = IOPort('OpenSerialPort', portName, ['InputBufferSize=51840000 HardwareBufferSizes=32768,32768 Terminator=0 ReceiveLatency=0.0001 ' pString]);
     
     
     % Is this a testrun with an emulated CMU/PST box by use of the

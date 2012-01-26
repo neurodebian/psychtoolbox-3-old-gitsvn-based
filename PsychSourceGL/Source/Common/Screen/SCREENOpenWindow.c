@@ -335,6 +335,39 @@ PsychError SCREENOpenWindow(void)
     if(!isArgThere) PsychLoadColorStruct(&color, kPsychIndexColor, PsychGetWhiteValueFromWindow(windowRecord)); //or use the default
     PsychCoerceColorMode(&color);
 
+    // The imaging pipeline and graphics drivers had over 5 years of time to mature. As of 2012, imaging pipeline based
+    // support for fast offscreen windows and for stereoscopic display modes is far superior in performance,
+    // robustness, flexibility and convenience to the legacy method which was used in ptb by default so far.
+    // Now it is 2012+ and we switch the defaults: If the GPU+driver combo supports it, and usercode doesn't
+    // actively opt-out of it, we auto-enable use of FBO backed fast offscreen windows. We don't auto-enable
+    // the full pipeline for stereoscopic display modes, but we print some recommendations to the user to
+    // consider enabling the full pipeline for stereo display:
+    if ((windowRecord->gfxcaps & kPsychGfxCapFBO) && !(PsychPrefStateGet_ConserveVRAM() & kPsychDontAutoEnableImagingPipeline)) {
+        // Support for basic use of the PTB imaging pipeline and/or for fast offscreen windows
+        // is available - a GPU + driver combo with support for OpenGL framebuffer objects with
+        // at least RGBA8 format and rectangle rendertargets.
+        // Usercode doesn't disallow automatic use of imaging pipeline or fast offscreen windows,
+        // ie. it didn't set the kPsychDontAutoEnableImagingPipeline conserveVRAM flag.
+        // Good!
+        
+        // We will therefore auto-enable use of fast offscreen windows:
+        imagingmode |= kPsychNeedFastOffscreenWindows;
+        
+        // Is a stereomode requested which would benefit from enabling the full imaging pipeline?
+        if (!(imagingmode & kPsychNeedFastBackingStore) && (stereomode > 0)) {
+            // Yes: Provide the user with recommendations to enable the pipeline.
+            if (PsychPrefStateGet_Verbosity() > 2) {
+                printf("\n");
+                printf("PTB-INFO: Your script requests use of a stereoscopic display mode (stereomode = %i).\n", stereomode);
+                printf("PTB-INFO: Stereoscopic stimulus display is usually more flexible, convenient and robust if\n");
+                printf("PTB-INFO: the Psychtoolbox imaging pipeline is enabled. Your graphics card is capable\n");
+                printf("PTB-INFO: of using the pipeline but your script doesn't enable use of the pipeline.\n");
+                printf("PTB-INFO: I recommend you enable use of the pipeline for enhanced stereo stimulus display.\n");
+                printf("PTB-INFO: Have a look at the demoscript ImagingStereoDemo.m on how to do this.\n\n");
+            }
+        }
+    }
+
 	// Special setup code for dual window stereomode or output mode:
 	if (stereomode == kPsychDualWindowStereo || (imagingmode & kPsychNeedDualWindowOutput)) {
 		if (sharedContextWindow) {
@@ -392,6 +425,12 @@ PsychError SCREENOpenWindow(void)
 		imagingmode = imagingmode & (~kPsychHalfWidthWindow);
 	}
 
+    // Similar handling for twice-width windows: Used for certain packed-pixels (2 stimulus pixels in one fb pixel) formats:
+	if (imagingmode & kPsychTwiceWidthWindow) {
+		windowRecord->specialflags = windowRecord->specialflags | kPsychTwiceWidthWindow;
+		imagingmode = imagingmode & (~kPsychTwiceWidthWindow);
+	}
+
 	// Similar handling for windows of half the real height, except that none of our built-in stereo modes requires these,
 	// so this is only done on request from external code via the imagingmode flag kPsychHalfHeightWindow.
 	// One use of this is when using interleaved line stereo mode (PsychImaging(...'InterleavedLineStereo')) where windows
@@ -400,6 +439,12 @@ PsychError SCREENOpenWindow(void)
 		windowRecord->specialflags = windowRecord->specialflags | kPsychHalfHeightWindow;
 		imagingmode = imagingmode & (~kPsychHalfHeightWindow);
 	}
+
+	// Define windows clientrect. It is a copy of windows rect, but stretched or compressed
+    // to twice or half the width or height of the windows rect, depending on the special size
+    // flags. clientrect is used as reference for all size query functions Screen('Rect'), Screen('WindowSize')
+    // and for all Screen 2D drawing functions:
+    PsychSetupClientRect(windowRecord);
 
 	// Initialize internal image processing pipeline if requested:
 	PsychInitializeImagingPipeline(windowRecord, imagingmode, multiSample);
@@ -417,7 +462,9 @@ PsychError SCREENOpenWindow(void)
 	}
 
 	// Activate new onscreen window for userspace drawing: If imaging pipeline is active, this
-	// will bind the correct rendertargets for the first time:
+	// will bind the correct rendertargets for the first time. We soft-reset first to get
+    // into a defined state:
+	PsychSetDrawingTarget((PsychWindowRecordType*) 0x1);
 	PsychSetDrawingTarget(windowRecord);
 
     // Set the clear color and perform a backbuffer-clear:
@@ -434,7 +481,7 @@ PsychError SCREENOpenWindow(void)
     // is enabled, then do an initial bufferswap & clear, so the display starts in
     // the user selected background color instead of staying at the blue screen or
     // logo display until the Matlab script first calls 'Flip'.
-    if ((PsychPrefStateGet_VisualDebugLevel()>=4) && numWindowBuffers>=2) {
+    if (((PsychPrefStateGet_VisualDebugLevel()>=4) || (windowRecord->stereomode > 0)) && numWindowBuffers>=2) {
       // Do immediate bufferswap by an internal call to Screen('Flip'). This will also
 	  // take care of clearing the backbuffer in preparation of first userspace drawing
 	  // commands and such...
@@ -451,12 +498,8 @@ PsychError SCREENOpenWindow(void)
     //Return the window index and the rect argument.
     PsychCopyOutDoubleArg(1, FALSE, windowRecord->windowIndex);
 
-	// rect argument needs special treatment in stereo mode:
-	PsychMakeRect(rect, windowRecord->rect[kPsychLeft], windowRecord->rect[kPsychTop],
-					windowRecord->rect[kPsychLeft] + PsychGetWidthFromRect(windowRecord->rect)/((windowRecord->specialflags & kPsychHalfWidthWindow) ? 2 : 1),
-					windowRecord->rect[kPsychTop] + PsychGetHeightFromRect(windowRecord->rect)/((windowRecord->specialflags & kPsychHalfHeightWindow) ? 2 : 1));
-
-    PsychCopyOutRectArg(2, FALSE, rect);
+    // Optionally return the windows clientrect:
+    PsychCopyOutRectArg(2, FALSE, windowRecord->clientrect);
 
     return(PsychError_none);   
 }
