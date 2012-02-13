@@ -1,3 +1,12 @@
+psychtoolbox-3 (3.0.9+svn2452.dfsg1-1) neurodebian; urgency=low
+
+  * New upstream snapshot
+    - upstream dropped direct build dependency on libraw1394-dev
+  * Refreshed patches: deb_no_static_bindings_with-fPIC,
+    deb_see_README.Debian, deb_use_system_GLEW
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Sun, 12 Feb 2012 18:29:24 -0500
+
 psychtoolbox-3 (3.0.9+svn2380.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot addressing XRandR support etc
