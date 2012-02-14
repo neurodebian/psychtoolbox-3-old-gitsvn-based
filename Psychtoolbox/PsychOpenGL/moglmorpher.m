@@ -111,7 +111,26 @@ function [rc, varargout] = moglmorpher(cmd, arg1, arg2, arg3, arg4, arg5)
 % shapes. This is required, because otherwise the linear combination of shapes and
 % normal vectors wouldn't be mathematically well defined.
 %
-% The function call returns a handle (a unique numeric id) for the mesh.
+% The function call returns a index for the mesh. The index is fixed for a
+% given mesh unless you call moglmorpher('deleteMeshAtIndex'), in which
+% case the numbering may change. See 'deleteMeshAtIndex' for details.
+%
+%
+% moglmorpher('deleteMeshAtIndex', meshIndex [, dontReset=0]);
+% -- Delete the mesh with index 'meshIndex' from the set of keyshapes. All
+% keyshapes after the deleted meshIndex will "move down" one index. E.g.,
+% if you delete the keyshape at meshIndex = 5, then the mesh with previous
+% index 6 will become the new mesh with index 5, the mesh with old index 7 will
+% become mesh 6 and so on. You have to take this renumbering into account
+% for calls like moglmorpher('renderMesh') that expect the meshid, and when
+% passing in a morph 'weights' vector into the morphing functions, where
+% the ordering of elements changes accordingly.
+%
+% 'dontReset' optional: If set to 1 then moglmorpher doesn't 'reset' itself
+% when the last mesh is deleted. This saves overhead for reinit, but any
+% new added mesh must have the exactly same topology as the previously
+% deleted meshes, or bad things will happen.
+%
 %
 % moglmorpher('renderMesh', meshid);
 % -- Render the mesh corresponding to the handle 'meshid'.
@@ -293,7 +312,7 @@ function [rc, varargout] = moglmorpher(cmd, arg1, arg2, arg3, arg4, arg5)
 %
 %
 
-% (c) 2006 Mario Kleiner - licensed to you under GPL.
+% (c) 2006-2012 Mario Kleiner - licensed to you under MIT license.
 %
 % History:
 % Sometimes 2006 - Written (MK).
@@ -309,13 +328,19 @@ function [rc, varargout] = moglmorpher(cmd, arg1, arg2, arg3, arg4, arg5)
 % 03.11.2010  Add function 'getGeometry' to retrieve current (morphed) mesh
 %             geometry. (MK).
 %
-% 03.11.2010  Add function 'morphTextue' to morph textures as well (MK).
+% 03.11.2010  Add function 'morphTexture' to morph textures as well (MK).
 %
 % 03.11.2010  Add support for static vertex colors (non-morphable for now) (MK).
 %
 % 09.02.2011  Add support for use of multiple morph contexts (MK).
 %
 % 09.02.2011  Add support for rendering only a subrange of faces from a mesh (MK).
+%
+% 23.12.2011  Add new subfunction 'deleteMeshAtIndex' for deleting of
+%             keyshapes. Change license from GPL to MIT (MK).
+%
+% 5.01.2012   Add optional 'dontReset' flag to 'deleteMeshAtIndex', so user
+%             can delete all keyshapes without incurring a full reset cycle (MK).
 %
 
 % The GL OpenGL constant definition struct is shared with all other modules:
@@ -454,8 +479,6 @@ if isempty(gpubasedmorphing)
     % Test if fully GPU based morphing via FBO's VBO's PBO's and shaders is
     % possible. Use it, if so:
     gpubasedmorphing = 0;
-
-    % ctx.oldWeightLength = -1;
 
     % Check if all OpenGL extensions for GPU based morphing are available:
     if ~isempty(findstr(glGetString(GL.EXTENSIONS), '_vertex_buffer_object')) && ...
@@ -635,6 +658,110 @@ if strcmpi(cmd, 'assumeSparseMorphWeights')
     return;
 end
 
+if strcmpi(cmd, 'deleteMeshAtIndex')
+    % A mesh should be deleted from the collection of key-meshes.
+    if nargin < 2
+        error('Index of mesh to delete is missing!');
+    end
+
+    % Get mesh handle, sanity check:
+    idx = arg1;
+    
+    if isempty(idx) || ~isscalar(idx) || ~isnumeric(idx) || idx < 1
+        error('Invalid index of mesh provided! Must be a numeric value > 0.');
+    end
+    
+    % Does such a mesh exist?
+    if idx > ctx.objcount
+        error('Invalid mesh index provided! No mesh at given index exists.');
+    end
+
+    % Optional dontReset flag provided?
+    if nargin < 3 || isempty(arg2)
+	dontReset = 0;
+    else
+	dontReset = arg2;
+    end
+
+    % Yep: Is this the last keyshape to delete?
+    if (ctx.objcount == 1) && (dontReset == 0)
+        % Yep: Time for a big cleanup. Destroy and recreate whole ctx to
+        % prepare for full reinit once a new mesh is added:
+
+        % Delete current context and reset it to "undefined":
+        mywin = ctx.win;
+        internalDeleteContext(ctx, gpubasedmorphing);
+
+        % Create and return the new default context:
+        ctx = internalCreateContext(mywin);
+        
+        % ctx is now a fresh and new. Will be filled with life at first
+        % 'addMesh' call. We're done:
+        rc = 0;
+
+        return;
+    end
+
+    % A signal to the 'addMesh' code on future invocations to
+    % not reinit the shaders, fbos etc.
+    if dontReset
+	ctx.warmstart = 1;
+    else
+	ctx.warmstart = [];
+    end
+
+    % More than one keyshape stored. We don't do a full ctx
+    % destroy-recreate, but only delete the single keyshape:
+    if ~gpubasedmorphing
+        % CPU based operation: Just delete mesh from internal array of keyshapes:
+
+        % We copy all non-deleted meshes from the old matrices into new
+        % matrices:
+        retainIdx = setdiff(1:ctx.objcount, idx);
+        ctx.keyvertices = ctx.keyvertices(:,:,retainIdx);
+        ctx.keynormals  = ctx.keynormals(:,:,retainIdx);
+    else
+        % GPU based operation:
+        
+        % Query current OpenGL state:
+        [targetwindow, IsOpenGLRendering] = Screen('GetOpenGLDrawMode');
+
+        if IsOpenGLRendering
+            % Disable OpenGL mode:
+            Screen('EndOpenGL', targetwindow);
+        end
+        
+        % Delete the keyshape texture that represents the mesh:
+        Screen('Close', ctx.keyshapes(idx));
+        
+        % Move all non-deleted keyshapes down the stack:
+        retainIdx = setdiff(1:ctx.objcount, idx);
+        ctx.keyshapes = ctx.keyshapes(retainIdx);
+           
+        % Reset masterkeyshape texture, if any:
+        if ~isempty(ctx.masterkeyshapetex)
+            Screen('Close', ctx.masterkeyshapetex);
+            ctx.masterkeyshapetex = [];
+        end
+
+        if IsOpenGLRendering
+            % Reenable OpenGL mode:
+            Screen('BeginOpenGL', targetwindow);
+        end        
+    end
+    
+    % Now we have one keyshape less:
+    ctx.objcount = ctx.objcount - 1;
+    
+    % Increment total count of updates:
+    ctx.updatecount = ctx.updatecount + 1;
+    
+    % Done.
+    rc = 0;
+    
+    return;
+end
+
 if strcmpi(cmd, 'addMesh')
     % A new mesh should be added as keyshape to the collection of key-meshes.
 
@@ -674,8 +801,10 @@ if strcmpi(cmd, 'addMesh')
 
     % If we have multiple keyshapes then all keyshapes need to have the same topology
     % and number/dimensionality of vertices, normals and texcoords, otherwise morphing
-    % wouldn't work.
-    if ctx.objcount>0
+    % wouldn't work. On a warmstart we still have all the needed validation info and
+    % constraings in ctx.faces etc., despite the last keyshape being deledted, ie.
+    % even if ctx.objcount == 0. Therefore we validate also on a warmstart.
+    if (ctx.objcount > 0) || ~isempty(ctx.warmstart)
         % At least one keymesh is already defined check for consistency:
         if size(ctx.faces)~=size(arg1)
             error('Mismatch between size of current faces array and faces array of new mesh!');
@@ -815,8 +944,10 @@ if strcmpi(cmd, 'addMesh')
             ctx.masterkeyshapetex = [];
         end
 
-        % First time invocation?
-        if ctx.objcount == 1
+        % First time invocation? A warm restart (dontReset = 1 set in 'deleteMeshXXX')
+	% does not count as first time invocation, as a dontReset does keep all
+	% shaders, FBOs and other resources setup, so no need to do it here again.
+        if (ctx.objcount == 1) && isempty(ctx.warmstart)
             % Yes! Need to allocate and setup FBO's PBO's and VBO's and create
             % GLSL operator for morphing on GPU:
 
@@ -946,7 +1077,7 @@ if strcmpi(cmd, 'addMesh')
         
         if ctx.usecolors
             buffersize = size(ctx.vertcolors,1) * size(ctx.vertcolors,2) * 4;
-            if ctx.objcount == 1
+            if isempty(ctx.colorvbo)
                 ctx.colorvbo = glGenBuffers(1);
                 glBindBuffer(GL.ARRAY_BUFFER, ctx.colorvbo);
                 glBufferData(GL.ARRAY_BUFFER, buffersize, 0, GL.STATIC_DRAW);
@@ -964,7 +1095,12 @@ if strcmpi(cmd, 'addMesh')
             Screen('BeginOpenGL', targetwindow);
         end
     end
-        
+
+    % Reset "warmstart" flag, as set by moglmorpher('deleteMeshXX') with
+    % the dontReset flag set to only delete the last keyshape, don't do
+    % full reset.
+    ctx.warmstart = [];
+
     % Increment total count of updates:
     ctx.updatecount = ctx.updatecount + 1;
 
@@ -1877,6 +2013,7 @@ newctx.win = mywin;
 
 % Setup empty defaults:
 newctx.objcount = 0;
+newctx.warmstart = [];
 newctx.usetextures = 0;
 newctx.usenormals = 0;
 newctx.usecolors = 0;
@@ -2021,6 +2158,8 @@ if (gpubasedmorphing > 0) && (delctx.objcount > 0)
     delctx.realNormalCount = [];
     delctx.resynccount = [];
 end
+
+delctx.warmstart = [];
 
 % Release whatever's left:
 delctx = [];

@@ -93,7 +93,8 @@ typedef enum  {
         kPsychAnaglyphGRStereo = 7,       // Stereo via color filter glasses (Anaglyph principle): Green-Red
         kPsychAnaglyphRBStereo = 8,       // Stereo via color filter glasses (Anaglyph principle): Red-Blue
         kPsychAnaglyphBRStereo = 9,       // Stereo via color filter glasses (Anaglyph principle): Blue-Red
-		kPsychDualWindowStereo = 10		  // Stereo for dual-display setups, where each view is rendered into its own onscreen window. (Imaging pipe only!)
+	kPsychDualWindowStereo = 10,      // Stereo for dual-display setups, where each view is rendered into its own onscreen window. (Imaging pipe only!)
+	kPsychFrameSequentialStereo = 11  // Stereo for frame-sequential display, but using PTB's own implementation instead of native OpenGL mode.
 } PsychStereoDisplayType;
 
 
@@ -238,6 +239,13 @@ typedef struct {
 
 // Do not return OS provided nominal framerate, but zero instead, to override defective OS queries: 2^22
 #define kPsychIgnoreNominalFramerate 4194304
+
+// Do not use new-style asynchronous flips with dedicated OpenGL swapbuffer context per flipper thread:
+#define kPsychUseOldStyleAsyncFlips (1 << 23)
+
+// Do not auto-enable fast offscreen window support or full imaging pipeline for stereo modes
+// by default on GPU's which support it:
+#define kPsychDontAutoEnableImagingPipeline (1 << 24)
 
 //function protoptypes
 

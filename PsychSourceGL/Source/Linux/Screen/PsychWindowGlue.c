@@ -113,7 +113,7 @@ psych_bool PsychRealtimePriority(psych_bool enable_realtime)
 	  if(!PsychPrefStateGet_SuppressAllWarnings()) {
 	    printf("PTB-INFO: Failed to enable realtime-scheduling [%s]!\n", strerror(errno));
 	    if (errno==EPERM) {
-	      printf("PTB-INFO: You need to run Matlab or Octave with root-privileges for this to work.\n");
+	      printf("PTB-INFO: You need to run Matlab or Octave with root-privileges, or run the script PsychLinuxConfiguration once for this to work.\n");
 	    }
 	  }
 	  errno=0;
@@ -130,7 +130,7 @@ psych_bool PsychRealtimePriority(psych_bool enable_realtime)
 	if(!PsychPrefStateGet_SuppressAllWarnings()) {
 	  printf("PTB-INFO: Failed to disable realtime-scheduling [%s]!\n", strerror(errno));
 	  if (errno==EPERM) {
-	    printf("PTB-INFO: You need to run Matlab or Octave with root-privileges for this to work.\n");
+	    printf("PTB-INFO: You need to run Matlab or Octave with root-privileges or run the script PsychLinuxConfiguration once for this to work.\n");
 	  }
 	}
 	errno=0;
@@ -179,6 +179,7 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   psych_bool fullscreen = FALSE;
   int attrib[41];
   int attribcount=0;
+  int stereoenableattrib=0;
   int depth, bpc;
   int windowLevel;
   int major, minor;
@@ -193,7 +194,8 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   
   // Init userspace GL context to safe default:
   windowRecord->targetSpecific.glusercontextObject = NULL;
-  	 
+  windowRecord->targetSpecific.glswapcontextObject = NULL;
+    	 
   // Which display depth is requested?
   depth = PsychGetValueFromDepthStruct(0, &(screenSettings->depth));
 
@@ -347,6 +349,7 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   // we request a stereo-enabled rendering context.
   if(stereomode==kPsychOpenGLStereo) {
     attrib[attribcount++]= GLX_STEREO;
+    stereoenableattrib = attribcount;
     attrib[attribcount++]= True;
   }
 
@@ -410,6 +413,20 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
     fbconfig = glXChooseFBConfig(dpy, scrnum, attrib, &nrdummy);
   } else {
     visinfo = glXChooseVisual(dpy, scrnum, attrib );
+  }
+
+  if (!visinfo && !fbconfig && (stereoenableattrib > 0)) {
+	// Failed to find matching visual and OpenGL native quad-buffered frame-sequential
+	// stereo requested. Probably the GPU does not support it. Disable it as we have a
+	// fallback implementation for this case.
+	attrib[stereoenableattrib] = False;
+
+	// Retry:
+	if (useGLX13) {
+		fbconfig = glXChooseFBConfig(dpy, scrnum, attrib, &nrdummy);
+	} else {
+		visinfo = glXChooseVisual(dpy, scrnum, attrib );
+	}
   }
 
   if (!visinfo && !fbconfig) {
@@ -587,6 +604,18 @@ psych_bool PsychOSOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Ps
   windowRecord->targetSpecific.deviceContext = dpy;
   windowRecord->targetSpecific.contextObject = ctx;
 
+  // Create rendering context for async flips with identical visual and display as main context, share all heavyweight ressources with it:
+  if (fbconfig) {
+      windowRecord->targetSpecific.glswapcontextObject = glXCreateNewContext(dpy, fbconfig[0], GLX_RGBA_TYPE, windowRecord->targetSpecific.contextObject, True);
+  } else {
+      windowRecord->targetSpecific.glswapcontextObject = glXCreateContext(dpy, visinfo, windowRecord->targetSpecific.contextObject, True);
+  }
+  
+  if (windowRecord->targetSpecific.glswapcontextObject == NULL) {
+      printf("\nPTB-ERROR[SwapContextCreation failed]: Creating a private OpenGL context for async flips failed for unknown reasons.\n\n");
+      return(FALSE);
+  }
+  
   // External 3D graphics support enabled?
   if (PsychPrefStateGet_3DGfx()) {
     // Yes. We need to create an extra OpenGL rendering context for the external
@@ -837,6 +866,10 @@ void PsychOSCloseWindow(PsychWindowRecordType *windowRecord)
   glXDestroyContext(dpy, windowRecord->targetSpecific.contextObject);
   windowRecord->targetSpecific.contextObject=NULL;
 
+  // Delete swap context:
+  glXDestroyContext(dpy, windowRecord->targetSpecific.glswapcontextObject);
+  windowRecord->targetSpecific.glswapcontextObject=NULL;
+
   // Delete userspace context, if any:
   if (windowRecord->targetSpecific.glusercontextObject) {
     glXDestroyContext(dpy, windowRecord->targetSpecific.glusercontextObject);
@@ -1033,12 +1066,13 @@ psych_int64 PsychOSGetSwapCompletionTimestamp(PsychWindowRecordType *windowRecor
 	// on top of a pre Linux-3.2 kernel:
 	if ((ust == 0) || ((msc == 0) && !strstr((char*) glGetString(GL_VENDOR), "nouveau"))) {
 		// Ohoh:
-		if (PsychPrefStateGet_Verbosity() > 11) {
-			printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: Invalid return values ust = %lld, msc = %lld from call with success return code (sbc = %lld)! Failing with rc = -1.\n", ust, msc, sbc);
+		if (PsychPrefStateGet_Verbosity() > 1) {
+			printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: Invalid return values ust = %lld, msc = %lld from call with success return code (sbc = %lld)! Failing with rc = -2.\n", ust, msc, sbc);
+			printf("PTB-DEBUG:PsychOSGetSwapCompletionTimestamp: This likely means a driver bug or malfunction, or that timestamping support has been disabled by the user in the driver!\n");
 		}
 		
-		// Return with "unsupported" rc, so calling code can try fallback-path:
-		return(-1);
+		// Return with "failure" rc, so calling code can provide more error handling:
+		return(-2);
 	}
 
 	// Success. Translate ust into system time in seconds:
@@ -1389,7 +1423,6 @@ void PsychOSUnsetGLContext(PsychWindowRecordType* windowRecord)
 		
 		// Need to unbind any FBO's in old context before switch, otherwise bad things can happen...
 		if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
-		glFlush();
     }
 	
 	glXMakeCurrent(windowRecord->targetSpecific.deviceContext, None, NULL);
@@ -1560,7 +1593,8 @@ void PsychOSProcessEvents(PsychWindowRecordType *windowRecord, int flags)
 				      0,0, &x, &y, &rootRet);
 		PsychMakeRect(windowRecord->globalrect, x, y, x + (int) w - 1, y + (int) h - 1);
 		PsychNormalizeRect(windowRecord->globalrect, windowRecord->rect);
-		PsychSetupView(windowRecord);
+		PsychSetupClientRect(windowRecord);
+		PsychSetupView(windowRecord, FALSE);
 	}
 }
 

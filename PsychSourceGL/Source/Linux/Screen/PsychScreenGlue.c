@@ -297,6 +297,11 @@ psych_bool PsychScreenMapRadeonCntlMemory(void)
 			fflush(NULL);
 		}
 		
+		// Need to zero-out errno to work around a bug in shipping libpciaccess.so versions prior June 2011 which would cause
+		// pci_device_probe(gpu) to report failure even on success at every invocation after the 1st invocation.
+		// See <http://cgit.freedesktop.org/xorg/lib/libpciaccess/commit/src/linux_sysfs.c?id=f9159b97834ba4b4e42a07953a33866e7ac90dbd>
+		errno = 0;
+
 		// Pull in remaining info about gpu:
 		ret = pci_device_probe(gpu);
 		if (ret) {
@@ -668,7 +673,7 @@ static void GetRandRScreenConfig(CGDirectDisplayID dpy, int idx)
     crtcs[o] = crtcid;
 
     printf("PTB-INFO: Display '%s' : X-Screen %i : Output %i [%s]: %s : ",
-	   DisplayString(dpy), displayX11Screens[idx], o, (const char*) output_info->name, (isPrimary > -1) ? ((isPrimary == 1) ? "Primary output" : "Secondary output") : "Unknown output status");
+	   DisplayString(dpy), displayX11Screens[idx], o, (const char*) output_info->name, (isPrimary > -1) ? ((isPrimary == 1) ? "Primary output" : "Secondary output") : "Unknown output priority");
     printf("%s : CRTC %i [XID %i]\n", (output_info->connection == RR_Connected) ? "Connected" : "Offline", crtcid, (int) output_info->crtc);
 
     if ((isPrimary > 0) && (crtcid >= 0)) {

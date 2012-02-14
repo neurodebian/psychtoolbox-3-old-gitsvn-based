@@ -1,3 +1,13 @@
+* DownloadAdditions
+** TODO Target directory must exist
+** TODO Depends: subversion
+** TODO Certificate must be accepted (p)ermanently or (t)emporarily ??
+
+  for http is probably not needed but worth adding
+  --non-interactive --trust-server-cert
+  ?
+** TODO calls savepath?
+** TODO Extract license clause message agreement and handle with debconf
 * DFSG/License/Copyright 											  :legal:
 ** TODO Canonical reference?
 ** TODO Cleanup
