@@ -1,7 +1,8 @@
-psychtoolbox-3 (3.0.9+svn2452.dfsg1-1) neurodebian; urgency=low
+psychtoolbox-3 (3.0.9+svn2455.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot
     - upstream dropped direct build dependency on libraw1394-dev
+    - compatible with freenect 0.1.2
   * Refreshed patches: deb_no_static_bindings_with-fPIC,
     deb_see_README.Debian, deb_use_system_GLEW
 
