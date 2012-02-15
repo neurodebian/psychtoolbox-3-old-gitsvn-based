@@ -92,7 +92,7 @@ Comment: PTB-3 requires patched version of portaudio.  Patches are yet to be
 Files: Psychtoolbox/PsychOpenGL/MOGL
 Copyright: 2006, Richard F. Murray
            2006-2010, Mario Kleiner
-License: GPL-2+
+License: Expat
 
 Files: Psychtoolbox/PsychOpenGL/MOGL/source/headers/glext_edit.h
 Copyright:  1999-2005 by Apple Computer, Inc
