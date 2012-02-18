@@ -46,9 +46,10 @@ build-stamp:
 	: # Manually build OpenGL text renderer extension
 	cd PsychSourceGL/Cohorts/FTGLTextRenderer; \
 	$(CXX) $(CXXFLAGS) -I. -I/usr/include/ -I/usr/include/freetype2/ \
-		-L/usr/lib -l GL -l GLU -l fontconfig -l freetype -pie -shared -fPIC \
+		-L/usr/lib -pie -shared -fPIC \
 		-o libptbdrawtext_ftgl.so.1 \
-		libptbdrawtext_ftgl.cpp qstringqcharemulation.cpp OGLFT.cpp
+		libptbdrawtext_ftgl.cpp qstringqcharemulation.cpp OGLFT.cpp \
+		-lGL -lGLU -lfontconfig -lfreetype
 
 	: # Manually build tcp_udp_ip toolbox's extension
 	cd ./Psychtoolbox/PsychHardware/iViewXToolbox/tcp_udp_ip; \
