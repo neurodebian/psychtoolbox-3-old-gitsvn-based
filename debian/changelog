@@ -1,3 +1,13 @@
+psychtoolbox-3 (3.0.9+svn2456.dfsg1-1) unstable; urgency=low
+
+  * New upstream snapshot (no chages in sources), necessary
+    to assure correct fetching of binary extensions upon demand
+  * To please Ubuntu's --as-needed placed -l's for
+    libptbdrawtext_ftgl.so.1 build at the end of the build cmd
+    (should fix incorrect building on Ubuntu's >= 11.04)
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Fri, 17 Feb 2012 21:59:12 -0500
+
 psychtoolbox-3 (3.0.9+svn2455.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot
