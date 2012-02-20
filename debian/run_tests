@@ -52,7 +52,7 @@ mkdir -p $out
 		outlog="$out/${f%.*}.log"
 		( sleep $timeescape; xdotool key Escape; ) &
 		# if it is a function -- eval it, otherwise run the script
-		if grep -v '^[% ]*$' AlphaAdditionTest.m| head -1 | grep -q -e '^ *function'; then
+		if grep -v '^[% ]*$' $f | head -1 | grep -q -e '^ *function'; then
 			timeout --kill-after=$timelimitkill $timelimit \
 				octave -q --eval "${f%.m}" >| $outlog 2>&1
 		else
