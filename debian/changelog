@@ -5,6 +5,8 @@ psychtoolbox-3 (3.0.9+svn2514.dfsg1-1) neurodebian; urgency=low
     gpu based random number noise generation (perlin noise) on modern
     gpus, etc.
   * Refreshed patches
+  * Updated copyright (years, URLs, license)
+  * Boosted policy to 3.9.3 -- no changes
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Wed, 21 Mar 2012 10:34:15 -0400
 

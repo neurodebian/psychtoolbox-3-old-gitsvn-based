@@ -1,3 +1,15 @@
+* Packaging
+** Lintian-freeness
+
+W: psychtoolbox-3-common: extra-license-file usr/share/psychtoolbox-3/License.txt
+W: psychtoolbox-3-common: extra-license-file usr/share/psychtoolbox-3/PsychDemos/OpenGL4MatlabDemos/GLSLDemoShaders/3Dlabs-License.txt
+W: psychtoolbox-3-common: extra-license-file usr/share/psychtoolbox-3/PsychDemos/SoundFiles/COPYING
+W: psychtoolbox-3-common: extra-license-file usr/share/psychtoolbox-3/PsychHardware/iViewXToolbox/tcp_udp_ip/GNU_General_Public_License.txt
+W: psychtoolbox-3-common: extra-license-file usr/share/psychtoolbox-3/PsychHardware/iViewXToolbox/tcp_udp_ip/license.txt
+W: psychtoolbox-3-common: extra-license-file usr/share/psychtoolbox-3/PsychSound/PortAudioLICENSE.txt
+W: psychtoolbox-3-common: script-not-executable usr/share/psychtoolbox-3/PsychContributed/simplepsychtoolboxsetup.sh
+W: psychtoolbox-3-common: script-not-executable usr/share/psychtoolbox-3/PsychOpenGL/MOGL/core/setupdate.sh
+
 * DownloadAdditions
 ** TODO Target directory must exist
 ** TODO Depends: subversion
@@ -9,7 +21,7 @@
 ** TODO calls savepath?
 ** TODO Extract license clause message agreement and handle with debconf
 * DFSG/License/Copyright 											  :legal:
-** TODO Canonical reference?
+** TODO Canonical reference into debian/upstream from debian/copyright
 ** TODO Cleanup
    [[file:cleanup.sh][* cleanup script]]
 *** TODO Psychtoolbox/PsychContributed/ATIRadeonperf_Linux
