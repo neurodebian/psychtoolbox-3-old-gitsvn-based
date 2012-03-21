@@ -7,6 +7,8 @@ psychtoolbox-3 (3.0.9+svn2514.dfsg1-1) neurodebian; urgency=low
   * Refreshed patches
   * Updated copyright (years, URLs, license)
   * Boosted policy to 3.9.3 -- no changes
+  * Added upstream changelog as a GIT/SVN log of the upstream beta branch
+    which carries release summaries
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Wed, 21 Mar 2012 10:34:15 -0400
 
