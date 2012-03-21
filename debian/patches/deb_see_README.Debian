@@ -1,6 +1,6 @@
 --- a/PsychSourceGL/Source/Common/Screen/SCREENGetMouseHelper.c
 +++ b/PsychSourceGL/Source/Common/Screen/SCREENGetMouseHelper.c
-@@ -874,6 +874,7 @@ PsychError SCREENGetMouseHelper(void)
+@@ -875,6 +875,7 @@ PsychError SCREENGetMouseHelper(void)
  	    					printf("PTB-ERROR: Failed to enable realtime-scheduling with Priority(%i) [%s]!\n", schedulingparam.sched_priority, strerror(errno));
  						if (errno==EPERM) {
  							printf("PTB-ERROR: You need to run Matlab/Octave with root-privileges, or run the script PsychLinuxConfiguration once for this to work.\n");
@@ -8,7 +8,7 @@
  						}
  					}
  					errno=0;
-@@ -900,6 +901,7 @@ PsychError SCREENGetMouseHelper(void)
+@@ -901,6 +902,7 @@ PsychError SCREENGetMouseHelper(void)
  	    					printf("PTB-ERROR: Failed to disable realtime-scheduling with Priority(%i) [%s]!\n", schedulingparam.sched_priority, strerror(errno));
  						if (errno==EPERM) {
  							printf("PTB-ERROR: You need to run Matlab/Octave with root-privileges, or run the script PsychLinuxConfiguration once for this to work.\n");

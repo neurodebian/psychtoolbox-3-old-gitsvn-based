@@ -1,11 +1,21 @@
-psychtoolbox-3 (3.0.9+svn2458.dfsg1-1) unstable; urgency=low
+psychtoolbox-3 (3.0.9+svn2514.dfsg1-1) neurodebian; urgency=low
+
+  * Fresh beta release:
+    Many improvements to realtime scheduling and movie playback, a bit of
+    gpu based random number noise generation (perlin noise) on modern
+    gpus, etc.
+  * Refreshed patches
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Wed, 21 Mar 2012 10:34:15 -0400
+
+psychtoolbox-3 (3.0.9+svn2458.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot (no chages in sources), necessary
     to assure correct fetching of binary extensions upon demand
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Sun, 19 Feb 2012 21:00:54 -0500
 
-psychtoolbox-3 (3.0.9+svn2456.dfsg1-1) unstable; urgency=low
+psychtoolbox-3 (3.0.9+svn2456.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot (no chages in sources), necessary
     to assure correct fetching of binary extensions upon demand
