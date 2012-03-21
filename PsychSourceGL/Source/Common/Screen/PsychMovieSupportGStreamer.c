@@ -40,6 +40,21 @@
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
 
+// Need to define this for playbin2 as it is not defined
+// in any header file: (Expected behaviour - not a bug)
+typedef enum {
+  GST_PLAY_FLAG_VIDEO         = (1 << 0),
+  GST_PLAY_FLAG_AUDIO         = (1 << 1),
+  GST_PLAY_FLAG_TEXT          = (1 << 2),
+  GST_PLAY_FLAG_VIS           = (1 << 3),
+  GST_PLAY_FLAG_SOFT_VOLUME   = (1 << 4),
+  GST_PLAY_FLAG_NATIVE_AUDIO  = (1 << 5),
+  GST_PLAY_FLAG_NATIVE_VIDEO  = (1 << 6),
+  GST_PLAY_FLAG_DOWNLOAD      = (1 << 7),
+  GST_PLAY_FLAG_BUFFERING     = (1 << 8),
+  GST_PLAY_FLAG_DEINTERLACE   = (1 << 9)
+} GstPlayFlags;
+
 static const psych_bool oldstyle = FALSE;
 static psych_bool useYUVDecode = FALSE;
 
@@ -56,6 +71,8 @@ typedef struct {
     int			frameAvail;
     int                 preRollAvail;
     double		rate;
+    int                 startPending;
+    int                 endOfFetch;
     int			loopflag;
     double		movieduration;
     int			nrframes;
@@ -183,14 +200,50 @@ static psych_bool PsychMoviePipelineSetState(GstElement* theMovie, GstState stat
 }
 
 /* Receive messages from the playback pipeline message bus and handle them: */
-static gboolean PsychMovieBusCallback(GstBus *bus, GstMessage *msg, gpointer dataptr)
+gboolean PsychMovieBusCallback(GstBus *bus, GstMessage *msg, gpointer dataptr)
 {
   PsychMovieRecordType* movie = (PsychMovieRecordType*) dataptr;
 
   switch (GST_MESSAGE_TYPE (msg)) {
-    case GST_MESSAGE_EOS:
-	//printf("PTB-DEBUG: Message EOS received.\n");
-    break;
+    case GST_MESSAGE_SEGMENT_DONE:
+      // We usually receive segment done message instead of eos if looped playback is active and
+      // the end of the stream is approaching, so we fallthrough to message eos for rewinding...
+      if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: Message SEGMENT_DONE received.\n");
+
+    case GST_MESSAGE_EOS: {
+      // Rewind at end of movie if looped playback enabled:
+      if ((GST_MESSAGE_TYPE (msg) == GST_MESSAGE_EOS) && (PsychPrefStateGet_Verbosity() > 5)) printf("PTB-DEBUG: Message EOS received.\n");
+
+      if ((movie->loopflag & 0x1) && (movie->rate != 0)) {
+        if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-DEBUG: End of iteration in active looped playback reached: Rewinding...\n");
+
+        // Seek: We don't GST_SEEK_FLAG_FLUSH here, so the rewinding is smooth because we don't throw away buffers queued in the pipeline.
+        if (movie->rate > 0) {
+          if (!gst_element_seek(movie->theMovie, movie->rate, GST_FORMAT_TIME, GST_SEEK_FLAG_ACCURATE | GST_SEEK_FLAG_SEGMENT, GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE)) {
+            printf("PTB-DEBUG: Rewinding video in forward playback failed!\n");
+          }
+        }
+        else {
+          if (!gst_element_seek(movie->theMovie, movie->rate, GST_FORMAT_TIME, GST_SEEK_FLAG_ACCURATE | GST_SEEK_FLAG_SEGMENT, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE, GST_SEEK_TYPE_END, 0)) {
+            printf("PTB-DEBUG: Rewinding video in reverse playback failed!\n");
+          }
+        }
+
+        // Block until seek completed, failed, or timeout of 10 seconds reached:
+        gst_element_get_state(movie->theMovie, NULL, NULL, (GstClockTime) (10 * 1e9));
+      }
+
+      break;
+    }
+
+    case GST_MESSAGE_BUFFERING: {
+      // Pipeline is buffering data, e.g., during network streaming playback.
+      // Print some optional status info:
+      gint percent = 0;
+      gst_message_parse_buffering(msg, &percent);
+      if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: Movie '%s', buffering video data: %i percent done ...\n", movie->movieName, (int) percent);
+      break;
+    }
 
     case GST_MESSAGE_WARNING: {
       gchar  *debug;
@@ -290,11 +343,10 @@ static void PsychEOSCallback(GstAppSink *sink, gpointer user_data)
 {
 	PsychMovieRecordType* movie = (PsychMovieRecordType*) user_data;
 
-	PsychLockMutex(&movie->mutex);
+	//PsychLockMutex(&movie->mutex);
 	//printf("PTB-DEBUG: Videosink reached EOS.\n");
-	PsychUnlockMutex(&movie->mutex);
-	PsychSignalCondition(&movie->condition);
-
+	//PsychUnlockMutex(&movie->mutex);
+	//PsychSignalCondition(&movie->condition);
 	return;
 }
 
@@ -336,10 +388,10 @@ static GstFlowReturn PsychNewBufferListCallback(GstAppSink *sink, gpointer user_
 {
 	PsychMovieRecordType* movie = (PsychMovieRecordType*) user_data;
 
-	PsychLockMutex(&movie->mutex);
+	//PsychLockMutex(&movie->mutex);
 	//printf("PTB-DEBUG: New Bufferlist received.\n");
-	PsychUnlockMutex(&movie->mutex);
-	PsychSignalCondition(&movie->condition);
+	//PsychUnlockMutex(&movie->mutex);
+	//PsychSignalCondition(&movie->condition);
 
 	return(GST_FLOW_OK);
 }
@@ -360,7 +412,7 @@ static void PsychDestroyNotifyCallback(gpointer user_data)
 static void PsychMovieAboutToFinishCB(GstElement *theMovie, gpointer user_data)
 {
 	PsychMovieRecordType* movie = (PsychMovieRecordType*) user_data;
-	if ((movie->loopflag > 0) && (movie->rate != 0)) {
+	if ((movie->loopflag & 0x2) && (movie->rate != 0)) {
 		g_object_set(G_OBJECT(theMovie), "uri", movie->movieLocation, NULL);
 		if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-DEBUG: About-to-finish received: Rewinding...\n");
 	}
@@ -425,11 +477,53 @@ void PsychGSCreateMovie(PsychWindowRecordType *win, const char* moviename, doubl
     psych_bool			printErrors;
     GstIterator			*it;
     psych_bool			done;
+    GstPlayFlags		playflags = 0;
 
     // Suppress output of error-messages if moviehandle == 1000. That means we
     // run in our own Posix-Thread, not in the Matlab-Thread. Printing via Matlabs
     // printing facilities would likely cause a terrible crash.
     printErrors = (*moviehandle == -1000) ? FALSE : TRUE;
+
+    // Gapless playback requested? Normally *moviehandle is == -1, so a positive
+    // handle requests this mode and defines the actual handle of the movie to use:
+    if ((*moviehandle >= 0) && (preloadSecs == -2)) {
+	// Queueing a new moviename of a movie to play next: This only works
+	// for already opened/created movies whose pipeline is at least in
+	// READY state, better PAUSED or PLAYING. Validate preconditions:
+
+	// Valid handle for existing movie?
+	if (*moviehandle < 0 || *moviehandle >= PSYCH_MAX_MOVIES) {
+	    PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided!");
+	}
+        
+	// Fetch references to objects we need:
+	theMovie = movieRecordBANK[*moviehandle].theMovie;    
+	if (theMovie == NULL) {
+	    PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided. No movie associated with this handle !!!");
+	}
+
+	// Ok, this means we have a handle to an existing, fully operational
+	// playback pipeline. Convert moviename to a valid URL and queue it:
+
+	// Create name-string for moviename: If an URI qualifier is at the beginning,
+	// we're fine and just pass the URI as-is. Otherwise we add the file:// URI prefix.
+	if (strstr(moviename, "://") || ((strstr(moviename, "v4l") == moviename) && strstr(moviename, "//"))) {
+	    snprintf(movieLocation, sizeof(movieLocation)-1, "%s", moviename);
+	} else {
+	    snprintf(movieLocation, sizeof(movieLocation)-1, "file:///%s", moviename);
+	}
+
+	strncpy(movieRecordBANK[*moviehandle].movieLocation, movieLocation, FILENAME_MAX);
+	strncpy(movieRecordBANK[*moviehandle].movieName, moviename, FILENAME_MAX);
+
+	// Assign name of movie to play to pipeline. If the pipeline is not in playing
+	// state, this will switch to the specified movieLocation immediately. If it
+	// is playing, it will switch to it at the end of the current playback iteration:
+	g_object_set(G_OBJECT(theMovie), "uri", movieLocation, NULL);
+
+	// Ready.
+	return;
+    }
     
     // Set movie handle to "failed" initially:
     *moviehandle = -1;
@@ -491,7 +585,90 @@ void PsychGSCreateMovie(PsychWindowRecordType *win, const char* moviename, doubl
 	// Assign name of movie to play:
 	g_object_set(G_OBJECT(theMovie), "uri", movieLocation, NULL);
 
-	// Would disable audio decoding - video only: g_object_set(G_OBJECT(theMovie), "flags", 1, NULL);
+	// Default flags for playbin: Decode video and audio, deinterlace video if needed, allow sound volume control:
+	playflags = GST_PLAY_FLAG_VIDEO | GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_SOFT_VOLUME | GST_PLAY_FLAG_DEINTERLACE;
+
+	// Enable network buffering for network videos of at least 10 seconds, or preloadSecs seconds,
+	// whatever is bigger.
+
+	// Setup without any buffering and caching (aka preloadSecs == 0) requested?
+	// Note: For now treat the default preloadSecs value 1 as a zero -> No buffering and caching.
+	// Why? Because the usefulness of this extra setup is not yet proven and the specific choice
+	// of buffering parameters may need a bit of tuning. We don't want to cause regressions in
+	// performance of existing scripts, so we stick to the GStreamer default buffering behaviour
+	// until more time has been spent tuning & testing this setup code.
+	if ((preloadSecs != 0) && (preloadSecs != 1)) {
+	    // No: Use internal buffering/caching [BUFFERING] of demultiplexed/parsed data, e.g., for fast
+	    // recycling during looped video playback, random access out-of-order frame fetching, fast
+	    // seeking and reverse playback:
+	    playflags |= GST_PLAY_FLAG_BUFFERING;
+
+	    // Ok, this is ugly: Some movie formats, when streamed from the internet, need progressive
+	    // download buffering to work without problems, whereas other formats will cause problems
+	    // with progressive download buffering. So far we know that some .mov Quicktime movies, e.g.,
+	    // Apple's commercials need it, whereas some .webm movies choke on it. Let's be optimistic
+	    // and assume it works with everything except .webm. Also provide secret cheat code == -2
+	    // to override the blacklisting of .webm to allow for further experiments:
+	    if ((preloadSecs == -2) || (!strstr(moviename, ".webm"))) {
+		// Want some local progressive download buffering [DOWNLOAD] for network video streams,
+		// as temporary file on local filesystem:
+		playflags |= GST_PLAY_FLAG_DOWNLOAD;
+	    }
+
+	    // Undo our cheat-code if used: Map to 10 seconds preload time:
+	    if (preloadSecs == -2) preloadSecs = 10;
+
+	    // Setting maximum size of internal RAM ringbuffer supported? (since v0.10.31)
+	    if (g_object_class_find_property(G_OBJECT_GET_CLASS(theMovie), "ring-buffer-max-size")) {
+		// Supported. The ringbuffer is disabled by default, we enable it with a certain maximum
+		// size in bytes. For preloadSecs == -1, aka "unlimited buffering", we set it to its
+		// allowable maximum of G_MAXUINT == 4 GB. For a given finite preloadSecs we have
+		// to set something reasonable. Set it to preloadSecs buffer duration (in seconds) multiplied
+		// by some assumed maximum datarate in bytes/second. We use 4e6 bytes, which is roughly
+		// 4 MB/sec. Why? This is a generously padded value, assuming a max. fps of 60 Hz, max.
+		// resolution 1920x1080p HD video + HD audio. Numbers are based on the bit rates of
+		// a HD movie trailer (Warner Brothers "I am Legend" public HD movie trailer), which has
+		// 7887 kbits/s for 1920x816 H264/AVC progessive scan video at 24 fps and 258 kbits/s for
+		// MPEG-4 AAC audio in Surround 5.1 format with 48 kHz sampling rate. This upscaled to
+		// research use and padded should give a good value for our purpose. Also at a default
+		// preloadSecs value of 1 second, this wastes at most 4 MB for buffering - a safe default:
+		g_object_set(G_OBJECT(theMovie), "ring-buffer-max-size", ((preloadSecs == -1) ? G_MAXUINT : (guint64) (preloadSecs * (double) 4e6)), NULL);
+		if (PsychPrefStateGet_Verbosity() > 4) {
+		    printf("PTB-INFO: Playback for movie %i will use adapted RAM ring-buffer-max-size of %f MB.\n", slotid,
+			   (float) (((double) ((preloadSecs == -1) ? G_MAXUINT : preloadSecs * (double) 4e6)) / 1024.0 / 1024.0));
+		}
+	    }
+
+	    // Setting of maximum buffer duration for network video stream playback:
+	    if (preloadSecs == -1) {
+		// "Unlimited" - Set maximum buffering size to G_MAXINT == 2 GB.
+		g_object_set(G_OBJECT(theMovie), "buffer-size", (gint) G_MAXINT, NULL);
+	    }
+	    else {
+		// Limited - Set maximum buffer-duration to preloadSecs, the playbin will derive
+		// a proper maximum buffering size from duration and streaming bitrate:
+		g_object_set(G_OBJECT(theMovie), "buffer-duration", (gint64) (preloadSecs * (double) 1e9), NULL);
+	    }
+
+	    if (PsychPrefStateGet_Verbosity() > 4) {
+		printf("PTB-INFO: Playback for movie %i will use RAM buffering. Additional prebuffering for network streams is\n", slotid);
+		printf("PTB-INFO: limited to %f %s.\n", (preloadSecs == -1) ? 2 : preloadSecs, (preloadSecs == -1) ? "GB" : "seconds");
+		if (playflags & GST_PLAY_FLAG_DOWNLOAD) printf("PTB-INFO: Network video streams will be additionally cached to the filesystem.\n");
+	    }
+
+	    // All in all, we can end up with up to 6*x GB RAM and 6 GB disc consumption for the "unlimited" setting,
+	    // about 4*x MB RAM and 4 MB disc consumption for the default setting of 1, and preloadSecs multiples of
+	    // that for a given value. x is an unkown factor, depending on which internal plugins maintain ringbuffers,
+	    // but assume x somewhere between 1 and maybe 4.
+	}
+	else {
+	    if (PsychPrefStateGet_Verbosity() > 4) {
+		printf("PTB-INFO: Playback for movie %i will not use additional buffering or caching due to 'preloadSecs' setting %i.\n", slotid, (int) preloadSecs);
+	    }
+	}
+
+	// Setup final playback control flags:
+	g_object_set(G_OBJECT(theMovie), "flags", playflags , NULL);
 
 	// Connect callback to about-to-finish signal: Signal is emitted as soon as
 	// end of current playback iteration is approaching. The callback checks if
@@ -562,7 +739,8 @@ void PsychGSCreateMovie(PsychWindowRecordType *win, const char* moviename, doubl
 					  "green_mask", G_TYPE_INT, 0x00FF0000,
 					  "blue_mask", G_TYPE_INT,  0xFF000000,
 					  NULL);
-	if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: Movie playback for movie %i will use RGBA8 textures due to lack of YUV texture support on GPU.\n", slotid);
+	if ((PsychPrefStateGet_Verbosity() > 3) && useYUVDecode) printf("PTB-INFO: Movie playback for movie %i will use RGBA8 textures due to lack of YUV texture support on GPU.\n", slotid);
+	if ((PsychPrefStateGet_Verbosity() > 3) && !useYUVDecode) printf("PTB-INFO: Movie playback for movie %i will use RGBA8 textures.\n", slotid);
     }
 
     /*
@@ -601,8 +779,14 @@ void PsychGSCreateMovie(PsychWindowRecordType *win, const char* moviename, doubl
 
     PsychGSProcessMovieContext(movieRecordBANK[slotid].MovieContext, FALSE);
 
-    // Should we preroll / preload?	
-    if ((preloadSecs > 0) || (preloadSecs == -1)) {
+    // Should we preroll / preload?
+    // MK: Actually, *always* preroll via transition to PAUSED. The other path
+    // is seldomly used, therefore not well tested, bound to cause regressions on
+    // future code changes. Also just readying the pipeline causes problems with
+    // movie duration queries and other property queries, so probably not worth
+    // the trouble...
+    // The preloadSecs parameter is used instead above to control buffering behaviour.
+    if (TRUE || (preloadSecs > 0) || (preloadSecs == -1)) {
 	// Preload / Preroll the pipeline:
 	if (!PsychMoviePipelineSetState(theMovie, GST_STATE_PAUSED, 30.0)) {
 		PsychGSProcessMovieContext(movieRecordBANK[slotid].MovieContext, TRUE);
@@ -613,7 +797,7 @@ void PsychGSCreateMovie(PsychWindowRecordType *win, const char* moviename, doubl
 	if (!PsychMoviePipelineSetState(theMovie, GST_STATE_READY, 30.0)) {
 		PsychGSProcessMovieContext(movieRecordBANK[slotid].MovieContext, TRUE);
 		PsychErrorExitMsg(PsychError_user, "In OpenMovie: Opening the movie failed II. Reason given above.");
-	}    
+	}
     }
 
     // Check if a multi-threaded decoder from is used: If so, set number of processing
@@ -763,6 +947,8 @@ void PsychGSCreateMovie(PsychWindowRecordType *win, const char* moviename, doubl
     movieRecordBANK[slotid].loopflag = 0;
     movieRecordBANK[slotid].frameAvail = 0;
     movieRecordBANK[slotid].imageBuffer = NULL;
+    movieRecordBANK[slotid].startPending = 0;
+    movieRecordBANK[slotid].endOfFetch = 0;
 
     *moviehandle = slotid;
 
@@ -911,6 +1097,7 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
     GstEvent                    *event;
     static double               tStart = 0;
     double                      tNow;
+    double                      preT, postT;
 
     if (!PsychIsOnscreenWindow(win)) {
         PsychErrorExitMsg(PsychError_user, "Need onscreen window ptr!!!");
@@ -920,7 +1107,7 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
         PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided.");
     }
     
-    if ((timeindex!=-1) && (timeindex < 0 || timeindex >= 10000.0)) {
+    if ((timeindex!=-1) && (timeindex < 0 || timeindex >= 100000.0)) {
         PsychErrorExitMsg(PsychError_user, "Invalid timeindex provided.");
     }
     
@@ -932,6 +1119,24 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
     theMovie = movieRecordBANK[moviehandle].theMovie;
     if (theMovie == NULL) {
         PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided. No movie associated with this handle.");
+    }
+
+    // Deferred start of movie playback requested? This so if movie is supposed to be
+    // actively playing (rate != 0) and the startPending flag marks a pending deferred start:
+    if ((movieRecordBANK[moviehandle].rate != 0) && movieRecordBANK[moviehandle].startPending) {
+        // Deferred start: Reset flag, start pipeline with a max timeout of 1 second:
+        movieRecordBANK[moviehandle].startPending = 0;
+        PsychMoviePipelineSetState(theMovie, GST_STATE_PLAYING, 1);
+        // This point is reached after either the pipeline is fully started, or the
+        // timeout has elapsed. In the latter case, a GST_STATE_CHANGE_ASYNC message
+        // is printed and start of pipeline continues asynchronously. No big deal for
+        // us, as we'll simply block in the rest of the texture fetch (checkForImage) path
+        // until the first frame is ready and audio playback has started. The main purpose
+        // of setting a reasonable timeout above is to avoid cluttering the console with
+        // status messages (timeout big enough for common case) but allow user to interrupt
+        // ops that take too long (timeout small enough to avoid long user-perceived exec-hangs).
+        // 1 Second is used to cater to the common case of playing files from disc, but coping
+        // with multi-second delays for network streaming (buffering delays in preroll).
     }
 
     // Allow context task to do its internal bookkeeping and cleanup work:
@@ -962,11 +1167,6 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
 			// Seek to target timeindex:
 			PsychGSSetMovieTimeIndex(moviehandle, timeindex, FALSE);
 		}
-		else {
-			// No. We just retrieve the next frame, given the current position.
-			// Nothing to do so far...
-		}
-
 		// Check for frame availability happens down there in the shared check code...
 	}
     }
@@ -975,8 +1175,8 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
     if (checkForImage) {
 	// Take reference timestamps of fetch start:
 	if (tStart == 0) PsychGetAdjustedPrecisionTimerSeconds(&tStart);
-
 	PsychLockMutex(&movieRecordBANK[moviehandle].mutex);
+
 	if ((((0 != rate) && movieRecordBANK[moviehandle].frameAvail) || ((0 == rate) && movieRecordBANK[moviehandle].preRollAvail)) &&
 	    !gst_app_sink_is_eos(GST_APP_SINK(movieRecordBANK[moviehandle].videosink))) {
 		// New frame available. Unlock and report success:
@@ -994,9 +1194,11 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
 	}
 
 	// None available. Any chance there will be one in the future?
-        if (gst_app_sink_is_eos(GST_APP_SINK(movieRecordBANK[moviehandle].videosink)) && movieRecordBANK[moviehandle].loopflag == 0) {
+        if (((rate != 0) && gst_app_sink_is_eos(GST_APP_SINK(movieRecordBANK[moviehandle].videosink)) && (movieRecordBANK[moviehandle].loopflag == 0)) ||
+            ((rate == 0) && (movieRecordBANK[moviehandle].endOfFetch))) {
 		// No new frame available and there won't be any in the future, because this is a non-looping
 		// movie that has reached its end.
+		movieRecordBANK[moviehandle].endOfFetch = 0;
 		PsychUnlockMutex(&movieRecordBANK[moviehandle].mutex);
 		return(-1);
         }
@@ -1058,6 +1260,9 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
 		// One less frame available after our fetch:
 		movieRecordBANK[moviehandle].frameAvail--;
 
+		// We can unlock early, thanks to videosink's internal buffering: XXX FIXME: Perfectly race-free to do this before the pull?
+		PsychUnlockMutex(&movieRecordBANK[moviehandle].mutex);
+
 		// This will pull the oldest video buffer from the videosink. It would block if none were available,
 		// but that won't happen as we wouldn't reach this statement if none were available. It would return
 		// NULL if the stream would be EOS or the pipeline off, but that shouldn't ever happen:
@@ -1065,11 +1270,12 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
 	} else {
 		// Passive fetch mode: Use prerolled buffers after seek:
 		// These are available even after eos...
+
+		// We can unlock early, thanks to videosink's internal buffering: XXX FIXME: Perfectly race-free to do this before the pull?
+		PsychUnlockMutex(&movieRecordBANK[moviehandle].mutex);
+
 		videoBuffer = gst_app_sink_pull_preroll(GST_APP_SINK(movieRecordBANK[moviehandle].videosink));
 	}
-
-	// We can unlock early, thanks to videosink's internal buffering:
-	PsychUnlockMutex(&movieRecordBANK[moviehandle].mutex);
 
 	if (videoBuffer) {
 		// Assign pointer to videoBuffer's data directly: Avoids one full data copy compared to oldstyle method.
@@ -1080,6 +1286,7 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
 		if (GST_CLOCK_TIME_IS_VALID(GST_BUFFER_DURATION(videoBuffer)))
 			deltaT = (double) GST_BUFFER_DURATION(videoBuffer) / (double) 1e9;
 		bufferIndex = GST_BUFFER_OFFSET(videoBuffer);
+		if (PsychPrefStateGet_Verbosity() > 5) printf("PTB-DEBUG: pts %f secs, dT %f secs, bufferId %i.\n", movieRecordBANK[moviehandle].pts, deltaT, (int) bufferIndex);
 	} else {
 		printf("PTB-ERROR: No new video frame received in gst_app_sink_pull_buffer! Something's wrong. Aborting fetch.\n");
 		return(FALSE);
@@ -1190,13 +1397,21 @@ int PsychGSGetTextureFromMovie(PsychWindowRecordType *win, int moviehandle, int 
     
     // Manually advance movie time, if in fetch mode:
     if (0 == rate) {
-        // We are in manual fetch mode: Need to manually advance movie to next
-        // media sample:
+	// We are in manual fetch mode: Need to manually advance movie to next
+	// media sample:
+	movieRecordBANK[moviehandle].endOfFetch = 0;
+	preT = PsychGSGetMovieTimeIndex(moviehandle);
 	event = gst_event_new_step(GST_FORMAT_BUFFERS, 1, 1.0, TRUE, FALSE);
-	gst_element_send_event(theMovie, event);
+	if (!gst_element_send_event(theMovie, event)) printf("PTB-DEBUG: In single-step seek I - Failed.\n");
 
 	// Block until seek completed, failed, or timeout of 30 seconds reached:
-        gst_element_get_state(theMovie, NULL, NULL, (GstClockTime) (30 * 1e9));
+	if (GST_STATE_CHANGE_FAILURE == gst_element_get_state(theMovie, NULL, NULL, (GstClockTime) (30 * 1e9))) printf("PTB-DEBUG: In single-step seek I - Failed.\n");
+	postT = PsychGSGetMovieTimeIndex(moviehandle);
+
+	if (PsychPrefStateGet_Verbosity() > 6) printf("PTB-DEBUG: Movie fetch advance: preT %f   postT %f  DELTA %lf %s\n", preT, postT, postT - preT, (postT - preT < 0.001) ? "SAME" : "DIFF");
+
+	// Signal end-of-fetch if time no longer progresses signficiantly:
+	if (postT - preT < 0.001) movieRecordBANK[moviehandle].endOfFetch = 1;
     }
 
     PsychGetAdjustedPrecisionTimerSeconds(&tNow);
@@ -1252,6 +1467,7 @@ int PsychGSPlaybackRate(int moviehandle, double playbackrate, int loop, double s
 {
     int			dropped = 0;
     GstElement		*theMovie = NULL;
+    double timeindex;
     
     if (moviehandle < 0 || moviehandle >= PSYCH_MAX_MOVIES) {
         PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided!");
@@ -1270,8 +1486,19 @@ int PsychGSPlaybackRate(int moviehandle, double playbackrate, int loop, double s
 	g_object_set(G_OBJECT(theMovie), "mute", (soundvolume <= 0) ? TRUE : FALSE, NULL);
 	g_object_set(G_OBJECT(theMovie), "volume", soundvolume, NULL);
 
-	// Set playback rate:
-	gst_element_seek(theMovie, playbackrate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE, GST_SEEK_TYPE_NONE, 0, GST_SEEK_TYPE_NONE, 0);
+	// Set playback rate: An explicit seek to the position we are already (supposed to be)
+	// is needed to avoid jumps in movies with bad encoding or keyframe placement:
+	timeindex = PsychGSGetMovieTimeIndex(moviehandle);
+
+	if (playbackrate > 0) {
+		gst_element_seek(theMovie, playbackrate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE | ((loop & 0x1) ? GST_SEEK_FLAG_SEGMENT : 0), GST_SEEK_TYPE_SET,
+				 (gint64) (timeindex * (double) 1e9), GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
+	}
+	else {
+		gst_element_seek(theMovie, playbackrate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE | ((loop & 0x1) ? GST_SEEK_FLAG_SEGMENT : 0), GST_SEEK_TYPE_SET,
+				 0, GST_SEEK_TYPE_SET, (gint64) (timeindex * (double) 1e9));
+	}
+
         movieRecordBANK[moviehandle].loopflag = loop;
         movieRecordBANK[moviehandle].last_pts = -1.0;
         movieRecordBANK[moviehandle].nr_droppedframes = 0;
@@ -1279,13 +1506,27 @@ int PsychGSPlaybackRate(int moviehandle, double playbackrate, int loop, double s
 	movieRecordBANK[moviehandle].frameAvail = 0;
 	movieRecordBANK[moviehandle].preRollAvail = 0;
 
-	// Start it:
-	PsychMoviePipelineSetState(theMovie, GST_STATE_PLAYING, 10.0);
-	PsychGSProcessMovieContext(movieRecordBANK[moviehandle].MovieContext, FALSE);
+	// Is this a movie with actual videotracks?
+	if (movieRecordBANK[moviehandle].nrVideoTracks > 0) {
+	    // Yes: We only schedule deferred start of playback at first Screen('GetMovieImage')
+	    // frame fetch. This to avoid dropped frames due to random delays between
+	    // call to Screen('PlayMovie') and Screen('GetMovieImage'):
+	    movieRecordBANK[moviehandle].startPending = 1;
+	}
+	else {
+	    // Only soundtrack - Start it immediately:
+	    movieRecordBANK[moviehandle].startPending = 0;
+	    PsychMoviePipelineSetState(theMovie, GST_STATE_PLAYING, 10.0);
+	    PsychGSProcessMovieContext(movieRecordBANK[moviehandle].MovieContext, FALSE);
+	}
     }
     else {
 	// Stop playback of movie:
 	movieRecordBANK[moviehandle].rate = 0;
+	movieRecordBANK[moviehandle].startPending = 0;
+	movieRecordBANK[moviehandle].loopflag = 0;
+	movieRecordBANK[moviehandle].endOfFetch = 0;
+
 	PsychMoviePipelineSetState(theMovie, GST_STATE_PAUSED, 10.0);
 	PsychGSProcessMovieContext(movieRecordBANK[moviehandle].MovieContext, FALSE);
 
@@ -1351,7 +1592,7 @@ double PsychGSGetMovieTimeIndex(int moviehandle)
 
     fmt = GST_FORMAT_TIME;
     if (!gst_element_query_position(theMovie, &fmt, &pos_nsecs)) {
-	printf("PTB-WARNING: Could not query position in movie %i in seconds. Returning zero.\n", moviehandle);
+	if (PsychPrefStateGet_Verbosity() > 1) printf("PTB-WARNING: Could not query position in movie %i in seconds. Returning zero.\n", moviehandle);
 	pos_nsecs = 0;
     }
 
@@ -1366,15 +1607,16 @@ double PsychGSSetMovieTimeIndex(int moviehandle, double timeindex, psych_bool in
 {
     GstElement		*theMovie;
     double		oldtime;
-    long		targetIndex;
+    gint64		targetIndex;
     GstEvent            *event;
-    
+    GstSeekFlags        flags;
+
     if (moviehandle < 0 || moviehandle >= PSYCH_MAX_MOVIES) {
         PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided!");
     }
     
     // Fetch references to objects we need:
-    theMovie = movieRecordBANK[moviehandle].theMovie;    
+    theMovie = movieRecordBANK[moviehandle].theMovie;
     if (theMovie == NULL) {
         PsychErrorExitMsg(PsychError_user, "Invalid moviehandle provided. No movie associated with this handle !!!");
     }
@@ -1382,21 +1624,35 @@ double PsychGSSetMovieTimeIndex(int moviehandle, double timeindex, psych_bool in
     // Retrieve current timeindex:
     oldtime = PsychGSGetMovieTimeIndex(moviehandle);
 
-    // TODO NOTE: We could use GST_SEEK_FLAG_SKIP to allow framedropping on fast forward/reverse playback...
+    // NOTE: We could use GST_SEEK_FLAG_SKIP to allow framedropping on fast forward/reverse playback...
+    flags = GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE;
+
+    // Need segment seek flag for seek during active looped playback:
+    flags|= ((movieRecordBANK[moviehandle].rate != 0) && (movieRecordBANK[moviehandle].loopflag & 0x1)) ? GST_SEEK_FLAG_SEGMENT : 0;
 
     // Index based or target time based seeking?
     if (indexIsFrames) {
 	// Index based seeking:		
-	// TODO FIXME: This doesn't work (well) at all! Something's wrong here...
-	// Seek to given targetIndex:
-	targetIndex = (long) (timeindex + 0.5);
+	targetIndex = (gint64) (timeindex + 0.5);
 
-	// Simple seek, frame buffer (index) oriented, with pipeline flush and accurate seek,
-	// i.e., not locked to keyframes, but frame-accurate: GST_FORMAT_DEFAULT?
-	// gst_element_seek_simple(theMovie, GST_FORMAT_BUFFERS, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE, targetIndex);
-	event = gst_event_new_seek(1.0, GST_FORMAT_BUFFERS, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE,
-				   GST_SEEK_TYPE_SET, targetIndex, GST_SEEK_TYPE_END, 0);
-	gst_element_send_event(theMovie, event);
+	// Simple seek, videobuffer (index) oriented, with pipeline flush and accurate seek,
+	// i.e., not locked to keyframes, but frame-accurate:
+	if (!gst_element_seek_simple(theMovie, GST_FORMAT_DEFAULT, flags, targetIndex)) {
+		// Failed: This can happen on various movie formats as not all codecs and formats support frame-based seeks.
+		// Fallback to time-based seek by faking a target time for given targetIndex:
+		timeindex = (double) targetIndex / (double) movieRecordBANK[moviehandle].fps;
+
+		if (PsychPrefStateGet_Verbosity() > 1) {
+			printf("PTB-WARNING: Could not seek to frame index %i via frame-based seeking in movie %i.\n", (int) targetIndex, moviehandle);
+			printf("PTB-WARNING: Will do a time-based seek to approximately equivalent time %f seconds instead.\n", timeindex);
+			printf("PTB-WARNING: Not all movie formats support frame-based seeking. Please change your movie format for better precision.\n");
+		}
+
+		if (!gst_element_seek_simple(theMovie, GST_FORMAT_TIME, flags, (gint64) (timeindex * (double) 1e9)) &&
+		    (PsychPrefStateGet_Verbosity() > 1)) {
+			printf("PTB-WARNING: Time-based seek failed as well! Something is wrong with this movie!\n");
+		}
+	}
     }
     else {
 	// Time based seeking:
@@ -1404,11 +1660,24 @@ double PsychGSSetMovieTimeIndex(int moviehandle, double timeindex, psych_bool in
 
 	// Simple seek, time-oriented, with pipeline flush and accurate seek,
 	// i.e., not locked to keyframes, but frame-accurate:
-	gst_element_seek_simple(theMovie, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE, (gint64) (timeindex * (double) 1e9));
+	if (!gst_element_seek_simple(theMovie, GST_FORMAT_TIME, flags, (gint64) (timeindex * (double) 1e9)) &&
+	    (PsychPrefStateGet_Verbosity() > 1)) {
+		printf("PTB-WARNING: Time-based seek to %f seconds in movie %i failed. Something is wrong with this movie or the target time.\n", timeindex, moviehandle);
+	}
     }
 
     // Block until seek completed, failed or timeout of 30 seconds reached:
-    gst_element_get_state(theMovie, NULL, NULL, (GstClockTime) (30 * 1e9));
+    if (GST_STATE_CHANGE_FAILURE == gst_element_get_state(theMovie, NULL, NULL, (GstClockTime) (30 * 1e9)) &&
+        (PsychPrefStateGet_Verbosity() > 1)) {
+            printf("PTB-WARNING: SetTimeIndex on movie %i failed. Something is wrong with this movie or the target position. [Statechange-Failure in seek]\n", moviehandle);
+            printf("PTB-WARNING: Requested target position was %f %s. This could happen if the movie is not efficiently seekable and a timeout was hit.\n",
+                   timeindex, (indexIsFrames) ? "frames" : "seconds");
+    }
+
+    if (PsychPrefStateGet_Verbosity() > 4) printf("PTB-INFO: Seeked to position %f secs in movie %i.\n", PsychGSGetMovieTimeIndex(moviehandle), moviehandle);
+
+    // Reset fetch flag:
+    movieRecordBANK[moviehandle].endOfFetch = 0;
 
     // Return old time value of previous position:
     return(oldtime);
