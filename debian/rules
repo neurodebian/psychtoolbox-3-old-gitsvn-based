@@ -97,7 +97,9 @@ override_dh_auto_install:
 override_dh_makeshlibs:
 	dh_makeshlibs
 	: # Provide Octave:Depends
-	[ -e /usr/bin/octave-depends ] && octave-depends
+	[ -e /usr/bin/octave-depends ] \
+	&& octave-depends \
+	|| echo 'octave:Depends=octave (>= 3.4.3-1~)' >> debian/octave-psychtoolbox-3.substvars
 
 #override_dh_fixperms:
 #	dh_fixperms
