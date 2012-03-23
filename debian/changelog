@@ -1,11 +1,27 @@
-psychtoolbox-3 (3.0.9+svn2458.dfsg1-1) unstable; urgency=low
+psychtoolbox-3 (3.0.9+svn2514.dfsg1-1) neurodebian; urgency=low
+
+  * Fresh beta release:
+    Many improvements to realtime scheduling and movie playback, a bit of
+    gpu based random number noise generation (perlin noise) on modern
+    gpus, etc.
+  * Refreshed patches
+  * Updated copyright (years, URLs, license)
+  * Boosted policy to 3.9.3 -- no changes
+  * Added upstream changelog as a GIT/SVN log of the upstream beta branch
+    which carries release summaries
+  * "Manually" generate octave:Depends due to deprecation of
+    octave-depends helper in favor of unversioned octave package.
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Thu, 22 Mar 2012 22:19:03 -0400
+
+psychtoolbox-3 (3.0.9+svn2458.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot (no chages in sources), necessary
     to assure correct fetching of binary extensions upon demand
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Sun, 19 Feb 2012 21:00:54 -0500
 
-psychtoolbox-3 (3.0.9+svn2456.dfsg1-1) unstable; urgency=low
+psychtoolbox-3 (3.0.9+svn2456.dfsg1-1) neurodebian; urgency=low
 
   * New upstream snapshot (no chages in sources), necessary
     to assure correct fetching of binary extensions upon demand

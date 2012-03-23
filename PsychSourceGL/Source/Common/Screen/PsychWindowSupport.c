@@ -370,11 +370,13 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	if ((*windowRecord)->depth == 30) {
 		// Support for kernel driver available?
 #if PSYCH_SYSTEM == PSYCH_OSX || PSYCH_SYSTEM == PSYCH_LINUX
-		if ((PSYCH_SYSTEM == PSYCH_LINUX) && (strstr((char*) glGetString(GL_VENDOR), "NVIDIA") || ((strstr((char*) glGetString(GL_VENDOR), "ATI") || strstr((char*) glGetString(GL_VENDOR), "AMD")) && strstr((char*) glGetString(GL_RENDERER), "Fire")))) {
-			// NVidia GPU or ATI Fire-Series GPU: Only native support by driver, if at all...
+		if ((PSYCH_SYSTEM == PSYCH_LINUX) && (strstr((char*) glGetString(GL_VENDOR), "NVIDIA") || strstr((char*) glGetString(GL_VENDOR), "nouveau") ||
+		    strstr((char*) glGetString(GL_VENDOR), "Intel") ||
+		    ((strstr((char*) glGetString(GL_VENDOR), "ATI") || strstr((char*) glGetString(GL_VENDOR), "AMD")) && strstr((char*) glGetString(GL_RENDERER), "Fire")))) {
+			// NVidia/Intel GPU or ATI Fire-Series GPU: Only native support by driver, if at all...
 			printf("\nPTB-INFO: Your script requested a 30bpp, 10bpc framebuffer, but this is only supported on few special graphics cards and drivers on Linux.");
-			printf("\nPTB-INFO: This may or may not work for you - Double check your results! Theoretically, the 2008 series ATI/AMD FireGL/FirePro and NVidia Quadro cards may support this with some drivers,");
-			printf("\nPTB-INFO: but you must enable it manually in the Catalyst control center or Quadro control center(somewhere under ''Workstation settings'')\n");
+			printf("\nPTB-INFO: This may or may not work for you - Double check your results! Theoretically, the 2008 series ATI/AMD FireGL/FirePro and NVidia cards may support this with some drivers,");
+			printf("\nPTB-INFO: but you must enable it manually in the Catalyst control center or NVidia control center (somewhere under ''Workstation settings'')\n");
 		}
 		else {
 			// Only support our homegrown method with PTB kernel driver on ATI/AMD hardware:
@@ -394,12 +396,12 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 			(*windowRecord)->specialflags|= kPsychNative10bpcFBActive;
 		}
         
-        if (PsychPrefStateGet_ConserveVRAM() & kPsychEnforce10BitFramebufferHack) {
-            printf("PTB-INFO: Override: Will try to enable 10 bpc framebuffer mode regardless if i think it is needed/sensible or not.\n");
-            printf("PTB-INFO: Override: Doing so because you set the kPsychEnforce10BitFramebufferHack flag in Screen('Preference','ConserveVRAM').\n");
-            printf("PTB-INFO: Override: Cross your fingers, this may end badly...\n");
-            (*windowRecord)->specialflags|= kPsychNative10bpcFBActive;
-        }
+		if (PsychPrefStateGet_ConserveVRAM() & kPsychEnforce10BitFramebufferHack) {
+			printf("PTB-INFO: Override: Will try to enable 10 bpc framebuffer mode regardless if i think it is needed/sensible or not.\n");
+			printf("PTB-INFO: Override: Doing so because you set the kPsychEnforce10BitFramebufferHack flag in Screen('Preference','ConserveVRAM').\n");
+			printf("PTB-INFO: Override: Cross your fingers, this may end badly...\n");
+			(*windowRecord)->specialflags|= kPsychNative10bpcFBActive;
+		}
 #else
 		// Not supported by our own code and kernel driver (we don't have such a driver for Windows), but some recent 2008
 		// series FireGL cards at least provide the option to enable this natively - although it didn't work properly in our tests.
@@ -802,7 +804,12 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
 	  // --> PsychGetDisplayBeamPosition is not working correctly for some reason.
 	  sync_trouble = true;
 	  if(PsychPrefStateGet_Verbosity()>1) {
-			if (i >=-1) printf("\nWARNING: Querying rasterbeam-position doesn't work on your setup! (Returns a constant value %i)\n", i);
+			if (i >=-1) {
+				printf("\nWARNING: Querying rasterbeam-position doesn't work on your setup! (Returns a constant value %i)\n", i);
+				printf("WARNING: This can happen if Psychtoolbox gets the mapping of connected displays to graphics card\n");
+				printf("WARNING: outputs wrong. See 'help DisplayOutputMappings' for tips on how to resolve this problem.\n\n");
+			}
+
 			if (i < -1) printf("\nWARNING: Querying rasterbeam-position doesn't work on your setup! (Returns a negative value %i)\n", i);
 	  }
 	}
@@ -1711,6 +1718,7 @@ void* PsychFlipperThreadMain(void* windowRecordToCast)
 	// Get a handle to our info structs: These pointers must not be NULL!!!
 	PsychWindowRecordType*	windowRecord = (PsychWindowRecordType*) windowRecordToCast;
 	PsychFlipInfoStruct*	flipRequest	 = windowRecord->flipInfo;
+	psych_bool useOpenML = (windowRecord->gfxcaps & kPsychGfxCapSupportsOpenML) ? TRUE : FALSE;
 	
 	// Try to lock, block until available if not available:
 	if ((rc=PsychLockMutex(&(flipRequest->performFlipLock)))) {
@@ -1962,14 +1970,18 @@ void* PsychFlipperThreadMain(void* windowRecordToCast)
 				if (PsychPrefStateGet_Verbosity() > 10) {
 					printf("PTB-DEBUG: Idle-Swap tnow = %f >= deadline = %f  delta = %f  [lastvbl = %f]\n", tnow, lastvbl, tnow - lastvbl, windowRecord->time_at_last_vbl);
 				}
-	
+
 				// Wait for swap completion, so we get an updated vblank time estimate:
-				glBegin(GL_POINTS);
-				glColor4f(0, 0, 0, 0);
-				glVertex2i(10, 10);
-				glEnd();
-				glFinish();
-				PsychGetAdjustedPrecisionTimerSeconds(&(windowRecord->time_at_last_vbl));
+				if (!(useOpenML && (PsychOSGetSwapCompletionTimestamp(windowRecord, 0, &(windowRecord->time_at_last_vbl)) > 0))) {
+					// OpenML swap completion timestamping unsupported, disabled, or failed.
+					// Use our standard trick instead.
+					glBegin(GL_POINTS);
+					glColor4f(0, 0, 0, 0);
+					glVertex2i(10, 10);
+					glEnd();
+					glFinish();
+					PsychGetAdjustedPrecisionTimerSeconds(&(windowRecord->time_at_last_vbl));
+				}
 
 				// Maintain virtual vblank counter on platforms where we need it:
 				vblcount++;
@@ -2149,33 +2161,23 @@ psych_bool PsychFlipWindowBuffersIndirect(PsychWindowRecordType *windowRecord)
 			// For some braindead reasons, apparently only one thread can be scheduled in class 10,
 			// so we need to make sure the masterthread is not MMCSS scheduled, otherwise our new
 			// request will fail:
-			#if PSYCH_SYSTEM == PSYCH_WINDOWS
+			if (PSYCH_SYSTEM == PSYCH_WINDOWS) {
 				// On Windows, we have to set flipperThread to +2 RT priority levels while
 				// throwing ourselves off RT priority scheduling. This is a brain-dead requirement
 				// of Vista et al's MMCSS scheduler which only allows one of our threads being
-				// scheduled like that :(
-				PsychSetThreadPriority(0x1, 0, 0);
-				PsychSetThreadPriority(&(flipRequest->flipperThread), 10, 2);
-			#else
-				// Boost priority of flipperThread wrt. to us, ie., the PTB master thread
-				// by at least 2 units:
-				
-				// Query our (masterthread) schedulingmode and priority:
-				int policy;
-				struct sched_param sp;
-				pthread_getschedparam(pthread_self(), &policy, &sp);
-				
-				// If we're a regular SCHED_OTHER non-RT thread, then flipperThread will be
-				// RT scheduled with priority 0 + 2. Otherwise it will be RT scheduled with
-				// whatever our priority is + 2, so it can preempt us whenever this is needed:
-				if (policy == SCHED_OTHER) sp.sched_priority = 0;
-				
-				// Set final priority as RT with 2 levels above our priority:
-				PsychSetThreadPriority(&(flipRequest->flipperThread), 10, sp.sched_priority + 2);
-			#endif
-			
-			//printf("ENTERING THREADCREATEFINISHED MUTEX\n"); fflush(NULL);
-			
+				// scheduled like that :( -- Disable RT scheduling for ourselves (masterthread):
+				PsychSetThreadPriority((psych_thread*) 0x1, 0, 0);
+			}
+
+			// Boost priority of flipperThread by 2 levels and switch it to RT scheduling,
+			// unless it is already RT-Scheduled. As the thread inherited our scheduling
+			// priority from PsychCreateThread(), we only need to +2 tweak it from there:
+			// Note: On OS/X this means ultra-low latency non-preemptible operation (as we need), with up to
+			// 3 msecs uninterrupted computation time out of 10 msecs if we really need it. Normally we can
+			// get along with << 1 msec, but some pathetic cases of GPU driver bugs could drive it up to 3 msecs
+			// in the async flipper thread:
+			PsychSetThreadPriority(&(flipRequest->flipperThread), 10, 2);
+
 			// The thread is started with flipperState == 0, ie., not "initialized and ready", the lock is unlocked.
 			// First thing the thread will do is try to lock the lock, then set its flipperState to 1 == initialized and
 			// ready, then init itself, then enter a wait on our flipperGoGoGo condition variable and atomically unlock

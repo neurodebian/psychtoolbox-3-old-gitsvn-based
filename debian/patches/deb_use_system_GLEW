@@ -29,9 +29,9 @@
  
  //platform dependent includes stage 1
  #if PSYCH_SYSTEM == PSYCH_LINUX
-@@ -52,7 +52,7 @@
-     #include <stdint.h>
- 	
+@@ -55,7 +55,7 @@
+ 
+ 	#include <stdint.h>
  	// This is the new glew include for GLX extension support:
 -	#include "../Screen/glxew.h"
 +	#include <GL/glxew.h>

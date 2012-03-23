@@ -1,7 +1,7 @@
-Format-Specification: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Psychtoolbox-3
 Upstream-Contact: Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
-Source: http://svn.berlios.de/svnroot/repos/osxptb/
+Source: http://psychtoolbox-3.googlecode.com/svn
 Note:
   If you want to acknowledge use of this software when you publish your
   research, you might say something like this, "We wrote our experiments
@@ -16,7 +16,7 @@ Copyright:
   1996-2007, David Brainard
   1996-2007, Denis Pelli
   1996-2007, Allen Ingling  <allen.ingling@nyu.edu>
-  2005-2011, Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
+  2005-2012, Mario Kleiner <mario.kleiner@tuebingen.mpg.de>
 License: Expat
 
 Files: PsychSourceGL/Source/Common/PsychCV/OpenEyesCVEyeTracker/cvEyeTracker.cc
@@ -130,7 +130,7 @@ Copyright: 2009, VPixx Technologies http://www.vpixx.com
 License: GPL-2+
 
 Files: debian/*
-Copyright: 2010-2011, Yaroslav Halchenko <debian@onerussian.com>
+Copyright: 2010-2012, Yaroslav Halchenko <debian@onerussian.com>
 License: Expat
 
 License: Expat
@@ -196,3 +196,31 @@ License: BSD-3
   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: SGI Free Software License B, Version 1.1
+  License Applicability. Except to the extent portions of this file are
+  made subject to an alternative license as permitted in the SGI Free
+  Software License B, Version 1.1 (the "License"), the contents of this
+  file are subject only to the provisions of the License. You may not use
+  this file except in compliance with the License. You may obtain a copy
+  of the License at Silicon Graphics, Inc., attn: Legal Services, 1600
+  Amphitheatre Parkway, Mountain View, CA 94043-1351, or at:
+  .
+  http://oss.sgi.com/projects/FreeB
+  .
+  Note that, as provided in the License, the Software is distributed on an
+  "AS IS" basis, with ALL EXPRESS AND IMPLIED WARRANTIES AND CONDITIONS
+  DISCLAIMED, INCLUDING, WITHOUT LIMITATION, ANY IMPLIED WARRANTIES AND
+  CONDITIONS OF MERCHANTABILITY, SATISFACTORY QUALITY, FITNESS FOR A
+  PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+  .
+  Original Code. The Original Code is: OpenGL Sample Implementation,
+  Version 1.2.1, released January 26, 2000, developed by Silicon Graphics,
+  Inc. The Original Code is Copyright (c) 1991-2000 Silicon Graphics, Inc.
+  Copyright in any portions created by third parties is as indicated
+  elsewhere herein. All Rights Reserved.
+  .
+  Additional Notice Provisions: This software was created using the
+  OpenGL(R) version 1.2.1 Sample Implementation published by SGI, but has
+  not been independently verified as being compliant with the OpenGL(R)
+  version 1.2.1 Specification.

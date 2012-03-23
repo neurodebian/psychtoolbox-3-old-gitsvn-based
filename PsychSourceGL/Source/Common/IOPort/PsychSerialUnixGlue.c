@@ -238,10 +238,10 @@ void* PsychSerialUnixGlueReaderThreadMain(PSYCHVOLATILE void* deviceToCast)
 	// Get a handle to our device struct: These pointers must not be NULL!!!
 	PSYCHVOLATILE PsychSerialDeviceRecord* device = (PSYCHVOLATILE PsychSerialDeviceRecord*) deviceToCast;
 
-	// Try to raise our priority: We ask to switch ourselves (NULL) to priority class 1 aka
-	// round robin realtime scheduling, with a tweakPriority of +1, ie., raise the relative
+	// Try to raise our priority: We ask to switch ourselves (NULL) to priority class 2 aka
+	// realtime scheduling, with a tweakPriority of +1, ie., raise the relative
 	// priority level by +1 wrt. to the current level:
-	if ((rc = PsychSetThreadPriority(NULL, 1, 1)) > 0) {
+	if ((rc = PsychSetThreadPriority(NULL, 2, 1)) > 0) {
 		if (verbosity > 0) printf("PTB-ERROR: In IOPort:PsychSerialUnixGlueReaderThreadMain(): Failed to switch to realtime priority [%s]!\n", strerror(rc));
 	}
 
@@ -489,6 +489,51 @@ void PsychIOOSShutdownSerialReaderThread(PSYCHVOLATILE PsychSerialDeviceRecord* 
 	return;
 }
 
+/* PsychSerialUnixGlueJLTriggerThreadMain() -- Timed trigger byte emission.
+ * This is a proof-of-concept prototype for the async-task API of IOPort,
+ * not for public use by regular users!
+ *
+ * Emits a 0xff triggerbyte over serial port at time device->triggerWhen.
+ *
+ */
+void* PsychSerialUnixGlueJLTriggerThreadMain(PSYCHVOLATILE void* deviceToCast)
+{
+	int rc;
+	unsigned char writedata = 0xff;
+	double timestamp[4];
+	char errmsg[256];
+	errmsg[0] = 0;
+	
+	// Get a handle to our device struct: These pointers must not be NULL!!!
+	PSYCHVOLATILE PsychSerialDeviceRecord* device = (PSYCHVOLATILE PsychSerialDeviceRecord*) deviceToCast;
+
+	// Try to raise our priority: We ask to switch ourselves (NULL) to priority class 2 aka
+	// realtime scheduling, with a tweakPriority of +2, ie., raise the relative
+	// priority level by +2 wrt. to the current level:
+	if ((rc = PsychSetThreadPriority(NULL, 2, 2)) > 0) {
+		if (verbosity > 0) printf("PTB-ERROR: In IOPort:PsychSerialUnixGlueJLTriggerThreadMain(): Failed to switch to realtime priority [%s]!\n", strerror(rc));
+	}
+
+	// Detach ourselves, so parent thread doesn't need to pthread_join() us:
+	if (pthread_detach(pthread_self())) printf("PTB-ERROR: In IOPort:PsychSerialUnixGlueJLTriggerThreadMain(): Failed to detach!\n");
+	
+	// Wait for our target time to come...
+	PsychWaitUntilSeconds(device->triggerWhen);
+
+	if (1 != PsychIOOSWriteSerialPort(device, &writedata, 1, 1, errmsg, timestamp)) {
+		printf("PTB-ERROR: In IOPort:PsychSerialUnixGlueJLTriggerThreadMain(): Failed to write triggerbyte!\n");
+	}
+
+	// Good enough?
+	if ((verbosity > 3) && (timestamp[0] - device->triggerWhen > 0.003)) printf("PTB-WARNING: In IOPort:PsychSerialUnixGlueJLTriggerThreadMain(): Trigger emission delayed by up to %f msecs wrt. to deadline!\n", (float) 1000.0 * (timestamp[0] - device->triggerWhen));
+
+	// Store write completion timestamp:
+	device->triggerWhen = timestamp[0];
+
+	// Go and die peacefully...
+	return(NULL);
+}
+
 /* PsychIOOSOpenSerialPort()
  *
  * Open a serial port device and configure it.
@@ -690,7 +735,7 @@ PsychError PsychIOOSConfigureSerialPort(PSYCHVOLATILE PsychSerialDeviceRecord* d
 	
     // Print the current input and output baud rates.
     // See tcsetattr(4) ("man 4 tcsetattr") for details.
-    if (verbosity > 3) {
+    if (verbosity > 4) {
 		printf("IOPort-Info: Configuration for device %s:\n", device->portSpec);
 		printf("IOPort-Info: Current input baud rate is %d\n", ConstantToBaud((int) cfgetispeed(&options)));
 		printf("IOPort-Info: Current output baud rate is %d\n", ConstantToBaud((int) cfgetospeed(&options)));
@@ -955,14 +1000,15 @@ PsychError PsychIOOSConfigureSerialPort(PSYCHVOLATILE PsychSerialDeviceRecord* d
 	// directly bypassing the termios struct. This means that the following two calls will not be able to read
 	// the current baud rate if the IOSSIOSPEED ioctl was used but will instead return the speed set by the last call
 	// to cfsetspeed.
-    if (verbosity > 3) {
-			// Retrieve baudrate and check for equal rate on input- and output queue:
-			inint = cfgetispeed(&options);
-			if ((inint != cfgetospeed(&options)) && (verbosity > 1)) printf("IOPort: Warning: Hmm, new input- and output baudrates %i vs. %i don't match!? May or may not be a problem...\n", ConstantToBaud((int) inint), ConstantToBaud((int) cfgetospeed(&options))); 
 
-			// Output new baud rate:
-			printf("IOPort-Info: Baud rate changed to %d\n", (int) ConstantToBaud(inint));
-    }
+	// Retrieve baudrate and check for equal rate on input- and output queue:
+	if (verbosity > 1) {
+		inint = cfgetispeed(&options);
+		if (inint != cfgetospeed(&options)) printf("IOPort: Warning: Hmm, new input- and output baudrates %i vs. %i don't match!? May or may not be a problem...\n", ConstantToBaud((int) inint), ConstantToBaud((int) cfgetospeed(&options))); 
+	}
+	
+	// Output new baud rate:
+    if (verbosity > 4) printf("IOPort-Info: Baud rate changed to %d\n", (int) ConstantToBaud(inint));
     
     // Cause the new options to take effect immediately.
     if (updatetermios && (tcsetattr(device->fileDescriptor, TCSANOW, &options) == -1))
@@ -980,7 +1026,7 @@ PsychError PsychIOOSConfigureSerialPort(PSYCHVOLATILE PsychSerialDeviceRecord* d
 		if (verbosity > 0) printf("Error getting lines status for device %s - %s(%d).\n", device->portSpec, strerror(errno), errno);
 		if (strstr(configString, "Lenient") == NULL) return(PsychError_system);
     }
-	else if (verbosity > 3) {
+	else if (verbosity > 4) {
 		printf("IOPort-Info: Handshake lines currently set to %d : ", handshake);
 		printf("DTR=%i : DSR=%i : RTS=%i : CTS=%i\n", (handshake & TIOCM_DTR) ? 1:0, (handshake & TIOCM_DSR) ? 1:0, (handshake & TIOCM_RTS) ? 1:0, (handshake & TIOCM_CTS) ? 1:0);
 	}
@@ -1161,6 +1207,11 @@ PsychError PsychIOOSConfigureSerialPort(PSYCHVOLATILE PsychSerialDeviceRecord* d
 				device->readBuffer = (unsigned char*) p;
 				device->readBufferSize = (unsigned int) inint;
 			}
+			
+			// Zerofill, so each page of memory gets touched once and we fault in
+			// all memory pages to improve realtime behaviour of rt reader thread by
+			// minimizing / avoiding page-faults:
+			memset(device->readBuffer, 0, device->readBufferSize);
 		}
 	}
 
@@ -1238,13 +1289,13 @@ PsychError PsychIOOSConfigureSerialPort(PSYCHVOLATILE PsychSerialDeviceRecord* d
 			
 			// Create & Init the mutex:
 			if ((rc=PsychInitMutex(&(device->readerLock)))) {
-				printf("PTB-ERROR: In StartBackgroundReadCould(): Could not create readerLock mutex lock [%s].\n", strerror(rc));
+				printf("PTB-ERROR: In StartBackgroundRead(): Could not create readerLock mutex lock [%s].\n", strerror(rc));
 				return(PsychError_system);
 			}
 			
 			// Create and startup thread:
 			if ((rc=PsychCreateThread(&(device->readerThread), NULL, PsychSerialUnixGlueReaderThreadMain, (void*) device))) {
-				printf("PTB-ERROR: In StartBackgroundReadCould(): Could not create background reader thread [%s].\n", strerror(rc));
+				printf("PTB-ERROR: In StartBackgroundRead(): Could not create background reader thread [%s].\n", strerror(rc));
 				return(PsychError_system);
 			}
 		}
@@ -1258,6 +1309,27 @@ PsychError PsychIOOSConfigureSerialPort(PSYCHVOLATILE PsychSerialDeviceRecord* d
 		device->dontFlushOnWrite = inint;
 	}
 
+	// Proof-of-concept test code: Not for public use!
+	// Async triggerbyte emission via parallel thread requested?
+	if ((p = strstr(configString, "JLFireTrigger="))) {
+		if (1!=sscanf(p, "JLFireTrigger=%f", &infloat)) {
+			if (verbosity > 0) printf("Invalid parameter for JLFireTrigger set!\n");
+			return(PsychError_user);
+		}
+		else {
+			// Store target time in device struct:
+			device->triggerWhen = (double) infloat;
+			
+			// Create and startup trigger thread: It will detach itself from us, do
+			// its job and then die lonely and forgotten without us caring:
+			psych_thread threadhandle;
+			if ((rc=PsychCreateThread(&threadhandle, NULL, PsychSerialUnixGlueJLTriggerThreadMain, (void*) device))) {
+				printf("PTB-ERROR: In JLFireTrigger(): Could not create background trigger thread [%s].\n", strerror(rc));
+				return(PsychError_system);
+			}			
+		}
+	}
+	
 	// Done.
 	return(PsychError_none);
 }

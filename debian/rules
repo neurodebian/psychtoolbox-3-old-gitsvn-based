@@ -97,7 +97,9 @@ override_dh_auto_install:
 override_dh_makeshlibs:
 	dh_makeshlibs
 	: # Provide Octave:Depends
-	[ -e /usr/bin/octave-depends ] && octave-depends
+	[ -e /usr/bin/octave-depends ] \
+	&& octave-depends \
+	|| echo 'octave:Depends=octave (>= 3.4.3-1~)' >> debian/octave-psychtoolbox-3.substvars
 
 #override_dh_fixperms:
 #	dh_fixperms
@@ -119,6 +121,8 @@ override_dh_shlibdeps:
 	find debian/ -ipath '*psych*/usr/*' -perm /+x -type f ! -iname ATIRadeonperf_Linux -print0 \
 	| xargs -0 --no-run-if-empty chmod a-x
 
+override_dh_installchangelogs:
+	dh_installchangelogs debian/changelog.upstream
 
 override_dh_clean:
 	dh_clean
@@ -130,6 +134,9 @@ override_dh_clean:
 	-rm debian/octave-psychtoolbox-3.links debian/psychtoolbox-3-lib.links
 	$(MAKE) -C PsychSourceGL/Cohorts/PortAudio clean
 
-get-orig-source:
+debian/changelog.upstream:
+	git log remotes/branches/beta >| $@
+
+get-orig-source: debian/changelog.upstream
 	git archive --format=tar --prefix=$(srcpkg)-$(gitver)/ dfsg | \
         gzip -9 > $(srcpkg)_$(uver).orig.tar.gz

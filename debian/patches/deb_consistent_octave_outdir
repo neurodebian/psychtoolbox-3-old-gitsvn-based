@@ -1,6 +1,6 @@
 --- a/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
 +++ b/PsychSourceGL/Source/linuxmakeitoctave3_ubuntugutsy.m
-@@ -22,12 +22,7 @@
+@@ -22,12 +22,7 @@ end;
  
  fprintf('Building plugin type %i ...\n\n', mode);
  

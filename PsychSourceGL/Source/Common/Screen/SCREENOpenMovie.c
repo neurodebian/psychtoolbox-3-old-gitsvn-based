@@ -30,7 +30,7 @@
 
 static char useString[] = "[ moviePtr [duration] [fps] [width] [height] [count] [aspectRatio]]=Screen('OpenMovie', windowPtr, moviefile [, async=0] [, preloadSecs=1]);";
 static char synopsisString[] = 
-		"Try to open the multimediafile 'moviefile' for playback in onscreen window 'windowPtr' and "
+	"Try to open the multimediafile 'moviefile' for playback in onscreen window 'windowPtr' and "
         "return a handle 'moviePtr' on success.\nOn OS-X and Windows, media files are handled by use of "
         "Apples Quicktime-7 API. On Linux, the GStreamer multimedia framework is used. "
         "The following movie properties are optionally returned: 'duration' Total duration of movie in seconds. "
@@ -48,13 +48,19 @@ static char synopsisString[] =
         "After some sufficient time has passed, you can call the 'OpenMovie' function again, this time with "
         "the 'async' flag set to zero. Now the function will return a valid movie handle for playback. Background "
         "loading of movies currently does only work well with movies that don't have sound, unless you use Linux.\n"
-		"'preloadSecs' This optional parameter allows to ask Screen() to load at least the first 'preloadSecs' "
-		"seconds of the movie into system RAM before the function returns. By default, the first second of the "
-		"movie file is loaded into RAM. This potentially allows for more stutter free playback, but your mileage "
-		"may vary, depending on movie format, storage medium and lots of other factors. In most cases, the default "
-		"setting is perfectly sufficient. The special setting -1 means: Load whole movie into RAM. Caution: Long "
-		"movies may cause your system to run low on memory and have disastrous effects on playback performance!\n"
-        "CAUTION: Some movie files, e.g., MPEG-1 movies sometimes cause Matlab to hang. This seems to be "
+        "If you use the GStreamer playback engine and all your movies have exactly the same format and only differ "
+        "in duration and content, but not in image size, color depth or format, or fps, then you can also use "
+        "an aync setting of 2 and provide the 'moviePtr' handle of an already opened movie in the 'preloadSecs' "
+        "parameter. This will queue the movie 'moviefile' as a successor to the currently playing moviefile in "
+        "'ḿoviePtr'. Queuing movies this way is more efficient than async flag setting 1, although also more "
+        "restricted.\n"
+	"'preloadSecs' This optional parameter allows to ask Screen() to load at least the first 'preloadSecs' "
+	"seconds of the movie into system RAM before the function returns. By default, the first second of the "
+	"movie file is loaded into RAM. This potentially allows for more stutter-free playback, but your mileage "
+	"may vary, depending on movie format, storage medium and lots of other factors. In most cases, the default "
+	"setting is perfectly sufficient. The special setting -1 means: Load whole movie into RAM. Caution: Long "
+	"movies may cause your system to run low on memory and have disastrous effects on playback performance!\n"
+        "CAUTION: On OS/X, some movie files, e.g., MPEG-1 movies sometimes cause Matlab to hang. This seems to be "
         "a bad interaction between parts of Apples Quicktime toolkit and Matlabs Java Virtual Machine (JVM). "
         "If you experience stability problems, please start Matlab with JVM and desktop disabled, e.g., "
         "with the command: 'matlab -nojvm'. An example command sequence in a terminal window could be: "
@@ -66,7 +72,7 @@ PsychAsyncMovieInfo asyncmovieinfo;
 
 PsychError SCREENOpenMovie(void) 
 {
-        PsychWindowRecordType					*windowRecord;
+        PsychWindowRecordType			*windowRecord;
         char                                    *moviefile;
         int                                     moviehandle = -1;
         int                                     framecount;
@@ -77,8 +83,8 @@ PsychError SCREENOpenMovie(void)
         int                                     height;
         int                                     asyncFlag = 0;
         static psych_bool                       firstTime = TRUE;
-		double									preloadSecs = 1;
-        int										rc;
+	double					preloadSecs = 1;
+        int					rc;
 
         if (firstTime) {
             // Setup asyncopeninfo on first invocation:
@@ -86,16 +92,16 @@ PsychError SCREENOpenMovie(void)
             asyncmovieinfo.asyncstate = 0; // State = No async open in progress.
         }
         
-		// All sub functions should have these two lines
-		PsychPushHelp(useString, synopsisString, seeAlsoString);
-		if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none);};
+	// All sub functions should have these two lines
+	PsychPushHelp(useString, synopsisString, seeAlsoString);
+	if(PsychIsGiveHelp()) {PsychGiveHelp(); return(PsychError_none);};
 
         PsychErrorExit(PsychCapNumInputArgs(4));            // Max. 4 input args.
         PsychErrorExit(PsychRequireNumInputArgs(1));        // Min. 1 input args required.
         PsychErrorExit(PsychCapNumOutputArgs(7));           // Max. 7 output args.
         
         // Get the window record from the window record argument and get info from the window record
-		windowRecord = NULL;
+	windowRecord = NULL;
         PsychAllocInWindowRecordArg(kPsychUseDefaultArgPosition, FALSE, &windowRecord);
         // Only onscreen windows allowed:
         if(windowRecord && !PsychIsOnscreenWindow(windowRecord)) {
@@ -109,8 +115,20 @@ PsychError SCREENOpenMovie(void)
         // Get the (optional) asyncFlag:
         PsychCopyInIntegerArg(3, FALSE, &asyncFlag);
 
-		PsychCopyInDoubleArg(4, FALSE, &preloadSecs);
-		if (preloadSecs < 0 && preloadSecs!= -1) PsychErrorExitMsg(PsychError_user, "OpenMovie called with invalid (negative, but not equal -1) 'preloadSecs' argument!");
+        PsychCopyInDoubleArg(4, FALSE, &preloadSecs);
+        if (preloadSecs < 0 && preloadSecs!= -1 && preloadSecs!= -2) PsychErrorExitMsg(PsychError_user, "OpenMovie called with invalid (negative, but not equal -1) 'preloadSecs' argument!");
+
+	// Queueing of a new movie for seamless playback requested?
+	if (asyncFlag == 2) {
+            // Yes. Do a special call, just passing the moviename of the next
+            // movie to play. Pass the relevant moviehandle as retrieved from
+            // preloadSecs:
+            moviehandle = (int) preloadSecs;
+            preloadSecs = -2;
+            PsychCreateMovie(windowRecord, moviefile, preloadSecs, &moviehandle);
+            if (moviehandle == -1) PsychErrorExitMsg(PsychError_user, "Could not queue new moviefile for gapless playback.");
+            return(PsychError_none);
+	}
 
         // Asynchronous Open operation in progress or requested?
         if ((asyncmovieinfo.asyncstate == 0) && (asyncFlag == 0)) {
@@ -127,18 +145,21 @@ PsychError SCREENOpenMovie(void)
                     // Fill all information needed for opening the movie into the info struct:
                     asyncmovieinfo.asyncstate = 1; // Mark state as "Operation in progress"
                     asyncmovieinfo.moviename = strdup(moviefile);
-					asyncmovieinfo.preloadSecs = preloadSecs;
+                    asyncmovieinfo.preloadSecs = preloadSecs;
                     if (windowRecord) {
-						memcpy(&asyncmovieinfo.windowRecord, windowRecord, sizeof(PsychWindowRecordType));
-					} else {
-						memcpy(&asyncmovieinfo.windowRecord, 0, sizeof(PsychWindowRecordType));
-					}
+                        memcpy(&asyncmovieinfo.windowRecord, windowRecord, sizeof(PsychWindowRecordType));
+                    } else {
+                        memcpy(&asyncmovieinfo.windowRecord, 0, sizeof(PsychWindowRecordType));
+                    }
 
                     asyncmovieinfo.moviehandle = -1;
 
-                    // Increase our scheduling priority to maximum FIFO priority: This way we should get
+                    // Increase our scheduling priority to basic RT priority: This way we should get
                     // more cpu time for our PTB main thread than the async. background prefetch-thread:
-                    if ((rc=PsychSetThreadPriority(NULL, 1, 0))!=0) {
+					// On Windows we must not go higher than basePriority 1 (HIGH PRIORITY) or bad interference can happen.
+					// On OS/X we use basePriority 2 for robust realtime, using up to (4+1) == 5 msecs of time in every 10 msecs slice, allowing for up to 1 msec jitter/latency for ops.
+					// On Linux we just use standard basePriority 2 RT-FIFO scheduling and trust the os to do the right thing.
+                    if ((rc=PsychSetThreadPriority(NULL, ((PSYCH_SYSTEM == PSYCH_WINDOWS) ? 1 : 2), ((PSYCH_SYSTEM == PSYCH_OSX) ? 4 : 0)))!=0) {
                         printf("PTB-WARNING: In OpenMovie(): Failed to raise priority of main thread [System error %i]. Expect movie timing problems.\n", rc);
                     }
 
@@ -162,12 +183,7 @@ PsychError SCREENOpenMovie(void)
                     // We need to join our terminated worker thread to release its ressources. If the worker-thread
                     // isn't done yet (fallthrough from case 1 for sync. wait), this join will block us until worker
                     // completes:
-					PsychDeleteThread(&asyncmovieinfo.pid);
-					
-                    // Reset our priority to "normal" after async prefetch completion:
-                    if ((rc=PsychSetThreadPriority(NULL, 0, 0))!=0) {
-                        printf("PTB-WARNING: In OpenMovie(): Failed to lower priority of main thread [System error %i]. Expect movie timing problems.\n", rc);
-                    }
+                    PsychDeleteThread(&asyncmovieinfo.pid);
 
                     asyncmovieinfo.asyncstate = 0; // Reset state to idle:
                     moviehandle = asyncmovieinfo.moviehandle;
@@ -176,6 +192,7 @@ PsychError SCREENOpenMovie(void)
                     if (moviehandle < 0) {
                         // Movie loading failed for some reason.
                         printf("PTB-ERROR: When trying to asynchronously load movie %s, the operation failed: ", asyncmovieinfo.moviename);
+                        #if PSYCH_SYSTEM == PSYCH_OSX
                         switch(moviehandle) {
                             case -2000:
                             case -50:
@@ -203,7 +220,8 @@ PsychError SCREENOpenMovie(void)
                                 printf("Unknown error (Quicktime error %i): Check http://developer.apple.com/documentation/QuickTime/APIREF/ErrorCodes.htm#//apple_ref/doc/constant_group/Error_Codes", moviehandle);
                         }
                         printf("\n\n");
-                        
+                        #endif
+
                         PsychErrorExitMsg(PsychError_user, "Asynchronous loading of the Quicktime movie failed.");
                     }
                     
@@ -238,8 +256,8 @@ PsychError SCREENOpenMovie(void)
         PsychCopyOutDoubleArg(5, FALSE, (double) height);
         PsychCopyOutDoubleArg(7, FALSE, (double) aspectRatio);
 
-		// Ready!
-		return(PsychError_none);
+	// Ready!
+	return(PsychError_none);
 }
 
 // Functions for movie creation/editing/writing:
