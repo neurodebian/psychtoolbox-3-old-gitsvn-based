@@ -95,15 +95,8 @@ Copyright: 2006, Richard F. Murray
 License: Expat
 
 Files: Psychtoolbox/PsychOpenGL/MOGL/source/headers/glext_edit.h
-Copyright:  1999-2005 by Apple Computer, Inc
-            1991-2000 Silicon Graphics, Inc.
-License: SGI Free Software License B, Version 1.1
-Comment:
-  although 1.1 is not DFSG-free, later OpenGL was re-licensed by
-  SGI under License B v.2, which was DFSG-free.
-  http://www.sgi.com/company_info/newsroom/press_releases/2008/september/opengl.html
-  ???? The only question/problem here -- what Apple has to do with this, and either
-  its portion remains under 1.1... which would needed to be pruned then
+Copyright:  2007-2012 The Khronos Group Inc.
+License: Expat
 
 Files: Psychtoolbox/PsychContributed/ple.m
 Copyright:
