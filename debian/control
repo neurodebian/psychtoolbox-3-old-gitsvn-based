@@ -34,6 +34,7 @@ Vcs-Git: git://git.debian.org/git/pkg-exppsy/psychtoolbox-3.git
 Package: psychtoolbox-3-common
 Architecture: all
 Depends: ${misc:Depends}
+Recommends: subversion
 Description: toolbox for vision research -- arch/interpreter independent part
  Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
  GNU/Octave functions for vision research. It makes it easy to

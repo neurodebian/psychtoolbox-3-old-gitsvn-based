@@ -1,3 +1,17 @@
+psychtoolbox-3 (3.0.9+svn2539.dfsg1-1) unstable; urgency=low
+
+  * Fresh beta release:
+    - resolved outstanding copyright/license issue with glext_edit.h
+    - Initial upload to unstable (Closes: #606557)
+  * debian/control:
+    - -common: recommend subversion for DownloadAdditions functionality
+  * debian/copyright:
+    - updated to reflect upstream changes
+  * debian/TODO:
+    - cleanup
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 02 Apr 2012 11:12:15 -0400
+
 psychtoolbox-3 (3.0.9+svn2514.dfsg1-1) neurodebian; urgency=low
 
   * Fresh beta release:
@@ -106,6 +120,6 @@ psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre2) neurodebian; urgency=low
 
 psychtoolbox-3 (3.0.8+svn1934.dfsg1-1~pre1) neurodebian; urgency=low
 
-  * Initial release (Closes: #606557)
+  * Initial Debian packaging
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Fri, 17 Dec 2010 00:01:44 -0500
