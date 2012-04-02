@@ -93,6 +93,14 @@ override_dh_auto_install:
 		echo "/usr/lib$${f#*usr/share}	/usr$${f#*usr}" >> debian/psychtoolbox-3-lib.links; \
 	done
 
+	: # Filter out duplicate licenses etc
+	find debian/ -iname 3Dlabs-License.txt -o \
+				 -iname COPYING -o \
+				 -iname *license.txt | xargs -r rm
+
+	: # Filter out some scripts which aren't pertitent to Debian systems
+	find debian/ -iname simplepsychtoolboxsetup.sh -o -iname setupdate.sh | xargs -r rm
+
 
 override_dh_makeshlibs:
 	dh_makeshlibs

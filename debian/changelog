@@ -6,8 +6,8 @@ psychtoolbox-3 (3.0.9+svn2539.dfsg1-1) unstable; urgency=low
   * debian/control:
     - -common: recommend subversion for DownloadAdditions functionality
   * debian/copyright:
-    - updated to reflect upstream changes
-  * debian/TODO:
+    - updated to reflect upstream changes and some outstanding missing entries
+  * debian/TODO, debian/rules:
     - cleanup
 
  -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 02 Apr 2012 11:12:15 -0400
