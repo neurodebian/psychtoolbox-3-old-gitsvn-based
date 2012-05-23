@@ -86,6 +86,10 @@ Comment: PTB-3 requires patched version of portaudio.  Patches are yet to be
   adopted and verified for compatibility with current head of portaudio
   for submission upstream.
 
+Files: PsychSourceGL/Source/Common/PsychHID/PsychHIDKbQueueCreate.c
+Copyright: 2001-2008, Jens Ayton <jens@ayton.se>
+License: Expat
+Comment: Origin for embedded copy: https://github.com/Ahruman/KeyNaming
 
 Files: Psychtoolbox/PsychOpenGL/MOGL
 Copyright: 2006, Richard F. Murray

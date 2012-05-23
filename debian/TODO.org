@@ -1,3 +1,13 @@
+* kfreebsd builds
+
+> If the missing libdc1394 on the FreeBSD and Hurd targets (these are
+> just the kernels right?), is the only problem, that would be easy to
+> solve: Just remove this define in the CFLAGS:
+> -DPTBVIDEOCAPTURE_LIBDC and corresponding linker flags for -ldc1394
+> for those targets. That would remove the high-performance firewire
+> video capture support, but should impose no other restrictions.
+
+
 * DownloadAdditions
 ** TODO Target directory must exist
 ** TODO Depends: subversion

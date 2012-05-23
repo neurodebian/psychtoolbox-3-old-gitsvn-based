@@ -1,3 +1,11 @@
+psychtoolbox-3 (3.0.9+svn2579.dfsg1-1) unstable; urgency=low
+
+  * Fresh always-beta always 3.0.9 release
+    - addresses portaudio issues on amd64 platform
+    - 1 new entry for debian/copyright
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Wed, 23 May 2012 13:25:28 -0400
+
 psychtoolbox-3 (3.0.9+svn2539.dfsg1-1) unstable; urgency=low
 
   * Fresh beta release:
