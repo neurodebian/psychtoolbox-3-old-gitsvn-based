@@ -484,9 +484,12 @@ PsychError PsychHIDOSGamePadAxisQuery(int deviceIndex, int axisId, double* min, 
 // to iterate over all available events and process them instantaneously:
 void KbQueueProcessEvents(psych_bool blockingSinglepass)
 {
+	PsychHIDEventRecord evt;
+	XKeyPressedEvent key;
 	XIDeviceEvent* event;
 	double tnow;
 	int i;
+	char asciiChar;
 
 	while (1) {
 		XGenericEventCookie *cookie = &KbQueue_xevent.xcookie;
@@ -511,6 +514,14 @@ void KbQueueProcessEvents(psych_bool blockingSinglepass)
 			}
 		}
 
+		// Clear ringbuffer event:
+		memset(&evt, 0 , sizeof(evt));
+
+		// Set cooked character to "undefined" as a starter: It will only get
+		// assigned something else if keypress/release events from real keyboards
+		// or keypads are processed:
+		evt.cookedEventCode = -1;
+
 		// Is this an event we're interested in?
 		if ((cookie->type == GenericEvent) && (cookie->extension == xi_opcode)) {
 
@@ -534,6 +545,40 @@ void KbQueueProcessEvents(psych_bool blockingSinglepass)
 					// for this. [Tested on Ubuntu 10.10 and 11.10 with two mice and 1 joystick]
 					if (((cookie->evtype == XI_ButtonPress) || (cookie->evtype == XI_ButtonRelease)) && (event->detail > 0)) event->detail--;
 
+					// Key release on keyboard maps to character code 0.
+					if (cookie->evtype == XI_KeyRelease) evt.cookedEventCode = 0;
+
+					// Key press on a real keyboard needs to be mapped to character ascii code, if possible:
+					if (cookie->evtype == XI_KeyPress) {
+						// Assign info from our XIDeviceEvent to a standard XKeyPressedEvent which
+						// XLookupString() can actually understand:
+						key.type         = KeyPress;
+						key.root         = event->root;
+						key.window       = event->event;
+						key.subwindow    = event->child;
+						key.time         = event->time;
+						key.x            = event->event_x;
+						key.y            = event->event_y;
+						key.x_root       = event->root_x;
+						key.y_root       = event->root_y;
+						key.same_screen  = True;	
+						key.send_event   = False;
+						key.serial       = event->serial;
+						key.display      = thread_dpy;
+
+						key.keycode      = event->detail;
+						key.state        = event->mods.effective;	
+
+						if (1 == XLookupString(((XKeyEvent*) (&key)), &asciiChar, 1, NULL, NULL)) {
+							// Mapped: Assign it.
+							evt.cookedEventCode = (int) asciiChar;
+						}
+						else {
+							// Not mappable:
+							evt.cookedEventCode = 0;
+						}
+					}
+
 					// Need the lock from here on:
 					PsychLockMutex(&KbQueueMutex);
 
@@ -550,13 +595,20 @@ void KbQueueProcessEvents(psych_bool blockingSinglepass)
 							// ie., the slot is so far empty:
 							if (psychHIDKbQueueFirstPress[i][event->detail] == 0) psychHIDKbQueueFirstPress[i][event->detail] = tnow;
 							psychHIDKbQueueLastPress[i][event->detail] = tnow;
+							evt.status |= (1 << 0);
 						} else {
 							// Enqueue key release. See logic above:
 							if (psychHIDKbQueueFirstRelease[i][event->detail] == 0) psychHIDKbQueueFirstRelease[i][event->detail] = tnow;
 							psychHIDKbQueueLastRelease[i][event->detail] = tnow;
+							evt.status &= ~(1 << 0);
 						}
 
-						// Tell waiting userspace something interesting has changed:
+						// Update event buffer:
+						evt.timestamp = tnow;
+						evt.rawEventCode = event->detail + 1;
+						PsychHIDAddEventToEventBuffer(i, &evt);
+
+						// Tell waiting userspace (under KbQueueMutex protection for better scheduling) something interesting has changed:
 						PsychSignalCondition(&KbQueueCondition);
 					}
 
@@ -609,7 +661,7 @@ void* KbQueueWorkerThreadMain(void* dummy)
 	return(NULL);
 }
 
-static int PsychHIDGetDefaultKbQueueDevice(void)
+int PsychHIDGetDefaultKbQueueDevice(void)
 {
     int deviceIndex;
     XIDeviceInfo* dev = NULL;
@@ -626,7 +678,7 @@ static int PsychHIDGetDefaultKbQueueDevice(void)
     // a keyboard or the virtual XTEST keyboard:
     for(deviceIndex = 0; deviceIndex < ndevices; deviceIndex++) {
         dev = &info[deviceIndex];
-        if ((dev->use == XISlaveKeyboard) && !strstr(dev->name, "XTEST") && !strstr(dev->name, "Button")) return(deviceIndex);
+        if ((dev->use == XISlaveKeyboard) && !strstr(dev->name, "XTEST") && !strstr(dev->name, "Button") && !strstr(dev->name, "Bus")) return(deviceIndex);
     }
     
     // Nothing found? If so, abort:
@@ -686,6 +738,9 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKe
 		memset(psychHIDKbQueueScanKeys[deviceIndex], 1, 256 * sizeof(int));        
 	}
 
+	// Create event buffer:
+	PsychHIDCreateEventBuffer(deviceIndex);
+
 	// Ready to use this keybord queue.
 	return(PsychError_none);
 }
@@ -717,6 +772,9 @@ void PsychHIDOSKbQueueRelease(int deviceIndex)
 	free(psychHIDKbQueueLastPress[deviceIndex]); psychHIDKbQueueLastPress[deviceIndex] = NULL;
 	free(psychHIDKbQueueLastRelease[deviceIndex]); psychHIDKbQueueLastRelease[deviceIndex] = NULL;
 	free(psychHIDKbQueueScanKeys[deviceIndex]); psychHIDKbQueueScanKeys[deviceIndex] = NULL;
+
+	// Release kbqueue event buffer:
+	PsychHIDDeleteEventBuffer(deviceIndex);
 
 	// Done.
 	return;

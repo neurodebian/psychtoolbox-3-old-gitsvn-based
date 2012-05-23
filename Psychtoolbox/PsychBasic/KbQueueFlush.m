@@ -1,5 +1,10 @@
-function KbQueueFlush(deviceIndex)
-% KbQueueFlush([deviceIndex])
+function nflushed = KbQueueFlush(deviceIndex, flushType)
+% nflushed = KbQueueFlush([deviceIndex][flushType=1])
+%
+% Flush KbQueue and/or KbQueue event buffer. By default, if flushType is
+% omitted, only the KbQueues events are deleted. Other 'flushTypes' affect
+% the KbQueue event buffer, but rather use the KbBufferFlush() function to
+% do this.
 %
 % The routines KbQueueCreate, KbQueueStart, KbQueueStop, KbQueueCheck
 %  KbQueueWait, KbQueueFlush and KbQueueRelease provide replacments for
@@ -129,7 +134,10 @@ function KbQueueFlush(deviceIndex)
 % 8/23/07    rpw  Wrote it.
 
 if nargin == 0
-  PsychHID('KbQueueFlush');
+    nflushed = PsychHID('KbQueueFlush');
 elseif nargin > 0
-  PsychHID('KbQueueFlush', deviceIndex);
+    if nargin < 2 || isempty(flushType)
+        flushType = [];
+    end
+    nflushed = PsychHID('KbQueueFlush', deviceIndex, flushType);
 end
