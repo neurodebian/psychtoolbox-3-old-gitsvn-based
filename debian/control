@@ -58,7 +58,8 @@ Depends: ${shlibs:Depends}, ${misc:Depends}
 Recommends: gstreamer0.10-plugins-base,
             gstreamer0.10-plugins-good,
 Suggests: gstreamer0.10-plugins-bad,
-          gstreamer0.10-plugins-ugly
+          gstreamer0.10-plugins-ugly,
+          intel-gpu-tools, apitrace, powertop, latencytop,
 Description: toolbox for vision research -- arch-specific parts
  Psychophysics Toolbox Version 3 (PTB-3) is a free set of Matlab and
  GNU/Octave functions for vision research. It makes it easy to

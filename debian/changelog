@@ -1,3 +1,11 @@
+psychtoolbox-3 (3.0.9+svn2579.dfsg1-2) UNRELEASED; urgency=low
+
+  * Added recommended by Mario (upstream) tools for troubleshooting
+    (intel-gpu-tools, apitrace, powertop, latencytop) into Suggests of
+    the -lib package
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Wed, 03 Oct 2012 10:01:15 -0400
+
 psychtoolbox-3 (3.0.9+svn2579.dfsg1-1) unstable; urgency=low
 
   * Fresh always-beta always 3.0.9 release
